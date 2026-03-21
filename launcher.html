@@ -301,15 +301,44 @@ header {
       <div style="font-size:12px;color:var(--text);margin-bottom:8px">
         <strong>Login automático</strong> — abre o browser, faça login e o bot captura o cookie sozinho
       </div>
-      <select class="form-select" id="cap-server" style="margin-bottom:8px">
-        <option value="int7">int7 — International 7</option>
-        <option value="int6">int6 — International 6</option>
-        <option value="int5">int5 — International 5</option>
-        <option value="int4">int4 — International 4</option>
-        <option value="int3">int3 — International 3</option>
-        <option value="int2">int2 — International 2</option>
-        <option value="int1">int1 — International 1</option>
+      <select class="form-select" id="cap-server" style="margin-bottom:8px" onchange="toggleCustomServer('cap')">
+        
+        <optgroup label="International">
+          <option value="int1">int1</option>
+          <option value="int2">int2</option>
+          <option value="int3">int3</option>
+          <option value="int4">int4</option>
+          <option value="int5">int5</option>
+          <option value="int6">int6</option>
+          <option value="int7" selected>int7</option>
+        </optgroup>
+        <optgroup label="Brasil">
+          <option value="br1">br1</option>
+          <option value="br2">br2</option>
+          <option value="br3">br3</option>
+        </optgroup>
+        <optgroup label="Portugal">
+          <option value="pt1">pt1</option>
+          <option value="pt2">pt2</option>
+        </optgroup>
+        <optgroup label="Deutsch">
+          <option value="de1">de1</option>
+          <option value="de2">de2</option>
+          <option value="de3">de3</option>
+        </optgroup>
+        <optgroup label="França">
+          <option value="fr1">fr1</option>
+          <option value="fr2">fr2</option>
+        </optgroup>
+        <optgroup label="Espanha">
+          <option value="es1">es1</option>
+          <option value="es2">es2</option>
+        </optgroup>
+        <optgroup label="Outro">
+          <option value="custom">Outro (digitar abaixo)</option>
+        </optgroup>
       </select>
+      <input class="form-input" id="cap-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-bottom:8px">
       <button class="btn-capture" id="btn-capture" onclick="captureCookie()">
         🌐 Abrir browser e capturar cookie automaticamente
       </button>
@@ -323,15 +352,44 @@ header {
       </div>
       <div class="form-group">
         <label class="form-label">Servidor</label>
-        <select class="form-select" id="f-server">
-          <option value="int7">int7</option>
-          <option value="int6">int6</option>
-          <option value="int5">int5</option>
-          <option value="int4">int4</option>
-          <option value="int3">int3</option>
-          <option value="int2">int2</option>
+        <select class="form-select" id="f-server" onchange="toggleCustomServer('f')">
+          
+        <optgroup label="International">
           <option value="int1">int1</option>
+          <option value="int2">int2</option>
+          <option value="int3">int3</option>
+          <option value="int4">int4</option>
+          <option value="int5">int5</option>
+          <option value="int6">int6</option>
+          <option value="int7" selected>int7</option>
+        </optgroup>
+        <optgroup label="Brasil">
+          <option value="br1">br1</option>
+          <option value="br2">br2</option>
+          <option value="br3">br3</option>
+        </optgroup>
+        <optgroup label="Portugal">
+          <option value="pt1">pt1</option>
+          <option value="pt2">pt2</option>
+        </optgroup>
+        <optgroup label="Deutsch">
+          <option value="de1">de1</option>
+          <option value="de2">de2</option>
+          <option value="de3">de3</option>
+        </optgroup>
+        <optgroup label="França">
+          <option value="fr1">fr1</option>
+          <option value="fr2">fr2</option>
+        </optgroup>
+        <optgroup label="Espanha">
+          <option value="es1">es1</option>
+          <option value="es2">es2</option>
+        </optgroup>
+        <optgroup label="Outro">
+          <option value="custom">Outro (digitar abaixo)</option>
+        </optgroup>
         </select>
+        <input class="form-input" id="f-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-top:4px">
       </div>
     </div>
     <div class="form-row">
@@ -497,9 +555,28 @@ function deleteProfile(name){
     .then(d=>{ if(d.ok){ toast(`Perfil "${name}" excluído`); loadProfiles(); } });
 }
 
+function toggleCustomServer(prefix){
+  var sel = document.getElementById(prefix+'-server');
+  var inp = document.getElementById(prefix+'-server-custom');
+  if(sel.value === 'custom'){
+    inp.style.display = 'block';
+    inp.focus();
+  } else {
+    inp.style.display = 'none';
+  }
+}
+
+function getServerValue(prefix){
+  var sel = document.getElementById(prefix+'-server');
+  if(sel.value === 'custom'){
+    return document.getElementById(prefix+'-server-custom').value.trim();
+  }
+  return sel.value;
+}
+
 function captureCookie(){
   if(capturingCookie) return;
-  var server = document.getElementById('cap-server').value;
+  var server = getServerValue('cap');
   var btn = document.getElementById('btn-capture');
   var status = document.getElementById('cap-status');
   capturingCookie = true;
@@ -519,7 +596,15 @@ function captureCookie(){
     btn.disabled = false;
     if(d.ok){
       document.getElementById('f-cookies').value = d.cookies;
-      document.getElementById('f-server').value = server;
+      // Sync server to form
+      var fsel = document.getElementById('f-server');
+      var opt = fsel.querySelector(`option[value="${server}"]`);
+      if(opt){ fsel.value = server; }
+      else {
+        fsel.value = 'custom';
+        document.getElementById('f-server-custom').value = server;
+        document.getElementById('f-server-custom').style.display = 'block';
+      }
       if(d.userid) document.getElementById('f-userid').value = d.userid;
       status.className = 'capture-status ok';
       status.textContent = `✓ Cookie capturado via ${d.browser}! UserID: ${d.userid||'?'}`;
@@ -540,7 +625,7 @@ function captureCookie(){
 function saveProfile(){
   var data = {
     name:    document.getElementById('f-name').value.trim(),
-    server:  document.getElementById('f-server').value,
+    server:  getServerValue('f'),
     userid:  document.getElementById('f-userid').value.trim(),
     cookies: document.getElementById('f-cookies').value.trim(),
     port:    document.getElementById('f-port').value || '',
