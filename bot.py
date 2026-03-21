@@ -1335,8 +1335,7 @@ if __name__ == "__main__":
         help="Modo de execução")
     parser.add_argument("--profile", "-p",
         help="Nome do perfil (ex: bohrer_int7, alt_int7). Cria pasta profiles/NOME automaticamente.")
-    parser.add_argument("--server", choices=["int7","int6","int5","int4","int3","int2","int1"],
-        help="Servidor (ex: int6). Se --profile existir no profiles.json, lido de lá.")
+    parser.add_argument("--server", help="Servidor (ex: int7, br1, pt2, de3...)")
     parser.add_argument("--cookies", help="Cookie string do browser")
     parser.add_argument("--userid", help="Seu UserID no servidor")
     parser.add_argument("--port", type=int, help="Porta do dashboard (padrão: 8765)")
@@ -1368,16 +1367,17 @@ if __name__ == "__main__":
         print(f"⚙  Configuração carregada de config.json")
 
     # ── Aplica config (CLI sobrescreve config.json) ───────────────────────
-    global BASE_URL, COOKIES_RAW, MY_USER_ID, DASHBOARD_PORT
+    import sys as _sys
+    _mod = _sys.modules[__name__] if __name__ != "__main__" else _sys.modules["__main__"]
     if args.server or cfg.get("server"):
         srv = args.server or cfg["server"]
-        BASE_URL = f"https://{srv}.knightfight.moonid.net"
+        globals()["BASE_URL"] = f"https://{srv}.knightfight.moonid.net"
     if args.cookies or cfg.get("cookies"):
-        COOKIES_RAW = args.cookies or cfg["cookies"]
+        globals()["COOKIES_RAW"] = args.cookies or cfg["cookies"]
     if args.userid or cfg.get("userid"):
-        MY_USER_ID = args.userid or cfg["userid"]
+        globals()["MY_USER_ID"] = args.userid or cfg["userid"]
     if args.port or cfg.get("port"):
-        DASHBOARD_PORT = int(args.port or cfg["port"])
+        globals()["DASHBOARD_PORT"] = int(args.port or cfg["port"])
 
     if COOKIES_RAW == "COLE_SEUS_COOKIES_AQUI":
         print("\n❌ Configure COOKIES_RAW no bot.py ou passe --cookies 'seu_cookie'\n")
