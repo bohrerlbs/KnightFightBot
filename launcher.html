@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KnightFight Bot</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+
+:root {
+  --bg: #0a0907;
+  --surface: #111009;
+  --surface2: #1a1710;
+  --surface3: #221f14;
+  --border: rgba(180,140,60,0.15);
+  --border2: rgba(180,140,60,0.3);
+  --gold: #c8943a;
+  --gold2: #f0c060;
+  --gold3: #e8a840;
+  --red: #c04040;
+  --green: #508050;
+  --green2: #70b070;
+  --text: #e0d8c8;
+  --muted: #806858;
+  --glow: rgba(200,148,58,0.15);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Crimson Text', Georgia, serif;
+  font-size: 15px;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(180,120,30,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(100,60,20,0.06) 0%, transparent 50%);
+}
+
+/* ── HEADER ── */
+header {
+  padding: 28px 36px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(180deg, rgba(180,140,60,0.05) 0%, transparent 100%);
+}
+.logo-icon { font-size: 32px; line-height:1; }
+.logo-text { font-family:'Cinzel',serif; }
+.logo-text h1 { font-size:20px; color:var(--gold2); letter-spacing:3px; font-weight:700; }
+.logo-text p { font-size:11px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; margin-top:2px; }
+.header-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+.version { font-size:11px; color:var(--muted); }
+.update-badge {
+  font-size:10px; padding:3px 10px; border-radius:2px;
+  background:rgba(200,148,58,0.15); color:var(--gold3);
+  border:1px solid rgba(200,148,58,0.3); cursor:pointer;
+  font-family:'Cinzel',serif; letter-spacing:1px;
+  text-decoration:none; display:none;
+}
+.update-badge.show { display:inline-block; }
+
+/* ── LAYOUT ── */
+.container { padding: 28px 36px; max-width: 1100px; }
+.section-title {
+  font-family:'Cinzel',serif; font-size:11px; letter-spacing:3px;
+  text-transform:uppercase; color:var(--muted); margin-bottom:16px;
+  display:flex; align-items:center; gap:10px;
+}
+.section-title::after {
+  content:''; flex:1; height:1px; background:var(--border);
+}
+
+/* ── PROFILE CARDS ── */
+.profiles-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-bottom:32px; }
+
+.profile-card {
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:4px;
+  overflow:hidden;
+  transition: border-color .2s, transform .15s;
+  position:relative;
+}
+.profile-card:hover { border-color:var(--border2); transform:translateY(-1px); }
+.profile-card.running { border-color:rgba(80,128,80,0.4); }
+.profile-card.running::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, transparent, var(--green2), transparent);
+  animation: scanline 3s linear infinite;
+}
+@keyframes scanline { 0%{opacity:0.3} 50%{opacity:1} 100%{opacity:0.3} }
+
+.card-header {
+  padding:14px 16px 10px;
+  display:flex; align-items:center; gap:10px;
+  border-bottom:1px solid var(--border);
+}
+.server-badge {
+  font-family:'Cinzel',serif; font-size:9px; letter-spacing:2px;
+  padding:2px 7px; border-radius:2px; text-transform:uppercase;
+  background:rgba(200,148,58,0.1); color:var(--gold); border:1px solid var(--border2);
+}
+.profile-name {
+  font-family:'Cinzel',serif; font-size:14px; color:var(--gold2); font-weight:600;
+  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.status-dot {
+  width:7px; height:7px; border-radius:50%; flex-shrink:0;
+  background:var(--muted);
+}
+.status-dot.on { background:var(--green2); box-shadow:0 0 6px var(--green2); animation:pulse 2s infinite; }
+.status-dot.off { background:var(--muted); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.card-body { padding:12px 16px; }
+.card-info { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px; }
+.info-item { }
+.info-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+.info-val { font-size:13px; color:var(--text); }
+
+.log-preview {
+  background:var(--bg); border:1px solid var(--border); border-radius:3px;
+  padding:7px 9px; font-family:'Courier New',monospace; font-size:10px;
+  color:var(--muted); height:52px; overflow:hidden; margin-bottom:12px;
+  line-height:1.5;
+}
+.log-preview .log-ok { color:var(--green2); }
+.log-preview .log-warn { color:var(--gold3); }
+.log-preview .log-err { color:var(--red); }
+
+.card-actions { display:flex; gap:8px; }
+.btn {
+  font-family:'Cinzel',serif; font-size:10px; letter-spacing:1px; text-transform:uppercase;
+  padding:6px 14px; border-radius:3px; border:1px solid; cursor:pointer;
+  transition: all .15s; white-space:nowrap;
+}
+.btn-start {
+  background:rgba(80,128,80,0.15); color:var(--green2); border-color:rgba(80,128,80,0.3);
+  flex:1;
+}
+.btn-start:hover { background:rgba(80,128,80,0.25); }
+.btn-stop {
+  background:rgba(192,64,64,0.12); color:#e08080; border-color:rgba(192,64,64,0.25);
+  flex:1;
+}
+.btn-stop:hover { background:rgba(192,64,64,0.22); }
+.btn-dash {
+  background:rgba(200,148,58,0.1); color:var(--gold); border-color:var(--border2);
+}
+.btn-dash:hover { background:rgba(200,148,58,0.2); }
+.btn-del {
+  background:transparent; color:var(--muted); border-color:var(--border);
+  padding:6px 10px;
+}
+.btn-del:hover { color:#e08080; border-color:rgba(192,64,64,0.3); }
+
+/* ── NEW PROFILE CARD ── */
+.add-card {
+  background:var(--surface); border:1px dashed var(--border);
+  border-radius:4px; padding:28px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:10px;
+  cursor:pointer; transition:all .2s; min-height:180px;
+}
+.add-card:hover { border-color:var(--border2); background:var(--surface2); }
+.add-icon { font-size:28px; color:var(--muted); }
+.add-label { font-family:'Cinzel',serif; font-size:11px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; }
+
+/* ── MODAL ── */
+.modal-backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(4px); opacity:0; pointer-events:none;
+  transition:opacity .2s;
+}
+.modal-backdrop.show { opacity:1; pointer-events:all; }
+.modal {
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:6px; width:520px; max-width:95vw; max-height:90vh;
+  overflow-y:auto; padding:28px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(200,148,58,0.05);
+  transform:translateY(10px); transition:transform .2s;
+}
+.modal-backdrop.show .modal { transform:translateY(0); }
+.modal-title {
+  font-family:'Cinzel',serif; font-size:16px; color:var(--gold2);
+  font-weight:600; margin-bottom:20px; letter-spacing:1px;
+}
+.form-group { margin-bottom:16px; }
+.form-label {
+  display:block; font-size:10px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--muted); margin-bottom:6px;
+}
+.form-input, .form-select {
+  width:100%; background:var(--surface2); border:1px solid var(--border2);
+  border-radius:3px; color:var(--text); padding:9px 12px;
+  font-family:'Crimson Text',serif; font-size:14px;
+  transition:border-color .15s;
+}
+.form-input:focus, .form-select:focus {
+  outline:none; border-color:var(--gold);
+}
+.form-input::placeholder { color:var(--muted); }
+.form-hint { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic; }
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.btn-primary {
+  width:100%; padding:10px; font-family:'Cinzel',serif; font-size:11px;
+  letter-spacing:2px; text-transform:uppercase; border:1px solid var(--gold);
+  background:rgba(200,148,58,0.15); color:var(--gold2); border-radius:3px;
+  cursor:pointer; margin-top:8px; transition:all .15s;
+}
+.btn-primary:hover { background:rgba(200,148,58,0.25); }
+.btn-secondary {
+  width:100%; padding:9px; font-family:'Cinzel',serif; font-size:10px;
+  letter-spacing:2px; text-transform:uppercase; border:1px solid var(--border2);
+  background:transparent; color:var(--muted); border-radius:3px;
+  cursor:pointer; margin-top:6px; transition:all .15s;
+}
+.btn-secondary:hover { color:var(--text); border-color:var(--border2); }
+
+/* Cookie capture */
+.capture-box {
+  background:var(--surface2); border:1px solid var(--border); border-radius:3px;
+  padding:12px 14px; margin-bottom:12px;
+}
+.capture-status { font-size:12px; color:var(--muted); font-style:italic; }
+.capture-status.ok { color:var(--green2); font-style:normal; }
+.capture-status.err { color:#e08080; }
+.capture-status.loading::after {
+  content:''; display:inline-block; width:10px; animation: dots 1.2s infinite;
+}
+@keyframes dots {
+  0%{content:'.'} 33%{content:'..'} 66%{content:'...'} 100%{content:'.'}
+}
+
+.btn-capture {
+  width:100%; padding:9px; font-family:'Cinzel',serif; font-size:10px;
+  letter-spacing:2px; text-transform:uppercase;
+  border:1px solid rgba(200,148,58,0.3); background:rgba(200,148,58,0.08);
+  color:var(--gold); border-radius:3px; cursor:pointer; transition:all .15s;
+}
+.btn-capture:hover { background:rgba(200,148,58,0.16); }
+.btn-capture:disabled { opacity:.4; cursor:not-allowed; }
+
+/* Log modal */
+.log-full {
+  background:var(--bg); border:1px solid var(--border); border-radius:3px;
+  padding:10px; font-family:'Courier New',monospace; font-size:11px;
+  max-height:400px; overflow-y:auto; line-height:1.6;
+}
+.log-full .lline { display:block; }
+.log-full .ok { color:var(--green2); }
+.log-full .warn { color:var(--gold3); }
+.log-full .err { color:#e08080; }
+.log-full .info { color:var(--muted); }
+
+/* Toast */
+.toast {
+  position:fixed; bottom:24px; right:24px; z-index:200;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:4px; padding:12px 18px; font-size:13px;
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  opacity:0; transform:translateY(8px); transition:all .2s; pointer-events:none;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+.toast.ok { border-left:3px solid var(--green2); }
+.toast.err { border-left:3px solid var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">⚔</div>
+  <div class="logo-text">
+    <h1>KnightFight Bot</h1>
+    <p>Launcher — Gerenciador de Perfis</p>
+  </div>
+  <div class="header-right">
+    <span class="version" id="ver">v1.0.0</span>
+    <button class="update-badge" id="update-badge" onclick="doUpdate()">
+      ↑ Atualização disponível — clique para instalar
+    </button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="section-title">Perfis</div>
+  <div class="profiles-grid" id="profiles-grid">
+    <div style="color:var(--muted);font-style:italic;padding:20px;font-size:13px">Carregando...</div>
+  </div>
+</div>
+
+<!-- Modal novo perfil -->
+<div class="modal-backdrop" id="modal-new">
+  <div class="modal">
+    <div class="modal-title">⚔ Novo Perfil</div>
+
+    <div class="capture-box">
+      <div style="font-size:12px;color:var(--text);margin-bottom:8px">
+        <strong>Login automático</strong> — abre o browser, faça login e o bot captura o cookie sozinho
+      </div>
+      <select class="form-select" id="cap-server" style="margin-bottom:8px">
+        <option value="int7">int7 — International 7</option>
+        <option value="int6">int6 — International 6</option>
+        <option value="int5">int5 — International 5</option>
+        <option value="int4">int4 — International 4</option>
+        <option value="int3">int3 — International 3</option>
+        <option value="int2">int2 — International 2</option>
+        <option value="int1">int1 — International 1</option>
+      </select>
+      <button class="btn-capture" id="btn-capture" onclick="captureCookie()">
+        🌐 Abrir browser e capturar cookie automaticamente
+      </button>
+      <div class="capture-status" id="cap-status" style="margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nome do perfil</label>
+        <input class="form-input" id="f-name" placeholder="ex: bohrer_int7">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Servidor</label>
+        <select class="form-select" id="f-server">
+          <option value="int7">int7</option>
+          <option value="int6">int6</option>
+          <option value="int5">int5</option>
+          <option value="int4">int4</option>
+          <option value="int3">int3</option>
+          <option value="int2">int2</option>
+          <option value="int1">int1</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">UserID</label>
+        <input class="form-input" id="f-userid" placeholder="522001100">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Porta dashboard</label>
+        <input class="form-input" id="f-port" placeholder="8765" type="number">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Cookie <span style="color:var(--muted)">(preenchido automaticamente acima)</span></label>
+      <textarea class="form-input" id="f-cookies" rows="3" placeholder="Ou cole manualmente: F12 → Network → Cookie"></textarea>
+      <div class="form-hint">F12 → Network → qualquer requisição → Request Headers → Cookie</div>
+    </div>
+
+    <button class="btn-primary" onclick="saveProfile()">✓ Criar Perfil e Iniciar Bot</button>
+    <button class="btn-secondary" onclick="closeModal('modal-new')">Cancelar</button>
+  </div>
+</div>
+
+<!-- Modal log -->
+<div class="modal-backdrop" id="modal-log">
+  <div class="modal">
+    <div class="modal-title" id="log-modal-title">Log</div>
+    <div class="log-full" id="log-full-content"></div>
+    <button class="btn-secondary" onclick="closeModal('modal-log')" style="margin-top:12px">Fechar</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+var REFRESH = 5000;
+var refreshInt = null;
+var capturingCookie = false;
+
+function toast(msg, type='ok'){
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(()=>{ el.className='toast'; }, 3000);
+}
+
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+
+// Fecha modal clicando fora
+document.querySelectorAll('.modal-backdrop').forEach(b=>{
+  b.addEventListener('click', e=>{ if(e.target===b) b.classList.remove('show'); });
+});
+
+function logClass(line){
+  if(line.includes('[ERROR]')) return 'err';
+  if(line.includes('[WARNING]')) return 'warn';
+  if(line.includes('⚔')||line.includes('iniciada')||line.includes('Imunidade')) return 'ok';
+  return 'info';
+}
+
+function renderProfiles(profiles){
+  var grid = document.getElementById('profiles-grid');
+  var html = '';
+
+  profiles.forEach(p=>{
+    var running = p._running;
+    var logs = (p._log_tail||[]).slice(-3).map(l=>{
+      var cls = logClass(l);
+      var msg = l.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[.*?\] /,'');
+      return `<span class="${cls}">${msg}</span>`;
+    }).join('\n');
+
+    html += `<div class="profile-card ${running?'running':''}">
+      <div class="card-header">
+        <span class="server-badge">${p.server||'int7'}</span>
+        <span class="profile-name">${p._name}</span>
+        <div class="status-dot ${running?'on':'off'}"></div>
+      </div>
+      <div class="card-body">
+        <div class="card-info">
+          <div class="info-item">
+            <div class="info-label">UserID</div>
+            <div class="info-val">${p.userid||'—'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Dashboard</div>
+            <div class="info-val" style="color:var(--gold)">:${p.port||8765}</div>
+          </div>
+        </div>
+        <div class="log-preview">${logs||'<span>Nenhum log ainda...</span>'}</div>
+        <div class="card-actions">
+          ${running
+            ? `<button class="btn btn-stop" onclick="stopBot('${p._name}')">■ Parar</button>`
+            : `<button class="btn btn-start" onclick="startBot('${p._name}')">▶ Iniciar</button>`
+          }
+          <button class="btn btn-dash" onclick="openDash(${p.port||8765})">Dashboard</button>
+          <button class="btn btn-del" onclick="showLog('${p._name}')" title="Ver log">≡</button>
+          <button class="btn btn-del" onclick="deleteProfile('${p._name}')" title="Excluir">✕</button>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  // Card de adicionar
+  html += `<div class="add-card" onclick="openModal('modal-new')">
+    <div class="add-icon">+</div>
+    <div class="add-label">Novo Perfil</div>
+  </div>`;
+
+  grid.innerHTML = html;
+}
+
+function loadProfiles(){
+  fetch('/api/profiles')
+    .then(r=>r.json())
+    .then(renderProfiles)
+    .catch(()=>{});
+}
+
+function startBot(name){
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){ toast(`▶ ${name} iniciado!`); setTimeout(loadProfiles,1000); }
+      else toast(`Erro: ${d.error}`,'err');
+    });
+}
+
+function stopBot(name){
+  fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){ toast(`■ ${name} parado`); setTimeout(loadProfiles,500); }
+      else toast(`Erro: ${d.error}`,'err');
+    });
+}
+
+function openDash(port){
+  window.open(`http://localhost:${port}/dashboard`,'_blank');
+}
+
+function showLog(name){
+  fetch(`/api/log/${name}`)
+    .then(r=>r.json())
+    .then(d=>{
+      document.getElementById('log-modal-title').textContent = `Log — ${name}`;
+      document.getElementById('log-full-content').innerHTML = (d.lines||[]).map(l=>{
+        var cls = logClass(l);
+        return `<span class="lline ${cls}">${l}</span>`;
+      }).join('');
+      var box = document.getElementById('log-full-content');
+      openModal('modal-log');
+      setTimeout(()=>{ box.scrollTop = box.scrollHeight; }, 100);
+    });
+}
+
+function deleteProfile(name){
+  if(!confirm(`Excluir perfil "${name}"? Os dados serão removidos permanentemente.`)) return;
+  fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{ if(d.ok){ toast(`Perfil "${name}" excluído`); loadProfiles(); } });
+}
+
+function captureCookie(){
+  if(capturingCookie) return;
+  var server = document.getElementById('cap-server').value;
+  var btn = document.getElementById('btn-capture');
+  var status = document.getElementById('cap-status');
+  capturingCookie = true;
+  btn.disabled = true;
+  status.style.display = 'block';
+  status.className = 'capture-status loading';
+  status.textContent = 'Abrindo browser — faça login no jogo';
+
+  fetch('/api/capture-cookie',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({server})
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    capturingCookie = false;
+    btn.disabled = false;
+    if(d.ok){
+      document.getElementById('f-cookies').value = d.cookies;
+      document.getElementById('f-server').value = server;
+      if(d.userid) document.getElementById('f-userid').value = d.userid;
+      status.className = 'capture-status ok';
+      status.textContent = `✓ Cookie capturado via ${d.browser}! UserID: ${d.userid||'?'}`;
+      toast('Cookie capturado com sucesso!');
+    } else {
+      status.className = 'capture-status err';
+      status.textContent = `✗ ${d.error}`;
+    }
+  })
+  .catch(e=>{
+    capturingCookie = false;
+    btn.disabled = false;
+    status.className = 'capture-status err';
+    status.textContent = '✗ Erro de conexão';
+  });
+}
+
+function saveProfile(){
+  var data = {
+    name:    document.getElementById('f-name').value.trim(),
+    server:  document.getElementById('f-server').value,
+    userid:  document.getElementById('f-userid').value.trim(),
+    cookies: document.getElementById('f-cookies').value.trim(),
+    port:    document.getElementById('f-port').value || '',
+  };
+  if(!data.name){ toast('Informe um nome para o perfil','err'); return; }
+  if(!data.cookies){ toast('Cookie é obrigatório','err'); return; }
+  if(!data.userid){ toast('UserID é obrigatório','err'); return; }
+
+  fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        closeModal('modal-new');
+        loadProfiles();
+        toast(`Perfil "${d.name}" criado!`);
+        // Inicia automaticamente
+        setTimeout(()=>startBot(d.name), 500);
+      } else {
+        toast('Erro ao salvar','err');
+      }
+    });
+}
+
+// Check update
+var latestVersion = null;
+fetch('/api/version')
+  .then(r=>r.json())
+  .then(d=>{
+    document.getElementById('ver').textContent = `v${d.current}`;
+    if(d.update && d.latest){
+      latestVersion = d.latest;
+      var b = document.getElementById('update-badge');
+      b.textContent = `↑ v${d.latest} disponível — clique para instalar`;
+      b.classList.add('show');
+    }
+  }).catch(()=>{});
+
+function doUpdate(){
+  var b = document.getElementById('update-badge');
+  if(!confirm(`Instalar atualização v${latestVersion||'?'}?
+
+Os bots serão parados e reiniciados automaticamente.`)) return;
+  b.textContent = '⟳ Baixando atualização...';
+  b.disabled = true;
+  fetch('/api/update',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        toast(`✓ Atualizado: ${d.updated.join(', ')} — reiniciando bots...`);
+        b.classList.remove('show');
+        // Reinicia todos os bots que estavam rodando
+        setTimeout(()=>{
+          fetch('/api/profiles').then(r=>r.json()).then(profiles=>{
+            profiles.forEach(p=>{ if(p._running) startBot(p._name); });
+            loadProfiles();
+          });
+        }, 2000);
+      } else {
+        toast(`Erro na atualização: ${d.errors.join(', ')}`, 'err');
+        b.textContent = `↑ v${latestVersion} disponível — clique para instalar`;
+        b.disabled = false;
+      }
+    })
+    .catch(()=>{ toast('Erro de conexão','err'); b.disabled=false; });
+}
+
+// Auto-refresh
+loadProfiles();
+refreshInt = setInterval(loadProfiles, REFRESH);
+</script>
+</body>
+</html>
