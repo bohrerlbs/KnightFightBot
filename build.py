@@ -28,16 +28,10 @@ def check_deps():
 def build_exe():
     print("\n[2/4] Empacotando com PyInstaller...")
 
-    # Lista todos os arquivos HTML para incluir
-    data_files = []
-    for f in ["launcher.html", "dashboard.html"]:
-        if (ROOT / f).exists():
-            data_files += ["--add-data", f"{f};."]
-
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile",                      # tudo em um único .exe
-        "--windowed",                     # sem janela de console
+        "--onefile",
+        "--windowed",
         "--name", "KnightFightBot",
         "--icon", "icon.ico" if (ROOT/"icon.ico").exists() else "NONE",
         "--hidden-import", "selenium",
@@ -49,7 +43,7 @@ def build_exe():
         "--hidden-import", "lxml",
         "--collect-all", "selenium",
         "--collect-all", "webdriver_manager",
-        *data_files,
+        # NÃO embute HTMLs — ficam como arquivos externos atualizáveis
         "launcher.py",
     ]
     run(cmd)

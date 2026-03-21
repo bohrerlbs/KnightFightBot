@@ -12,8 +12,13 @@ VERSION = "1.0.0"
 LAUNCHER_PORT = 8764
 GITHUB_RAW = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
 
-# Pasta base = onde o launcher.py (ou .exe) está
+# Pasta base = sempre onde o .exe (ou launcher.py) está
+# getattr(sys, 'frozen') = True quando rodando como .exe PyInstaller
+# sys.executable aponta para o .exe
+# __file__ aponta para o .py em desenvolvimento
 BASE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
+# Garante que o diretório de trabalho seja o BASE_DIR
+os.chdir(BASE_DIR)
 PROFILES_DIR = BASE_DIR / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
 

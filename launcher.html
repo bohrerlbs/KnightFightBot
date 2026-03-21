@@ -655,13 +655,17 @@ fetch('/api/version')
   .then(r=>r.json())
   .then(d=>{
     document.getElementById('ver').textContent = `v${d.current}`;
+    console.log('Version check:', d);
     if(d.update && d.latest){
       latestVersion = d.latest;
       var b = document.getElementById('update-badge');
-      b.textContent = `↑ v${d.latest} disponível — clique para instalar`;
+      b.textContent = `↑ v${d.latest} disponivel — clique para instalar`;
       b.classList.add('show');
+    } else if(d.latest === null) {
+      // GitHub inacessivel — mostra versao apenas
+      console.warn('GitHub inacessivel para verificar atualizacoes');
     }
-  }).catch(()=>{});
+  }).catch(e=>{ console.error('Erro ao verificar versao:', e); });
 
 function doUpdate(){
   var b = document.getElementById('update-badge');
