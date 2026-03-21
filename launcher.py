@@ -1,101 +1,89 @@
-# -*- coding: utf-8 -*-
-import os as _os
-_os.environ.setdefault("PYTHONUTF8", "1")
-_os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-
 """
-KnightFight Bot — Launcher
-Servidor HTTP local que serve a interface de gerenciamento de perfis.
-Roda na porta 8764, abre o browser automaticamente.
+KnightFight Bot — Launcher v1.0.5
 """
-import os, sys, json, subprocess, threading, time, re, signal
-import webbrowser
+import os, sys, json, subprocess, threading, time, re, webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
-VERSION = "1.0.2"
-LAUNCHER_PORT = 8764
-GITHUB_RAW = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
-
-# Pasta base = sempre onde o .exe (ou launcher.py) está
-# getattr(sys, 'frozen') = True quando rodando como .exe PyInstaller
-# sys.executable aponta para o .exe
-# __file__ aponta para o .py em desenvolvimento
+# ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
-# Garante que o diretório de trabalho seja o BASE_DIR
 os.chdir(BASE_DIR)
-# Lê versão do arquivo externo (atualizado pelo auto-update)
-VERSION = get_version()
 PROFILES_DIR = BASE_DIR / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
 
-# Processos rodando { nome_perfil: subprocess }
-running_bots = {}
+# ── Versão — lida do arquivo externo para funcionar com auto-update ───────────
+def get_version():
+    v = BASE_DIR / "VERSION"
+    try:
+        return v.read_text(encoding="utf-8").strip() if v.exists() else "1.0.0"
+    except:
+        return "1.0.0"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+GITHUB_RAW  = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
+LAUNCHER_PORT = 8764
+running_bots  = {}
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def get_profiles():
     profiles = []
-    if PROFILES_DIR.exists():
-        for d in sorted(PROFILES_DIR.iterdir()):
-            cfg_path = d / "config.json"
-            if cfg_path.exists():
-                try:
-                    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                    cfg["_name"] = d.name
-                    cfg["_running"] = d.name in running_bots and running_bots[d.name].poll() is None
-                    cfg["_log_tail"] = get_log_tail(d.name, 5)
-                    profiles.append(cfg)
-                except:
-                    pass
+    for d in sorted(PROFILES_DIR.iterdir()) if PROFILES_DIR.exists() else []:
+        cfg_path = d / "config.json"
+        if not cfg_path.exists():
+            continue
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            cfg["_name"]     = d.name
+            cfg["_running"]  = d.name in running_bots and running_bots[d.name].poll() is None
+            cfg["_log_tail"] = get_log_tail(d.name, 5)
+            profiles.append(cfg)
+        except:
+            pass
     return profiles
 
-def get_log_tail(profile_name, lines=20):
-    log_path = PROFILES_DIR / profile_name / "bot.log"
-    if not log_path.exists():
+def get_log_tail(name, lines=20):
+    log = PROFILES_DIR / name / "bot.log"
+    if not log.exists():
         return []
     try:
-        with open(log_path, encoding="utf-8", errors="replace") as f:
-            all_lines = f.readlines()
-        return [l.rstrip() for l in all_lines[-lines:]]
+        with open(log, encoding="utf-8", errors="replace") as f:
+            return [l.rstrip() for l in f.readlines()[-lines:]]
     except:
         return []
 
-def start_bot(profile_name):
-    if profile_name in running_bots and running_bots[profile_name].poll() is None:
+def get_profile_port(name):
+    cfg = PROFILES_DIR / name / "config.json"
+    try:
+        return int(json.loads(cfg.read_text(encoding="utf-8")).get("port", 8765))
+    except:
+        return 8765
+
+def start_bot(name):
+    if name in running_bots and running_bots[name].poll() is None:
         return {"ok": False, "error": "Já está rodando"}
     bot_py = BASE_DIR / "bot.py"
     if not bot_py.exists():
-        return {"ok": False, "error": "bot.py não encontrado"}
-    profile_dir = PROFILES_DIR / profile_name
-    # Log visível para debug — salvo na pasta do perfil
+        return {"ok": False, "error": "bot.py não encontrado na pasta " + str(BASE_DIR)}
+    port = get_profile_port(name)
+    profile_dir = PROFILES_DIR / name
     log_path = profile_dir / "bot.log"
-    cmd = [sys.executable, str(bot_py), "--profile", profile_name]
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     try:
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUTF8"] = "1"
-        # Roda da pasta BASE_DIR mas com --profile que muda o workdir internamente
-        p = subprocess.Popen(cmd, cwd=str(BASE_DIR),
-                             stdout=open(log_path, "a", encoding="utf-8"),
-                             stderr=subprocess.STDOUT,
-                             env=env)
-        running_bots[profile_name] = p
-        # Aguarda até 15s para o servidor HTTP do bot subir
-        import urllib.request
-        cfg_path = PROFILES_DIR / profile_name / "config.json"
-        port = 8765
-        if cfg_path.exists():
-            try:
-                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                port = int(cfg.get("port", 8765))
-            except: pass
+        p = subprocess.Popen(
+            [sys.executable, str(bot_py), "--workdir", str(profile_dir)],
+            cwd=str(BASE_DIR),
+            stdout=open(log_path, "a", encoding="utf-8"),
+            stderr=subprocess.STDOUT,
+            env=env
+        )
+        running_bots[name] = p
         return {"ok": True, "port": port}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-def stop_bot(profile_name):
-    p = running_bots.get(profile_name)
+def stop_bot(name):
+    p = running_bots.get(name)
     if not p or p.poll() is not None:
         return {"ok": False, "error": "Não está rodando"}
     try:
@@ -107,18 +95,18 @@ def stop_bot(profile_name):
         return {"ok": False, "error": str(e)}
 
 def save_profile(data):
-    name = re.sub(r'[^\w\-]', '_', data.get("name","novo")).lower()
+    name = re.sub(r'[^\w\-]', '_', data.get("name", "novo")).lower()
     path = PROFILES_DIR / name
     path.mkdir(exist_ok=True)
-    cfg = {
+    port = int(data.get("port") or 8765 + len(get_profiles()))
+    cfg  = {
         "profile": name,
-        "server":  data.get("server","int7"),
-        "userid":  data.get("userid",""),
-        "cookies": data.get("cookies",""),
-        "port":    int(data.get("port", 8765 + len(get_profiles()))),
+        "server":  data.get("server", "int7"),
+        "userid":  data.get("userid", ""),
+        "cookies": data.get("cookies", ""),
+        "port":    port,
     }
     (path / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    # Cria .bat
     bat = f'@echo off\ncd /d "{BASE_DIR}"\npython bot.py --profile {name}\npause\n'
     (BASE_DIR / f"iniciar_{name}.bat").write_text(bat)
     return {"ok": True, "name": name, "config": cfg}
@@ -129,146 +117,99 @@ def delete_profile(name):
     if path.exists():
         shutil.rmtree(path)
     bat = BASE_DIR / f"iniciar_{name}.bat"
-    if bat.exists(): bat.unlink()
+    if bat.exists():
+        bat.unlink()
     return {"ok": True}
 
 def check_update():
     try:
         import urllib.request
-        url = f"{GITHUB_RAW}/VERSION"
-        with urllib.request.urlopen(url, timeout=5) as r:
+        with urllib.request.urlopen(f"{GITHUB_RAW}/VERSION", timeout=5) as r:
             latest = r.read().decode().strip()
-        return {"current": VERSION, "latest": latest, "update": latest != VERSION}
+        current = get_version()
+        return {"current": current, "latest": latest, "update": latest != current}
     except:
-        return {"current": VERSION, "latest": None, "update": False}
-
+        return {"current": get_version(), "latest": None, "update": False}
 
 def download_update():
-    """
-    Baixa bot.py e dashboard.html atualizados do GitHub.
-    Para todos os bots, atualiza os arquivos e avisa para reiniciar.
-    """
     import urllib.request, shutil
-
-    files_to_update = ["bot.py", "dashboard.html", "launcher.html"]
-    updated = []
-    errors = []
-
-    # Para todos os bots rodando
     for name, p in list(running_bots.items()):
         if p.poll() is None:
             p.terminate()
             try: p.wait(timeout=5)
             except: p.kill()
-
-    for fname in files_to_update:
-        url = f"{GITHUB_RAW}/{fname}"
-        dest = BASE_DIR / fname
+    updated, errors = [], []
+    for fname in ["bot.py", "dashboard.html", "launcher.html"]:
         try:
-            # Backup do arquivo atual
-            if dest.exists():
-                shutil.copy(dest, str(dest) + ".bak")
-            with urllib.request.urlopen(url, timeout=15) as r:
-                content = r.read()
-            dest.write_bytes(content)
+            bak = BASE_DIR / (fname + ".bak")
+            src = BASE_DIR / fname
+            if src.exists():
+                shutil.copy(src, bak)
+            with urllib.request.urlopen(f"{GITHUB_RAW}/{fname}", timeout=15) as r:
+                (BASE_DIR / fname).write_bytes(r.read())
             updated.append(fname)
         except Exception as e:
             errors.append(f"{fname}: {e}")
-
-    # Atualiza VERSION local
     try:
-        info = check_update()
-        if info.get("latest"):
-            (BASE_DIR / "VERSION").write_text(info["latest"])
+        with urllib.request.urlopen(f"{GITHUB_RAW}/VERSION", timeout=5) as r:
+            (BASE_DIR / "VERSION").write_bytes(r.read())
     except:
         pass
-
-    return {
-        "ok": len(errors) == 0,
-        "updated": updated,
-        "errors": errors,
-        "restart_required": True
-    }
+    return {"ok": len(errors) == 0, "updated": updated, "errors": errors}
 
 def capture_cookie_browser(server="int7"):
-    """
-    Abre o browser usando selenium, navega para o login do KnightFight,
-    aguarda o usuário logar e captura os cookies automaticamente.
-    Usa webdriver-manager para baixar o driver correto.
-    """
     try:
         from selenium import webdriver
         from selenium.webdriver.support.ui import WebDriverWait
     except ImportError:
-        return {"ok": False, "error": "selenium não instalado. Rode: pip install selenium webdriver-manager"}
+        return {"ok": False, "error": "selenium nao instalado. Rode: pip install selenium webdriver-manager"}
 
-    # Tenta Chrome → Edge → Firefox
     driver = None
-    browser_name = ""
     errors = []
 
-    # Chrome
-    try:
-        from selenium.webdriver.chrome.options import Options as COptions
-        from selenium.webdriver.chrome.service import Service as CService
-        from webdriver_manager.chrome import ChromeDriverManager
-        opts = COptions()
-        opts.add_argument("--start-maximized")
-        driver = webdriver.Chrome(service=CService(ChromeDriverManager().install()), options=opts)
-        browser_name = "Chrome"
-    except Exception as e:
-        errors.append(f"Chrome: {e}")
-
-    # Edge
-    if not driver:
+    for Browser, Manager, name in [
+        ("chrome", "ChromeDriverManager", "Chrome"),
+        ("edge",   "EdgeChromiumDriverManager", "Edge"),
+        ("firefox","GeckoDriverManager", "Firefox"),
+    ]:
+        if driver: break
         try:
-            from selenium.webdriver.edge.options import Options as EOptions
-            from selenium.webdriver.edge.service import Service as EService
-            from webdriver_manager.microsoft import EdgeChromiumDriverManager
-            opts = EOptions()
-            opts.add_argument("--start-maximized")
-            driver = webdriver.Edge(service=EService(EdgeChromiumDriverManager().install()), options=opts)
-            browser_name = "Edge"
+            if Browser == "chrome":
+                from selenium.webdriver.chrome.options import Options
+                from selenium.webdriver.chrome.service import Service
+                from webdriver_manager.chrome import ChromeDriverManager
+                opts = Options(); opts.add_argument("--start-maximized")
+                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+            elif Browser == "edge":
+                from selenium.webdriver.edge.options import Options
+                from selenium.webdriver.edge.service import Service
+                from webdriver_manager.microsoft import EdgeChromiumDriverManager
+                opts = Options(); opts.add_argument("--start-maximized")
+                driver = webdriver.Edge(service=Service(EdgeChromiumDriverManager().install()), options=opts)
+            else:
+                from selenium.webdriver.firefox.options import Options
+                from selenium.webdriver.firefox.service import Service
+                from webdriver_manager.firefox import GeckoDriverManager
+                driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()))
+            browser_name = name
         except Exception as e:
-            errors.append(f"Edge: {e}")
-
-    # Firefox
-    if not driver:
-        try:
-            from selenium.webdriver.firefox.options import Options as FOptions
-            from selenium.webdriver.firefox.service import Service as FService
-            from webdriver_manager.firefox import GeckoDriverManager
-            opts = FOptions()
-            driver = webdriver.Firefox(service=FService(GeckoDriverManager().install()), options=opts)
-            browser_name = "Firefox"
-        except Exception as e:
-            errors.append(f"Firefox: {e}")
+            errors.append(f"{name}: {e}")
 
     if not driver:
         return {"ok": False, "error": "Nenhum browser encontrado. " + " | ".join(errors)}
 
     try:
-        url = f"https://{server}.knightfight.moonid.net/status/"
-        driver.get(url)
-
-        # Aguarda até a página de status carregar (usuário faz login)
-        wait = WebDriverWait(driver, 300)  # até 5 minutos para logar
-        wait.until(lambda d: "status" in d.current_url and "login" not in d.current_url.lower()
-                   and d.find_elements("id", "character-main"))
-
-        # Extrai cookies
-        cookies = driver.get_cookies()
-        cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
-
-        # Extrai UserID da página
+        driver.get(f"https://{server}.knightfight.moonid.net/status/")
+        WebDriverWait(driver, 300).until(
+            lambda d: "status" in d.current_url and d.find_elements("id", "character-main")
+        )
+        cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in driver.get_cookies())
         userid = ""
         try:
             el = driver.find_element("css selector", ".your_id")
-            m = re.search(r'UserID:\s*(\d+)', el.text)
+            m  = re.search(r'(\d{6,})', el.text)
             if m: userid = m.group(1)
-        except:
-            pass
-
+        except: pass
         driver.quit()
         return {"ok": True, "cookies": cookie_str, "userid": userid, "browser": browser_name}
     except Exception as e:
@@ -277,100 +218,87 @@ def capture_cookie_browser(server="int7"):
         return {"ok": False, "error": str(e)}
 
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
-
-class LauncherHandler(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self._cors()
-        self.end_headers()
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
-    def _json(self, data, code=200):
+    def do_OPTIONS(self):
+        self.send_response(200); self._cors(); self.end_headers()
+
+    def _json(self, data):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
+        self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self._cors()
-        self.end_headers()
+        self._cors(); self.end_headers()
         self.wfile.write(body)
 
-    def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(length)) if length else {}
+    def _body(self):
+        n = int(self.headers.get("Content-Length", 0))
+        return json.loads(self.rfile.read(n)) if n else {}
 
     def do_GET(self):
-        path = self.path.split("?")[0]
-        if path in ("/", "/launcher"):
-            self._serve_html()
-        elif path == "/api/profiles":
+        p = self.path.split("?")[0]
+        if p in ("/", "/launcher"):
+            self._file("launcher.html", "text/html")
+        elif p == "/api/profiles":
             self._json(get_profiles())
-        elif path.startswith("/api/log/"):
-            name = path.split("/")[-1]
-            self._json({"lines": get_log_tail(name, 30)})
-        elif path == "/api/version":
+        elif p == "/api/version":
             self._json(check_update())
+        elif p.startswith("/api/log/"):
+            self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
         else:
             self.send_response(404); self.end_headers()
 
     def do_POST(self):
-        path = self.path
-        data = self._read_body()
-
-        if path == "/api/start":
-            self._json(start_bot(data["name"]))
-        elif path == "/api/stop":
-            self._json(stop_bot(data["name"]))
-        elif path == "/api/save":
-            self._json(save_profile(data))
-        elif path == "/api/delete":
-            self._json(delete_profile(data["name"]))
-        elif path == "/api/update":
-            self._json(download_update())
-        elif path == "/api/capture-cookie":
-            # Roda em thread para não bloquear o servidor
-            result_holder = {}
-            def run():
-                result_holder["r"] = capture_cookie_browser(data.get("server","int7"))
+        d = self._body()
+        p = self.path
+        if   p == "/api/start":          self._json(start_bot(d["name"]))
+        elif p == "/api/stop":           self._json(stop_bot(d["name"]))
+        elif p == "/api/save":           self._json(save_profile(d))
+        elif p == "/api/delete":         self._json(delete_profile(d["name"]))
+        elif p == "/api/update":         self._json(download_update())
+        elif p == "/api/capture-cookie":
+            result = {}
+            def run(): result["r"] = capture_cookie_browser(d.get("server", "int7"))
             t = threading.Thread(target=run, daemon=True)
-            t.start()
-            t.join(timeout=320)
-            self._json(result_holder.get("r", {"ok": False, "error": "Timeout"}))
+            t.start(); t.join(timeout=320)
+            self._json(result.get("r", {"ok": False, "error": "Timeout"}))
         else:
             self.send_response(404); self.end_headers()
 
-    def _serve_html(self):
-        html_path = BASE_DIR / "launcher.html"
-        if html_path.exists():
-            body = html_path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404); self.end_headers()
+    def _file(self, fname, ctype):
+        # Procura na pasta atual e depois na BASE_DIR
+        for path in [BASE_DIR / fname, Path(fname)]:
+            if path.exists():
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self._cors(); self.end_headers()
+                self.wfile.write(path.read_bytes())
+                return
+        self.send_response(404); self.end_headers()
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-
 def run():
-    server = HTTPServer(("localhost", LAUNCHER_PORT), LauncherHandler)
-    url = f"http://localhost:{LAUNCHER_PORT}/launcher"
-    print("KnightFight Bot Launcher")
-    print(f"   Abrindo {url}")
+    import sys, io
+    if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding.lower().replace('-','') != 'utf8':
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer') and sys.stderr.encoding.lower().replace('-','') != 'utf8':
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-    # Abre browser após 1s (dá tempo do servidor subir)
+    server = HTTPServer(("localhost", LAUNCHER_PORT), Handler)
+    url    = f"http://localhost:{LAUNCHER_PORT}/launcher"
+    print(f"KnightFight Bot Launcher {get_version()}")
+    print(f"Abrindo {url}")
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nLauncher encerrado.")
-        # Para todos os bots ao fechar
-        for name, p in running_bots.items():
+        print("Launcher encerrado.")
+        for p in running_bots.values():
             if p.poll() is None:
                 p.terminate()
 
