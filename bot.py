@@ -1425,25 +1425,52 @@ if __name__ == "__main__":
         log.info(f"KnightFight Bot v5 — {servidor_nome} | Dashboard: http://localhost:{DASHBOARD_PORT}/dashboard")
         log.info("="*50)
 
-        # Coleta ranking inicial
-        log.info("Coletando ranking inicial...")
-        try:
-            j = scrape_ranking(client)
-            salvar_snapshot(j)
-        except Exception as e:
-            log.error(f"Erro ranking inicial: {e}")
-
-        # Coleta cache de perfis ao iniciar (sempre)
-        log.info("Coletando cache de perfis (primeira vez ou expirado)...")
-        try:
-            coletar_perfis_cache(client)
-        except Exception as e:
-            log.error(f"Erro cache inicial: {e}")
-
-        # Inicia threads
+        # ── Inicia servidor do dashboard imediatamente ──
         threading.Thread(target=iniciar_servidor, args=(DASHBOARD_PORT,), daemon=True).start()
-        threading.Thread(target=loop_lento, args=(client,), daemon=True).start()
+
+        # ── Coleta status do personagem PRIMEIRO (rápido, 2s) ──
+        log.info("Coletando status do personagem...")
+        try:
+            status = parsear_status(client.get("/status/"))
+            atualizar_ciclo_file("status", status)
+            gold_conta, gems = parsear_gold_gems(client)
+            status["gold_conta"] = gold_conta
+            status["gems"] = gems
+            atualizar_ciclo_file("status", status)
+            estado_atual = carregar_estado()
+            estado_atual["gold_atual"] = gold_conta
+            estado_atual["gems"] = gems
+            salvar_estado(estado_atual)
+            log.info(f"Status: Lv{status['level']} | {status['vitorias']}V/{status['derrotas']}D | {gold_conta}g | {gems} pedras")
+        except Exception as e:
+            log.error(f"Erro status inicial: {e}")
+
+        # ── Loop rápido começa AGORA — não espera ranking ──
         threading.Thread(target=loop_rapido, args=(client,), daemon=True).start()
+        log.info("Loop rápido iniciado — bot já está agindo!")
+
+        # ── Ranking e cache rodam em background sem bloquear ──
+        def inicializar_background():
+            log.info("Background: coletando ranking inicial...")
+            try:
+                j = scrape_ranking(client)
+                salvar_snapshot(j)
+                log.info("Background: ranking coletado!")
+            except Exception as e:
+                log.error(f"Erro ranking inicial: {e}")
+
+            if cache_precisa_atualizar():
+                log.info("Background: coletando cache de perfis (~15min)...")
+                try:
+                    coletar_perfis_cache(client)
+                    log.info("Background: cache de perfis concluído!")
+                except Exception as e:
+                    log.error(f"Erro cache inicial: {e}")
+
+        threading.Thread(target=inicializar_background, daemon=True).start()
+
+        # ── Loop lento continua rodando a cada 1h ──
+        threading.Thread(target=loop_lento, args=(client,), daemon=True).start()
 
         log.info("Bot rodando. Ctrl+C para parar.")
         try:
