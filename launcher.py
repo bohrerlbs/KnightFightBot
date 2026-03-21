@@ -57,8 +57,12 @@ def start_bot(profile_name):
         return {"ok": False, "error": "bot.py não encontrado"}
     cmd = [sys.executable, str(bot_py), "--profile", profile_name]
     try:
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         p = subprocess.Popen(cmd, cwd=str(BASE_DIR),
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             env=env)
         running_bots[profile_name] = p
         return {"ok": True}
     except Exception as e:
@@ -329,7 +333,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
 def run():
     server = HTTPServer(("localhost", LAUNCHER_PORT), LauncherHandler)
     url = f"http://localhost:{LAUNCHER_PORT}/launcher"
-    print(f"⚔  KnightFight Bot Launcher")
+    print("KnightFight Bot Launcher")
     print(f"   Abrindo {url}")
 
     # Abre browser após 1s (dá tempo do servidor subir)
