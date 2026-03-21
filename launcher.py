@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+import os as _os
+_os.environ.setdefault("PYTHONUTF8", "1")
+_os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
 """
 KnightFight Bot — Launcher
 Servidor HTTP local que serve a interface de gerenciamento de perfis.
@@ -8,7 +13,7 @@ import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.0.2"
 LAUNCHER_PORT = 8764
 GITHUB_RAW = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
 
