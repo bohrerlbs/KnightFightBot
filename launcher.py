@@ -24,6 +24,8 @@ GITHUB_RAW = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
 BASE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 # Garante que o diretório de trabalho seja o BASE_DIR
 os.chdir(BASE_DIR)
+# Lê versão do arquivo externo (atualizado pelo auto-update)
+VERSION = get_version()
 PROFILES_DIR = BASE_DIR / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
 
