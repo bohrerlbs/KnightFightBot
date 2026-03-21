@@ -515,8 +515,30 @@ function startBot(name){
   fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
     .then(r=>r.json())
     .then(d=>{
-      if(d.ok){ toast(`▶ ${name} iniciado!`); setTimeout(loadProfiles,1000); }
-      else toast(`Erro: ${d.error}`,'err');
+      if(d.ok){
+        toast(`▶ ${name} iniciando...`);
+        // Aguarda servidor HTTP do bot subir (até 30s)
+        var port = d.port || 8765;
+        var attempts = 0;
+        var check = setInterval(()=>{
+          attempts++;
+          fetch(`http://localhost:${port}/dados`)
+            .then(()=>{
+              clearInterval(check);
+              toast(`▶ ${name} online!`);
+              loadProfiles();
+            })
+            .catch(()=>{
+              if(attempts >= 30){
+                clearInterval(check);
+                toast(`${name} demorou para iniciar — verifique o log`,'err');
+                loadProfiles();
+              }
+            });
+        }, 1000);
+      } else {
+        toast(`Erro: ${d.error}`,'err');
+      }
     });
 }
 
@@ -530,7 +552,12 @@ function stopBot(name){
 }
 
 function openDash(port){
-  window.open(`http://localhost:${port}/dashboard`,'_blank');
+  // Testa se o servidor do bot já está respondendo
+  fetch(`http://localhost:${port}/dados`)
+    .then(()=>{ window.open(`http://localhost:${port}/dashboard`,'_blank'); })
+    .catch(()=>{
+      toast('Bot ainda iniciando — aguarde alguns segundos e tente novamente','err');
+    });
 }
 
 function showLog(name){

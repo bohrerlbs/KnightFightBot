@@ -65,16 +65,30 @@ def start_bot(profile_name):
     bot_py = BASE_DIR / "bot.py"
     if not bot_py.exists():
         return {"ok": False, "error": "bot.py não encontrado"}
+    profile_dir = PROFILES_DIR / profile_name
+    # Log visível para debug — salvo na pasta do perfil
+    log_path = profile_dir / "bot.log"
     cmd = [sys.executable, str(bot_py), "--profile", profile_name]
     try:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+        # Roda da pasta BASE_DIR mas com --profile que muda o workdir internamente
         p = subprocess.Popen(cmd, cwd=str(BASE_DIR),
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdout=open(log_path, "a", encoding="utf-8"),
+                             stderr=subprocess.STDOUT,
                              env=env)
         running_bots[profile_name] = p
-        return {"ok": True}
+        # Aguarda até 15s para o servidor HTTP do bot subir
+        import urllib.request
+        cfg_path = PROFILES_DIR / profile_name / "config.json"
+        port = 8765
+        if cfg_path.exists():
+            try:
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                port = int(cfg.get("port", 8765))
+            except: pass
+        return {"ok": True, "port": port}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
