@@ -1426,7 +1426,15 @@ if __name__ == "__main__":
         log.info("="*50)
 
         # ── Inicia servidor do dashboard imediatamente ──
-        threading.Thread(target=iniciar_servidor, args=(DASHBOARD_PORT,), daemon=True).start()
+        # Lê porta do config.json diretamente para garantir valor correto
+        _port = DASHBOARD_PORT
+        if os.path.exists("config.json"):
+            try:
+                import json as _j
+                _port = int(_j.load(open("config.json", encoding="utf-8")).get("port", DASHBOARD_PORT))
+            except: pass
+        threading.Thread(target=iniciar_servidor, args=(_port,), daemon=True).start()
+        DASHBOARD_PORT = _port
 
         # ── Coleta status do personagem PRIMEIRO (rápido, 2s) ──
         log.info("Coletando status do personagem...")
