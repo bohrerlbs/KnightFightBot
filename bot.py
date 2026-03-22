@@ -548,6 +548,9 @@ def parsear_perfil(soup, user_id):
         "agilidade":    extrair(["agilidade", "dexterity"]),
         "arte_combate": extrair(["arte de combate", "fighting ability"]),
         "bloqueio":     extrair(["bloqueio", "parry"]),
+        "sk_armadura":  extrair(["armour skill:", "skill de armadura:"]),
+        "sk_1mao":      extrair(["one-handed attack:", "skill uma mão:"]),
+        "sk_2maos":     extrair(["two-handed attack:", "skill duas mãos:"]),
         "hp": hp, "disponivel": disponivel,
     }
 
