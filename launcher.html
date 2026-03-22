@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -475,15 +475,7 @@ function renderProfiles(profiles){
       return '<span class="'+cls+'">'+msg+'</span>';
     }).join('\n');
 
-    var startStopBtn = running
-      ? '<button class="btn btn-stop" onclick="stopBot(\''+name+'\')">[ Parar</button>'
-      : '<button class="btn btn-start" onclick="startBot(\''+name+'\')">> Iniciar</button>';
-
-    var bgBtn = bgRunning
-      ? '<button class="btn btn-stop" onclick="stopBG(\''+name+'\')">[ Parar BG</button>'
-      : '<button class="btn btn-bg" onclick="startBG(\''+name+'\')">> Iniciar BG</button>';
-
-    html += '<div class="profile-card '+(running?'running':'')+'">';
+    html += '<div class="profile-card '+(running?'running':'')+'" data-name="'+name+'">';
     html += '<div class="card-header">';
     html += '<span class="server-badge">'+(p.server||'int7')+'</span>';
     html += '<span class="profile-name">'+name+'</span>';
@@ -496,34 +488,62 @@ function renderProfiles(profiles){
     html += '</div>';
     html += '<div class="log-preview">'+(logs||'<span>Nenhum log ainda...</span>')+'</div>';
     html += '<div class="card-actions">';
-    html += startStopBtn;
-    html += '<button class="btn btn-dash" onclick="openDash('+(p.port||8765)+')">Dashboard</button>';
-    html += '<button class="btn btn-del" onclick="showLog(''+name+'')" title="Ver log">=</button>';
-    html += '<button class="btn btn-del" onclick="deleteProfile(''+name+'')" title="Excluir">x</button>';
+    if(running){
+      html += '<button class="btn btn-stop" data-action="stop" data-name="'+name+'">[ Parar</button>';
+    } else {
+      html += '<button class="btn btn-start" data-action="start" data-name="'+name+'"> > Iniciar</button>';
+    }
+    html += '<button class="btn btn-dash" data-action="dash" data-port="'+(p.port||8765)+'">Dashboard</button>';
+    html += '<button class="btn btn-del" data-action="log" data-name="'+name+'" title="Ver log">=</button>';
+    html += '<button class="btn btn-del" data-action="del" data-name="'+name+'" title="Excluir">x</button>';
     html += '</div>';
     html += '<div class="bg-section">';
     html += '<div class="bg-label">* BattleGround</div>';
     html += '<div class="bg-btns">';
-    html += '<select class="bg-modo-sel" id="bg-modo-'+name+'">';
+    html += '<select class="bg-modo-sel" data-name="'+name+'">';
     html += '<option value="free">Free (100 bat.)</option>';
     html += '<option value="medio">150 pedras (200 bat.)</option>';
     html += '<option value="premium">250 pedras (400 bat.)</option>';
     html += '</select>';
-    html += bgBtn;
-    html += '<button class="btn btn-dash" onclick="openDashBG('+bgPort+')" style="padding:4px 8px">Dashboard BG</button>';
+    if(bgRunning){
+      html += '<button class="btn btn-stop" data-action="bgstop" data-name="'+name+'">[ Parar BG</button>';
+    } else {
+      html += '<button class="btn btn-bg" data-action="bgstart" data-name="'+name+'"> > Iniciar BG</button>';
+    }
+    html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'">Dashboard BG</button>';
     html += '</div>';
     html += '</div>';
     html += '</div>';
     html += '</div>';
   });
 
-  // Card de adicionar
-  html += '<div class="add-card" onclick="openModal('modal-new')">';
+  html += '<div class="add-card" data-action="new">';
   html += '<div class="add-icon">+</div>';
   html += '<div class="add-label">Novo Perfil</div>';
   html += '</div>';
 
   grid.innerHTML = html;
+
+  // Attach events via delegation (no inline onclick needed)
+  grid.onclick = function(e){
+    var btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    var action = btn.dataset.action;
+    var name   = btn.dataset.name || '';
+    var port   = btn.dataset.port || '';
+    if(action === 'start')   startBot(name);
+    if(action === 'stop')    stopBot(name);
+    if(action === 'dash')    openDash(parseInt(port));
+    if(action === 'log')     showLog(name);
+    if(action === 'del')     deleteProfile(name);
+    if(action === 'bgstart'){
+      var sel = grid.querySelector('.bg-modo-sel[data-name="'+name+'"]');
+      startBG(name, sel ? sel.value : 'free');
+    }
+    if(action === 'bgstop')  stopBG(name);
+    if(action === 'bgdash')  openDashBG(parseInt(port));
+    if(action === 'new')     openModal('modal-new');
+  };
 }
 
 function loadProfiles(){
@@ -573,9 +593,8 @@ function stopBot(name){
     });
 }
 
-function startBG(name){
-  var modoEl = document.getElementById('bg-modo-'+name);
-  var modo = modoEl ? modoEl.value : 'free';
+function startBG(name, modo){
+  modo = modo || 'free';
   fetch('/api/bg/start/'+name+'/', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
