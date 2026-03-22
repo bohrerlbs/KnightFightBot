@@ -950,8 +950,7 @@ def rezar_altar(client):
     Faz uma única requisição com o máximo disponível na página.
     """
     try:
-        r = client.get("/landsitz/altar/")
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = client.get("/landsitz/altar/", fragment=False)
 
         # Extrai o máximo de gold disponível no select
         select = soup.find("select", {"name": "goldspende"})
