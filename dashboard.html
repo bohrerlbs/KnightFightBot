@@ -109,7 +109,7 @@ svg.ring{width:13px;height:13px}
 </head>
 <body>
 <header>
-  <div class="logo">⚔ KnightFight Bot<small>Bohrer — Int7</small></div>
+  <div class="logo">⚔ KnightFight Bot<small id="perfil-sub">—</small></div>
   <div class="hr">
     <span id="nxt">—</span>s
     <svg class="ring" viewBox="0 0 13 13">
@@ -357,6 +357,13 @@ var MY_LV = 22; // Updated dynamically
 function render(d){
   var ciclo=d.ciclo||{};
   var s=ciclo.status||d.status||{};
+  // Atualiza título com perfil e servidor
+  var pf=ciclo.perfil||{};
+  if(pf.nome||pf.servidor){
+    var sub=(pf.nome||'').replace(/_/g,' ')+' — '+(pf.servidor||'');
+    document.getElementById('perfil-sub').textContent=sub;
+    document.title='KnightFight Bot — '+(pf.nome||pf.servidor||'');
+  }
   var estado=d.estado||ciclo.estado||{};
   if(s.level) MY_LV = s.level;
   var missao=ciclo.missao||d.missao||{};

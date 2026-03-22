@@ -1526,6 +1526,11 @@ if __name__ == "__main__":
         log.info(f"KnightFight Bot v5 — {servidor_nome} | Dashboard: http://localhost:{DASHBOARD_PORT}/dashboard")
         log.info("="*50)
 
+        # ── Salva info do perfil no ciclo_file para o dashboard ──
+        servidor_nome = BASE_URL.replace("https://","").split(".")[0].upper()
+        perfil_nome = args.profile or (Path(os.getcwd()).name if args.workdir else "bot")
+        atualizar_ciclo_file("perfil", {"nome": perfil_nome, "servidor": servidor_nome})
+
         # ── Inicia servidor do dashboard imediatamente ──
         # Lê porta do config.json diretamente para garantir valor correto
         _port = DASHBOARD_PORT
