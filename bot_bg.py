@@ -657,14 +657,14 @@ def escolher_melhor_alvo(adversarios, eu, combates=None):
 # ═══════════════════════════════════════════════════════════════
 # BUSCA E ATAQUE
 # ═══════════════════════════════════════════════════════════════
-def buscar_adversarios(client, eu, ef_range):
+def buscar_adversarios(client, eu, ef_range, ef_offset=0):
     """Busca adversários no BG com range de EF especificado."""
     ef_minha = eu.get("ef", 0)
     if not ef_minha:
         log.warning("  EF do personagem desconhecida — usando 2.0 como padrão")
         ef_minha = 2.0
-    ef_from  = ef_minha          # começa do próprio EF — não vale atacar EF menor
-    ef_to    = min(99.0, ef_minha + ef_range)
+    ef_from  = max(0.5, ef_minha + ef_offset)   # offset negativo = fallback EF menor
+    ef_to    = min(99.0, ef_minha + ef_range + ef_offset)
 
     # Arredonda para 0.5
     ef_from = round(ef_from * 2) / 2
@@ -784,9 +784,23 @@ def loop_bg(client, eu, modo):
         combates = carregar_combates()
         alvo_encontrado = False
 
-        for tentativa in range(MAX_REBUSCAS):
-            ef_range = EF_RANGE_ACIMA if tentativa == 0 else EF_RANGE_FALLBACK
-            adversarios = buscar_adversarios(client, eu, ef_range)
+        ef_minha    = eu.get("ef", 2.0)
+        ef_baixo    = 0  # quanto baixamos o EF mínimo para encontrar alguém
+        ef_baixo_max = int(ef_minha)  # no máximo baixa até EF 0
+
+        for tentativa in range(MAX_REBUSCAS + ef_baixo_max * 2):
+            if tentativa < MAX_REBUSCAS:
+                # Tentativas normais: busca do meu EF até +2
+                ef_range = EF_RANGE_ACIMA
+                ef_offset = 0
+            else:
+                # Fallback: baixa EF mínimo em 1 a cada 2 tentativas
+                ef_baixo = min((tentativa - MAX_REBUSCAS) // 2 + 1, ef_baixo_max)
+                ef_range  = EF_RANGE_ACIMA
+                ef_offset = -ef_baixo
+                log.info(f"  Fallback EF: buscando EF {ef_minha - ef_baixo:.1f} a {ef_minha + EF_RANGE_ACIMA - ef_baixo:.1f}")
+
+            adversarios = buscar_adversarios(client, eu, ef_range, ef_offset)
 
             if not adversarios:
                 log.warning(f"  Nenhum adversário encontrado (tentativa {tentativa+1})")
@@ -796,9 +810,13 @@ def loop_bg(client, eu, modo):
             melhor, todos = escolher_melhor_alvo(adversarios, eu, combates)
 
             if melhor:
-                log.info(f"  ✓ Melhor alvo: {melhor['nome']} Lv{melhor.get('level','?')} "
-                         f"EF{melhor.get('ef',0)} Score:{melhor['_score']} "
-                         f"Pontuação:{melhor['_pontuacao']:.2f}")
+                if ef_offset < 0:
+                    log.info(f"  [FALLBACK EF-{ef_baixo}] Melhor alvo: {melhor['nome']} Lv{melhor.get('level','?')} "
+                             f"EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+                else:
+                    log.info(f"  ✓ Melhor alvo: {melhor['nome']} Lv{melhor.get('level','?')} "
+                             f"EF{melhor.get('ef',0)} Score:{melhor['_score']} "
+                             f"Pontuação:{melhor['_pontuacao']:.2f}")
 
                 # Atualiza ciclo com alvo escolhido
                 atualizar_ciclo("alvo_atual", {
