@@ -466,67 +466,64 @@ function renderProfiles(profiles){
   var grid = document.getElementById('profiles-grid');
   var html = '';
 
-  profiles.forEach(p=>{
-    var running = p._running;
+  profiles.forEach(function(p){
+    var running   = p._running   || false;
     var bgRunning = p._bg_running || false;
-    var bgPort = (p.port||8765) + 5;
-    var logs = (p._log_tail||[]).slice(-3).map(l=>{
+    var bgPort    = (p.port || 8765) + 5;
+    var name      = p._name || '';
+    var logs = (p._log_tail || []).slice(-3).map(function(l){
       var cls = logClass(l);
       var msg = l.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[.*?\] /,'');
-      return `<span class="${cls}">${msg}</span>`;
+      return '<span class="'+cls+'">'+msg+'</span>';
     }).join('\n');
 
-    html += `<div class="profile-card ${running?'running':''}">
-      <div class="card-header">
-        <span class="server-badge">${p.server||'int7'}</span>
-        <span class="profile-name">${p._name}</span>
-        <div class="status-dot ${running?'on':'off'}"></div>
-      </div>
-      <div class="card-body">
-        <div class="card-info">
-          <div class="info-item">
-            <div class="info-label">UserID</div>
-            <div class="info-val">${p.userid||'—'}</div>
-          </div>
-          <div class="info-item">
-            <div class="info-label">Dashboard</div>
-            <div class="info-val" style="color:var(--gold)">:${p.port||8765}</div>
-          </div>
-        </div>
-        <div class="log-preview">${logs||'<span>Nenhum log ainda...</span>'}</div>
-        <div class="card-actions">
-          ${running
-            ? `<button class="btn btn-stop" onclick="stopBot('${p._name}')">■ Parar</button>`
-            : `<button class="btn btn-start" onclick="startBot('${p._name}')">▶ Iniciar</button>`
-          }
-          <button class="btn btn-dash" onclick="openDash(${p.port||8765})">Dashboard</button>
-          <button class="btn btn-del" onclick="showLog('${p._name}')" title="Ver log">≡</button>
-          <button class="btn btn-del" onclick="deleteProfile('${p._name}')" title="Excluir">✕</button>
-        </div>
-        <div class="bg-section">
-          <div class="bg-label">⚔ BattleGround</div>
-          <div class="bg-btns">
-            <select class="bg-modo-sel" id="bg-modo-${p._name}">
-              <option value="free">Free (100 bat.)</option>
-              <option value="medio">150 pedras (200 bat.)</option>
-              <option value="premium">250 pedras (400 bat.)</option>
-            </select>
-            ${bgRunning
-              ? '<button class="btn btn-stop" onclick="stopBG(\''+p._name+'\')">■ Parar BG</button>'
-              : '<button class="btn btn-bg" onclick="startBG(\''+p._name+'\')">▶ Iniciar BG</button>'
-            }
-            <button class="btn btn-dash" onclick="openDashBG(${bgPort})" style="padding:4px 8px">Dashboard BG</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
+    var startStopBtn = running
+      ? '<button class="btn btn-stop" onclick="stopBot(''+name+'')">■ Parar</button>'
+      : '<button class="btn btn-start" onclick="startBot(''+name+'')">▶ Iniciar</button>';
+
+    var bgBtn = bgRunning
+      ? '<button class="btn btn-stop" onclick="stopBG(''+name+'')">■ Parar BG</button>'
+      : '<button class="btn btn-bg" onclick="startBG(''+name+'')">▶ Iniciar BG</button>';
+
+    html += '<div class="profile-card '+(running?'running':'')+'">';
+    html += '<div class="card-header">';
+    html += '<span class="server-badge">'+(p.server||'int7')+'</span>';
+    html += '<span class="profile-name">'+name+'</span>';
+    html += '<div class="status-dot '+(running?'on':'off')+'"></div>';
+    html += '</div>';
+    html += '<div class="card-body">';
+    html += '<div class="card-info">';
+    html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||'—')+'</div></div>';
+    html += '<div class="info-item"><div class="info-label">Dashboard</div><div class="info-val" style="color:var(--gold)">:'+(p.port||8765)+'</div></div>';
+    html += '</div>';
+    html += '<div class="log-preview">'+(logs||'<span>Nenhum log ainda...</span>')+'</div>';
+    html += '<div class="card-actions">';
+    html += startStopBtn;
+    html += '<button class="btn btn-dash" onclick="openDash('+(p.port||8765)+')">Dashboard</button>';
+    html += '<button class="btn btn-del" onclick="showLog(''+name+'')" title="Ver log">≡</button>';
+    html += '<button class="btn btn-del" onclick="deleteProfile(''+name+'')" title="Excluir">✕</button>';
+    html += '</div>';
+    html += '<div class="bg-section">';
+    html += '<div class="bg-label">⚔ BattleGround</div>';
+    html += '<div class="bg-btns">';
+    html += '<select class="bg-modo-sel" id="bg-modo-'+name+'">';
+    html += '<option value="free">Free (100 bat.)</option>';
+    html += '<option value="medio">150 pedras (200 bat.)</option>';
+    html += '<option value="premium">250 pedras (400 bat.)</option>';
+    html += '</select>';
+    html += bgBtn;
+    html += '<button class="btn btn-dash" onclick="openDashBG('+bgPort+')" style="padding:4px 8px">Dashboard BG</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
   });
 
   // Card de adicionar
-  html += `<div class="add-card" onclick="openModal('modal-new')">
-    <div class="add-icon">+</div>
-    <div class="add-label">Novo Perfil</div>
-  </div>`;
+  html += '<div class="add-card" onclick="openModal('modal-new')">';
+  html += '<div class="add-icon">+</div>';
+  html += '<div class="add-label">Novo Perfil</div>';
+  html += '</div>';
 
   grid.innerHTML = html;
 }
