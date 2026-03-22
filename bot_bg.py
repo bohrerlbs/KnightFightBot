@@ -133,18 +133,16 @@ class ClienteBG:
     def get_full(self, path):
         return self.get(path, fragment=False)
 
-    def post(self, data):
-        # BG usa POST para battleserver/?fragment=1
+    def post(self, data, fragment=True):
+        # BG usa POST para battleserver/ (com ou sem ?fragment=1)
+        url = self.bs_url + "/?fragment=1" if fragment else self.bs_url + "/"
         headers = {
-            "Referer": self.bs_url + "/",
-            "Origin":  self.base_url,
+            "Referer":          self.bs_url + "/",
+            "Origin":           self.base_url,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept":           "text/html, */*; q=0.01",
         }
-        r = self.session.post(
-            self.bs_url + "/?fragment=1",
-            data=data,
-            headers=headers,
-            timeout=15
-        )
+        r = self.session.post(url, data=data, headers=headers, timeout=15)
         r.raise_for_status()
         return BeautifulSoup(r.text, "html.parser")
 
@@ -635,11 +633,15 @@ def buscar_adversarios(client, eu, ef_range):
 
     # BG usa POST para battleserver/?fragment=1
     # Precisa do csrftoken da página atual
-    soup_form = client.get("/raubzug/")
-    csrf = ""
-    csrf_input = soup_form.find("input", {"name": "csrftoken"})
-    if csrf_input:
-        csrf = csrf_input.get("value", "")
+    # csrftoken vem do cookie (confirmado pelo Network tab)
+    csrf = client.session.cookies.get("csrf", "")
+    if not csrf:
+        # Fallback: tenta pegar do HTML
+        soup_form = client.get("/raubzug/")
+        csrf_input = soup_form.find("input", {"name": "csrftoken"})
+        if csrf_input:
+            csrf = csrf_input.get("value", "")
+    log.debug(f"  csrf: {'OK len='+str(len(csrf)) if csrf else 'VAZIO'}")
 
     soup = client.post({
         "csrftoken": csrf,
@@ -658,18 +660,18 @@ def buscar_adversarios(client, eu, ef_range):
 
 def atacar(client, adversario):
     """Executa ataque no BG."""
-    log.info(f"  ⚔ Atacando {adversario['nome']} (EF {adversario.get('ef',0)})...")
+    log.info(f"  Atacando {adversario['nome']} (EF {adversario.get('ef',0)})...")
+    # csrf vem do cookie
+    csrf = client.session.cookies.get("csrf", adversario.get("csrf", ""))
     soup = client.post({
+        "csrftoken": csrf,
         "ac": "raubzug",
         "sac": "attack",
         "gegnerid": adversario["id"],
-        "csrftoken": adversario.get("csrf", ""),
     })
     return soup
 
-# ═══════════════════════════════════════════════════════════════
-# LOOP PRINCIPAL
-# ═══════════════════════════════════════════════════════════════
+
 def loop_bg(client, eu, modo):
     """Loop principal do bot BG."""
     config_modo = MODOS_BG[modo]
