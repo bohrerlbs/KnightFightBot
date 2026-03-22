@@ -848,7 +848,20 @@ if __name__ == "__main__":
         print(f"  Cookies: {'OK' if COOKIES_RAW and COOKIES_RAW != 'COLE_SEUS_COOKIES_AQUI' else 'FALTANDO!'}")
     else:
         MODO_BG = args.modo
-        print(f"⚠ config_bg.json não encontrado — usando padrão")
+        # Tenta usar config.json normal como fallback
+        cfg_normal = WORKDIR / "config.json"
+        if cfg_normal.exists():
+            cfg = json.loads(cfg_normal.read_text(encoding="utf-8"))
+            servidor   = cfg.get("servidor", cfg.get("server", "int7"))
+            BASE_URL   = f"https://{servidor}.knightfight.moonid.net"
+            COOKIES_RAW  = cfg.get("cookies", COOKIES_RAW)
+            MY_USER_ID   = cfg.get("userid", MY_USER_ID)
+            DASHBOARD_PORT = cfg.get("port", DASHBOARD_PORT) + 5
+            print(f"⚠ config_bg.json não encontrado — usando config.json normal")
+            print(f"  Servidor: {servidor} | Porta BG: {DASHBOARD_PORT}")
+            print(f"  Cookies: {'OK' if COOKIES_RAW and COOKIES_RAW != 'COLE_SEUS_COOKIES_AQUI' else 'FALTANDO!'}")
+        else:
+            print(f"⚠ Nenhuma config encontrada — usando padrão (vai falhar!)")
 
     # Inicia servidor dashboard
     t = threading.Thread(target=iniciar_servidor_bg, args=(DASHBOARD_PORT,), daemon=True)
