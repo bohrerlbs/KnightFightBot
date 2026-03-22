@@ -1528,7 +1528,7 @@ if __name__ == "__main__":
 
         # ── Salva info do perfil no ciclo_file para o dashboard ──
         servidor_nome = BASE_URL.replace("https://","").split(".")[0].upper()
-        perfil_nome = args.profile or (Path(os.getcwd()).name if args.workdir else "bot")
+        perfil_nome = args.profile or (os.path.basename(os.getcwd()) if args.workdir else "bot")
         atualizar_ciclo_file("perfil", {"nome": perfil_nome, "servidor": servidor_nome})
 
         # ── Inicia servidor do dashboard imediatamente ──
