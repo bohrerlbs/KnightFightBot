@@ -404,11 +404,12 @@ def avaliar_alvo(perfil, eu=None):
     """
     Score 0-100 para chance de vitória.
 
-    Fórmula central:
-      taxa_meu_ataque  = minha_AC / (minha_AC + bloqueio_dele)
-      taxa_ataque_dele = AC_dele  / (AC_dele  + meu_bloqueio)
-
-    Resistência alta = mais rounds = risco de virada mesmo sendo mais fraco.
+    Fórmula melhorada com base em análise de combates reais:
+    - AC e bloqueio (hit rate)
+    - Level delta (equipamento implícito)
+    - Força do alvo (dano bruto)
+    - Resistência (rounds de combate)
+    - Atributos de equipamento do alvo (sk_armadura como proxy de defesa)
     """
     if eu is None:
         eu = MY_STATS
@@ -423,62 +424,83 @@ def avaliar_alvo(perfil, eu=None):
     vantagens = []
     score = 50
 
-    blq = perfil.get("bloqueio", 0)
-    ac_d = perfil.get("arte_combate", 0)
+    blq   = perfil.get("bloqueio", 0)
+    ac_d  = perfil.get("arte_combate", 0)
     res_d = perfil.get("resistencia", 0)
     frc_d = perfil.get("forca", 0)
-    lv_d = perfil.get("level", 0)
+    lv_d  = perfil.get("level", 0)
+    arm_d = perfil.get("sk_armadura", 0)  # armadura do alvo como proxy de defesa
 
-    # 1. Minha taxa de acerto
+    # ── 1. Level delta — mais importante que tudo ─────────────────────────────
+    delta_lv = lv_d - meu_lv
+    if delta_lv >= 10:
+        problemas.append(f"Level {lv_d} vs {meu_lv} (+{delta_lv}) — equipamento muito superior")
+        score -= 35   # quase sempre perde
+    elif delta_lv >= 7:
+        problemas.append(f"Level {lv_d} vs {meu_lv} (+{delta_lv}) — equipamento superior")
+        score -= 20
+    elif delta_lv >= 4:
+        problemas.append(f"Level {lv_d} vs {meu_lv} (+{delta_lv}) — pequena desvantagem")
+        score -= 10
+    elif delta_lv <= -4:
+        vantagens.append(f"Level {lv_d} vs {meu_lv} ({delta_lv}) — equipamento inferior ✓")
+        score += 8
+
+    # ── 2. Minha taxa de acerto (AC vs bloqueio do alvo) ──────────────────────
     if blq > 0:
         taxa = minha_ac / (minha_ac + blq)
         if taxa < 0.35:
-            problemas.append(f"AC {minha_ac} vs bloqueio {blq} → {taxa*100:.0f}% — ruim")
-            score -= 40
-        elif taxa < 0.50:
-            problemas.append(f"AC {minha_ac} vs bloqueio {blq} → {taxa*100:.0f}% — baixo")
+            problemas.append(f"Hit rate {taxa*100:.0f}% — bloqueio {blq} muito alto")
+            score -= 35
+        elif taxa < 0.45:
+            problemas.append(f"Hit rate {taxa*100:.0f}% — difícil acertar")
             score -= 20
+        elif taxa < 0.52:
+            problemas.append(f"Hit rate {taxa*100:.0f}% — abaixo do ideal")
+            score -= 8
         else:
-            vantagens.append(f"AC {minha_ac} vs bloqueio {blq} → {taxa*100:.0f}% ✓")
-            score += 20
-
-    # 2. Taxa de acerto dele
-    if ac_d > 0:
-        taxa_d = ac_d / (ac_d + meu_blq)
-        if taxa_d > 0.65:
-            problemas.append(f"AC dele {ac_d} vs meu bloqueio {meu_blq} → {taxa_d*100:.0f}%")
-            score -= 20
-        elif taxa_d < 0.45:
-            vantagens.append(f"Meu bloqueio segura {(1-taxa_d)*100:.0f}% dos hits ✓")
+            vantagens.append(f"Hit rate {taxa*100:.0f}% ✓")
             score += 15
 
-    # 3. Resistência (rounds)
-    if res_d > 200:
-        problemas.append(f"Resistência {res_d} — risco de virada por rounds")
-        score -= 15
-    elif res_d > 0 and res_d < minha_res * 0.7:
-        vantagens.append(f"Resistência baixa {res_d} ✓")
-        score += 10
+    # ── 3. Taxa de acerto dele (AC dele vs meu bloqueio) ─────────────────────
+    if ac_d > 0 and meu_blq > 0:
+        taxa_d = ac_d / (ac_d + meu_blq)
+        if taxa_d > 0.70:
+            problemas.append(f"AC dele {ac_d} vs meu bloqueio {meu_blq} → {taxa_d*100:.0f}% — ele acerta muito")
+            score -= 20
+        elif taxa_d > 0.58:
+            problemas.append(f"AC dele {ac_d} → {taxa_d*100:.0f}% de acerto")
+            score -= 8
+        elif taxa_d < 0.45:
+            vantagens.append(f"Meu bloqueio segura {(1-taxa_d)*100:.0f}% ✓")
+            score += 12
 
-    # 4. Força
-    if frc_d > minha_frc * 1.8:
-        problemas.append(f"Força {frc_d} >> minha {minha_frc}")
-        score -= 15
-    elif frc_d > 0 and frc_d < minha_frc * 0.6:
-        vantagens.append(f"Força {frc_d} << minha {minha_frc} ✓")
-        score += 10
-
-    # 5. Level
-    delta_lv = lv_d - meu_lv
-    if delta_lv > 10:
-        problemas.append(f"Level muito superior {lv_d} vs {meu_lv}")
+    # ── 4. Força do alvo (proxy de dano bruto) ────────────────────────────────
+    if frc_d > minha_frc * 2.0:
+        problemas.append(f"Força {frc_d} >> {minha_frc} — dano muito alto")
         score -= 20
-    elif delta_lv > 5:
-        problemas.append(f"Level superior {lv_d} vs {meu_lv}")
+    elif frc_d > minha_frc * 1.5:
+        problemas.append(f"Força {frc_d} > {minha_frc} — dano alto")
+        score -= 10
+    elif frc_d > 0 and frc_d < minha_frc * 0.7:
+        vantagens.append(f"Força {frc_d} << {minha_frc} ✓")
+        score += 8
+
+    # ── 5. Armadura do alvo (dificulta causar dano) ───────────────────────────
+    if arm_d > 50:
+        problemas.append(f"Armadura {arm_d} — dano será absorvido")
+        score -= 15
+    elif arm_d > 30:
+        problemas.append(f"Armadura {arm_d} — boa defesa")
         score -= 8
-    elif delta_lv < -5:
-        vantagens.append(f"Level inferior {lv_d} vs {meu_lv} ✓")
-        score += 5
+
+    # ── 6. Resistência (rounds extras = risco de virada) ─────────────────────
+    if res_d > minha_res * 1.8:
+        problemas.append(f"Resistência {res_d} >> minha {minha_res} — rounds favorecem ele")
+        score -= 10
+    elif res_d > 0 and res_d < minha_res * 0.6:
+        vantagens.append(f"Resistência {res_d} baixa ✓")
+        score += 8
 
     score = max(0, min(100, score))
     rec = "ATACAR" if score >= 60 else ("CUIDADO" if score >= 40 else "EVITAR")
@@ -904,6 +926,59 @@ def atualizar_pig_list(pig_list, jogadores_ant, jogadores_atu, estado):
 # ═══════════════════════════════════════════
 # RAUBZUG — estado de CD
 # ═══════════════════════════════════════════
+def rezar_altar(client):
+    """
+    Reza no altar para recuperar HP.
+    O jogo mostra o máximo de gold que pode ser doado (recupera HP ao máximo).
+    Faz uma única requisição com o máximo disponível na página.
+    """
+    try:
+        r = client.get("/landsitz/altar/")
+        soup = BeautifulSoup(r.text, "lxml")
+
+        # Extrai o máximo de gold disponível no select
+        select = soup.find("select", {"name": "goldspende"})
+        if not select:
+            log.warning("Altar: select não encontrado")
+            return False
+
+        opcoes = [int(o["value"]) for o in select.find_all("option") if o.get("value","").isdigit()]
+        if not opcoes:
+            log.warning("Altar: nenhuma opção encontrada")
+            return False
+
+        max_gold = max(opcoes)
+
+        # Extrai csrftoken
+        csrf = ""
+        token_input = soup.find("input", {"name": "csrftoken"})
+        if token_input:
+            csrf = token_input.get("value", "")
+
+        if not csrf:
+            log.warning("Altar: csrftoken não encontrado")
+            return False
+
+        # Reza com o máximo de gold
+        r2 = client.post("/", data={
+            "ac": "landsitz",
+            "sac": "altar",
+            "csrftoken": csrf,
+            "goldspende": str(max_gold),
+        })
+
+        if "altar" in r2.url or r2.status_code == 200:
+            log.info(f"Altar: rezou com {max_gold} gold — HP recuperado!")
+            return True
+        else:
+            log.warning(f"Altar: resposta inesperada {r2.status_code}")
+            return False
+
+    except Exception as e:
+        log.error(f"Altar: erro — {e}")
+        return False
+
+
 def verificar_raubzug(client):
     soup = client.get("/raubzug/")
     txt = soup.get_text()
@@ -1186,6 +1261,26 @@ def loop_rapido(client):
                 continue
 
             # LIVRE — decide ação
+
+            # ── Altar: reza se HP < 70% ──────────────────────────────────────
+            status_atual = carregar_estado()
+            hp_atual = status_atual.get("hp_atual", 0)
+            hp_total = status_atual.get("hp_total", 0)
+            if hp_total > 0 and hp_atual > 0:
+                pct_hp = hp_atual / hp_total
+                if pct_hp < 0.70:
+                    log.info(f"HP baixo ({hp_atual}/{hp_total} = {pct_hp*100:.0f}%) — rezando no altar...")
+                    rezar_altar(client)
+                    # Atualiza status após rezar
+                    try:
+                        novo_status = parsear_status(client.get("/status/"))
+                        atualizar_ciclo_file("status", novo_status)
+                        status_atual.update(novo_status)
+                        salvar_estado(status_atual)
+                        log.info(f"HP após altar: {novo_status.get('hp_atual',0)}/{novo_status.get('hp_total',0)}")
+                    except Exception as e:
+                        log.warning(f"Altar: erro ao atualizar status — {e}")
+
             pig_list = carregar_pig_list()
             gold_atual = estado.get("gold_atual", 0)
             score_min_imun = SCORE_MIN_GOLD_ALTO if gold_atual > GOLD_ALTO_THRESHOLD else SCORE_MIN_IMUNIZACAO
