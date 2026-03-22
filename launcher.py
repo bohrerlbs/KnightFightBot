@@ -40,7 +40,7 @@ def get_profiles():
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             cfg["_name"]     = d.name
             cfg["_running"]  = d.name in running_bots and running_bots[d.name].poll() is None
-            cfg["_bg_running"] = f"BG_{d.name}" in running_bots and running_bots[f"BG_{d.name}"].poll() is None
+            cfg["_bg_running"] = f"BG_{d.name.upper()}" in running_bots and running_bots[f"BG_{d.name.upper()}"].poll() is None
             cfg["_log_tail"] = get_log_tail(d.name, 5)
             profiles.append(cfg)
         except:
