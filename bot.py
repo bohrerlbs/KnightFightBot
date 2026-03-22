@@ -578,12 +578,18 @@ def avaliar_alvo(perfil, eu=None):
     vantagens = []
     score = 50
 
-    blq   = perfil.get("bloqueio", 0)
-    ac_d  = perfil.get("arte_combate", 0)
-    res_d = perfil.get("resistencia", 0)
-    frc_d = perfil.get("forca", 0)
-    lv_d  = perfil.get("level", 0)
-    arm_d = perfil.get("sk_armadura", 0)  # armadura do alvo como proxy de defesa
+    blq    = perfil.get("bloqueio", 0)
+    ac_d   = perfil.get("arte_combate", 0)
+    res_d  = perfil.get("resistencia", 0)
+    frc_d  = perfil.get("forca", 0)
+    lv_d   = perfil.get("level", 0)
+    arm_d  = perfil.get("sk_armadura", 0)
+    sk1_d  = perfil.get("sk_1mao", 0)
+    sk2_d  = perfil.get("sk_2maos", 0)
+    sk_d   = max(sk1_d, sk2_d)  # skill principal de ataque do alvo
+    meu_sk1 = eu.get("sk_1mao", 0)
+    meu_sk2 = eu.get("sk_2maos", 0)
+    meu_sk  = max(meu_sk1, meu_sk2)
 
     # ── 1. Level delta — mais importante que tudo ─────────────────────────────
     delta_lv = lv_d - meu_lv
@@ -658,6 +664,18 @@ def avaliar_alvo(perfil, eu=None):
     elif arm_d > 30:
         problemas.append(f"Armadura {arm_d} — boa defesa")
         score -= 8
+
+    # ── Skill de ataque do alvo (1h ou 2h) ───────────────────────────────────
+    if sk_d > 0 and meu_sk > 0:
+        diff_sk = sk_d - meu_sk
+        if diff_sk > 30:
+            problemas.append(f"Skill ataque {sk_d} vs minha {meu_sk}")
+            score -= 15
+        elif diff_sk > 15:
+            score -= 8
+        elif diff_sk < -20:
+            vantagens.append(f"Minha skill {meu_sk} supera {sk_d} ✓")
+            score += 10
 
     # ── 6. Resistência (rounds extras = risco de virada) ─────────────────────
     if res_d > minha_res * 1.8:
