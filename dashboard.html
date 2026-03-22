@@ -154,8 +154,6 @@ svg.ring{width:13px;height:13px}
       <div class="row"><span class="rl">Total</span><span class="rv" id="cb">—</span></div>
       <div class="row"><span class="rl">Vitórias</span><span class="rv gr" id="vt">—</span></div>
       <div class="row"><span class="rl">Derrotas</span><span class="rv r" id="dt">—</span></div>
-      <div class="row"><span class="rl">Win rate</span><span class="rv" id="wr">—</span></div>
-      <div class="bar"><div class="fill bwr" id="wr-b" style="width:0%"></div></div>
       <div class="row" style="margin-top:6px"><span class="rl">Gold ganho PvP</span><span class="rv g" id="gg">—</span></div>
       <div class="row"><span class="rl">Gold perdido PvP</span><span class="rv r" id="gp">—</span></div>
       <div class="row"><span class="rl">Preciosidades</span><span class="rv g" id="pr">—</span></div>
@@ -310,7 +308,7 @@ function startTimer(id,isoEnd,elId,colorFn){
 }
 
 function fetchDados(){
-  fetch('http://localhost:8765/dados')
+  fetch('http://'+location.hostname+':'+location.port+'/dados')
     .then(r=>{if(!r.ok) throw 0; return r.json();})
     .then(d=>{
       document.getElementById('sdot').className='dot on';
@@ -326,7 +324,7 @@ function fetchDados(){
 }
 
 function fetchCache(){
-  fetch('http://localhost:8765/cache')
+  fetch('http://'+location.hostname+':'+location.port+'/cache')
     .then(r=>{if(!r.ok) throw 0; return r.json();})
     .then(d=>{
       dadosGlobal.cacheData=d;
@@ -335,7 +333,7 @@ function fetchCache(){
 }
 
 function fetchLog(){
-  fetch('http://localhost:8765/log')
+  fetch('http://'+location.hostname+':'+location.port+'/log')
     .then(r=>r.text())
     .then(txt=>{
       var lines=txt.trim().split('\n').slice(-30);
@@ -386,6 +384,9 @@ function render(d){
   document.getElementById('sd-der').textContent=sd.derrotas||0;
   document.getElementById('sd-gg').textContent=fmt(sd.gold_ganho||0)+'g';
   document.getElementById('sd-gp').textContent=fmt(sd.gold_perdido||0)+'g';
+  // Colore vermelho se perdeu gold
+  var sdGpEl=document.getElementById('sd-gp');
+  sdGpEl.style.color=(sd.gold_perdido||0)>0?'var(--red)':'var(--mt)';
   var moral=s.moral||'';
   document.getElementById('moral-txt').textContent=moral||'—';
   var pos=50;
@@ -398,8 +399,7 @@ function render(d){
   document.getElementById('cb').textContent=fmt(s.combates);
   document.getElementById('vt').textContent=fmt(s.vitorias);
   document.getElementById('dt').textContent=fmt(s.derrotas);
-  document.getElementById('wr').textContent=wr+'%';
-  document.getElementById('wr-b').style.width=wr+'%';
+
   document.getElementById('gg').textContent=fmt(s.gold_ganho)+'g';
   document.getElementById('gp').textContent=fmt(s.gold_perdido)+'g';
   document.getElementById('pr').textContent=fmt(s.preciosidades)+'g';
@@ -516,8 +516,12 @@ function renderPigs(pigs){
         :'<span class="badge bp">Prov.</span>';
     var scEl=sc!=null?'<span class="'+scoreClass(sc)+'">'+sc+'</span>':'—';
     var ataEl=isHist?new Date(p.atacado_em).toLocaleTimeString('pt-BR'):'—';
-    var goldEl=isHist&&p.gold_ganho?'<span class="rv g">'+fmt(p.gold_ganho)+'g</span>':'—';
-    var xpEl=isHist&&p.xp_ganho?'+'+p.xp_ganho:'—';
+    var goldEl=isHist&&p.gold_ganho!=null
+      ?'<span class="rv '+(p.gold_ganho>0?'g':'mt')+'">'+fmt(p.gold_ganho)+'g</span>'
+      :'—';
+    var xpEl=isHist&&p.xp_ganho!=null
+      ?(p.xp_ganho>0?'<span class="rv g">+'+p.xp_ganho+'</span>':'0')
+      :'—';
     var geEl=ge>0?'<span class="rv g">~'+fmt(ge)+'g</span>':'?';
     var tr='<tr style="'+(isHist?'opacity:.55':'')+'">'+
       '<td>'+p.nome+catBadge+'</td>'+
@@ -597,25 +601,29 @@ function renderCache(){
 
   document.getElementById('cache-tbody').innerHTML=entries.map((p,i)=>{
     var sc=p._score;
-    var dispEl=p.disponivel
-      ?'<span style="color:var(--grn)">✓</span>'
-      :'<span style="color:var(--mt)">—</span>';
-    var lvDelta = (p.level||0) - (MY_LV||22);
-    var lvCls = lvDelta > 10 ? 'sc-bad' : lvDelta > 5 ? '' : lvDelta < -5 ? 'sc-ok' : '';
+    var myLv=MY_LV;
+    var dlv=(p.level||0)-myLv;
+    var lvColor=dlv>7?'var(--red)':dlv>3?'var(--gold)':dlv<-3?'var(--grn)':'';
+    var scCls=scoreClass(sc);
+    var wr=p.win_rate_ranking||0;
+    var wrCls=wr<30?'sc-ok':wr>60?'sc-bad':'';
+    var arm=p.sk_armadura||0;
+    var s1=p.sk_1mao||0;
+    var s2=p.sk_2maos||0;
     return '<tr>'+
-      '<td class="c" style="color:var(--mt)">'+(i+1)+'</td>'+
+      '<td class="c" style="color:var(--mt)">'+i+'</td>'+
       '<td>'+p.nome+'</td>'+
-      '<td class="c '+(lvCls)+'">'+(p.level||'—')+'</td>'+
-      '<td class="c"><span class="'+scoreClass(sc)+'">'+sc+'</span></td>'+
-      '<td class="c">'+(p.forca||'—')+'</td>'+
-      '<td class="c">'+(p.resistencia||'—')+'</td>'+
-      '<td class="c">'+(p.agilidade||'—')+'</td>'+
-      '<td class="c">'+(p.arte_combate||'—')+'</td>'+
-      '<td class="c">'+(p.bloqueio||'—')+'</td>'+
-      '<td class="c">'+(p.sk_armadura||'—')+'</td>'+
-      '<td class="c">'+(p.sk_1mao||'—')+'</td>'+
-      '<td class="c">'+(p.sk_2maos||'—')+'</td>'+
-      '<td class="c '+(p.win_rate_ranking<50?'sc-ok':'')+'">'+((p.win_rate_ranking||0).toFixed(1))+'%</td>'+
+      '<td class="c" style="color:'+lvColor+'">'+p.level+'</td>'+
+      '<td class="c"><span class="'+scCls+'">'+sc+'</span></td>'+
+      '<td class="c">'+p.forca+'</td>'+
+      '<td class="c">'+p.resistencia+'</td>'+
+      '<td class="c">'+p.agilidade+'</td>'+
+      '<td class="c">'+p.arte_combate+'</td>'+
+      '<td class="c">'+p.bloqueio+'</td>'+
+      '<td class="c">'+(arm>0?arm:'—')+'</td>'+
+      '<td class="c">'+(s1>0?s1:'—')+'</td>'+
+      '<td class="c">'+(s2>0?s2:'—')+'</td>'+
+      '<td class="c '+(wrCls)+'">'+wr+'%</td>'+
     '</tr>';
   }).join('');
 }

@@ -162,6 +162,9 @@ def registrar_ataque(estado, user_id, resultado="desconhecido", gold_ganho=0, xp
         sd["gold_ganho"] += gold_ganho
     elif resultado == "derrota":
         sd["derrotas"] += 1
+        # gold_ganho contém o que o oponente ganhou (= o que perdemos)
+        if gold_ganho > 0:
+            sd["gold_perdido"] = sd.get("gold_perdido", 0) + gold_ganho
 
     salvar_estado(estado)
     log.info(f"Imunidade renovada até {agora() + timedelta(seconds=IMUNIDADE_SEG):%H:%M:%S}")
@@ -550,6 +553,9 @@ def parsear_resultado_combate(soup, eu_fui_atacante=True):
             xp_ganho = int(v)
             break
 
+    # Quando perdemos, gold_ganho é o que o oponente roubou de nós
+    # O HTML mostra gold ganho pelo vencedor — se perdemos, isso é nosso gold perdido
+    # gold_ganho já capturou o valor correto — quem chamou decide se foi ganho ou perdido
     return resultado, gold_ganho, xp_ganho
 
 
