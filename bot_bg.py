@@ -134,13 +134,13 @@ class ClienteBG:
         return self.get(path, fragment=False)
 
     def post(self, data):
+        # BG usa POST para battleserver/?fragment=1
         headers = {
             "Referer": self.bs_url + "/",
             "Origin":  self.base_url,
-            "Content-Type": "application/x-www-form-urlencoded",
         }
         r = self.session.post(
-            self.bs_url + "/",
+            self.bs_url + "/?fragment=1",
             data=data,
             headers=headers,
             timeout=15
@@ -246,82 +246,100 @@ def parsear_estatisticas_bg(soup):
     return stats
 
 def parsear_adversarios(soup):
-    """Extrai lista de adversários da busca BG."""
+    """
+    Extrai lista de adversários da busca BG.
+    O BG usa cards com classe 'fsbox' mas estrutura interna diferente.
+    Atributos aparecem como texto direto nos divs com barras visuais.
+    """
     adversarios = []
     try:
-        for fsbox in soup.find_all("div", class_="fsbox"):
+        cards = soup.find_all("div", class_="fsbox")
+        log.debug(f"parsear_adversarios: {len(cards)} cards encontrados")
+
+        for fsbox in cards:
             adv = {}
+
             # Nome
             nome_tag = fsbox.find("div", class_="enemyname")
-            if nome_tag: adv["nome"] = nome_tag.get_text(strip=True)
+            if nome_tag:
+                adv["nome"] = nome_tag.get_text(strip=True)
 
-            # ID para ataque
+            # ID e csrf do form de ataque
             gegnerid = fsbox.find("input", {"name": "gegnerid"})
             if gegnerid: adv["id"] = gegnerid["value"]
-
-            # csrftoken
             csrf = fsbox.find("input", {"name": "csrftoken"})
             if csrf: adv["csrf"] = csrf["value"]
 
-            # É zumbi ou humano?
+            # Tipo: zumbi ou humano
             nat = fsbox.find("div", class_="fsnattxt")
             if nat:
                 txt = nat.get_text(strip=True).lower()
-                adv["tipo"] = "zumbi" if "morto" in txt or "npc" in txt else "humano"
+                adv["tipo"] = "zumbi" if ("morto" in txt or "npc" in txt or "undead" in txt) else "humano"
             else:
                 adv["tipo"] = "desconhecido"
 
-            # Stats da tabela fsbint2
+            # Level e EF da tabela fsbint2
             tbl2 = fsbox.find("table", class_="fsbint2")
             if tbl2:
-                tds = tbl2.find_all("td")
-                for i in range(0, len(tds)-1, 2):
-                    label = tds[i].get_text(strip=True).lower()
-                    val   = tds[i+1].get_text(strip=True)
-                    m = re.search(r"[\d,]+", val)
-                    if not m: continue
-                    v_str = m.group().replace(",", ".")
-                    if "level" in label: adv["level"] = int(float(v_str))
-                    elif "eficiência" in label: adv["ef"] = float(v_str)
-                    elif "vital" in label: adv["hp"] = int(float(v_str.replace(".", "")))
+                rows = tbl2.find_all("tr")
+                for row in rows:
+                    tds = row.find_all("td")
+                    if len(tds) < 2: continue
+                    label = tds[0].get_text(strip=True).lower()
+                    val   = tds[1].get_text(strip=True).replace("~","").strip()
+                    try:
+                        v = float(val.replace(",","."))
+                        if "level" in label: adv["level"] = int(v)
+                        elif "efici" in label: adv["ef"] = v
+                        elif "vital" in label: adv["hp"] = int(v)
+                    except: pass
 
-            # Skills (fsbint3)
+            # Skills da tabela fsbint3
             tbl3 = fsbox.find("table", class_="fsbint3")
             if tbl3:
-                for tr in tbl3.find_all("tr"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 2:
-                        label = tds[1].get_text(strip=True).lower()
-                        val   = tds[-1].get_text(strip=True)
-                        m = re.search(r"\d+", val)
-                        if not m: continue
-                        v = int(m.group())
-                        if "equipamento" in label: adv["sk_armadura"] = v
-                        elif "uma mão" in label: adv["sk_1mao"] = v
-                        elif "duas mãos" in label: adv["sk_2maos"] = v
+                for row in tbl3.find_all("tr"):
+                    tds = row.find_all("td")
+                    if len(tds) < 2: continue
+                    # Label está no td com fsbtitle div
+                    title = row.find("div", class_="fsbtitle")
+                    valtd = tds[-1]
+                    if not title: continue
+                    label = title.get_text(strip=True).lower()
+                    try:
+                        v = int(valtd.get_text(strip=True))
+                        if "equip" in label: adv["sk_armadura"] = v
+                        elif "uma" in label: adv["sk_1mao"] = v
+                        elif "duas" in label: adv["sk_2maos"] = v
+                    except: pass
 
-            # Atributos (fsbarbox)
+            # Atributos da tabela fsbarbox
             tbl4 = fsbox.find("table", class_="fsbarbox")
             if tbl4:
-                for tr in tbl4.find_all("tr"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 2:
-                        label = " ".join(t.get_text(strip=True) for t in tds[:-1]).lower()
-                        val   = tds[-1].get_text(strip=True)
-                        m = re.search(r"\d+", val)
-                        if not m: continue
-                        v = int(m.group())
-                        if "força" in label: adv["forca"] = v
-                        elif "resistência" in label: adv["resistencia"] = v
-                        elif "agilidade" in label: adv["agilidade"] = v
-                        elif "arte" in label: adv["arte_combate"] = v
-                        elif "bloqueio" in label: adv["bloqueio"] = v
+                for row in tbl4.find_all("tr"):
+                    tds = row.find_all("td")
+                    if len(tds) < 2: continue
+                    title = row.find("div", class_="fsbtitle")
+                    valtd = tds[-1]
+                    if not title: continue
+                    label = title.get_text(strip=True).lower()
+                    val_el = valtd.find("div", class_="sk4") or valtd
+                    try:
+                        v = int(val_el.get_text(strip=True))
+                        if "força" in label or "strength" in label: adv["forca"] = v
+                        elif "resist" in label or "stamina" in label: adv["resistencia"] = v
+                        elif "agilidade" in label or "dexterity" in label: adv["agilidade"] = v
+                        elif "arte" in label or "fighting" in label: adv["arte_combate"] = v
+                        elif "bloqueio" in label or "parry" in label: adv["bloqueio"] = v
+                    except: pass
 
             if adv.get("id") and adv.get("nome"):
                 adversarios.append(adv)
+            elif adv.get("nome"):
+                log.debug(f"  Card sem ID: {adv.get('nome')} — ignorado")
 
     except Exception as e:
-        log.warning(f"parsear_adversarios: {e}")
+        log.warning(f"parsear_adversarios: {e}", exc_info=True)
+
     return adversarios
 
 def parsear_resultado_combate(soup):
@@ -615,16 +633,24 @@ def buscar_adversarios(client, eu, ef_range):
 
     log.info(f"  Buscando EF {ef_from} - {ef_to}...")
 
+    # BG usa POST para battleserver/?fragment=1
+    # Precisa do csrftoken da página atual
+    soup_form = client.get("/raubzug/")
+    csrf = ""
+    csrf_input = soup_form.find("input", {"name": "csrftoken"})
+    if csrf_input:
+        csrf = csrf_input.get("value", "")
+
     soup = client.post({
+        "csrftoken": csrf,
         "ac": "raubzug",
         "sac": "gegner",
         "searchtype": "random",
         "fpfrom": str(ef_from),
         "fpto": str(ef_to),
-        "slots": "0",           # todos tipos de arma
-        "search_npcs": "on",   # zumbis
-        "search_users": "on",  # humanos também
+        "slots": "0",
         "showOwnBaseValues": "on",
+        "search_npcs": "on",
     })
     adversarios = parsear_adversarios(soup)
     log.info(f"  {len(adversarios)} adversários encontrados")
