@@ -153,13 +153,31 @@ def parsear_status_bg(soup):
     """Extrai stats do personagem na página do BG."""
     status = {}
     try:
-        # EF: "Eficiência em batalha: 2,5 (2,4)"
-        for tag in soup.find_all(["td", "div", "span"]):
-            txt = tag.get_text(" ", strip=True)
-            m = re.search(r"Eficiência em batalha[:\s]+([\d,]+)", txt)
-            if m:
-                status["ef"] = float(m.group(1).replace(",", "."))
-                break
+        # EF: div.be > span.tooltip com data-tooltip="Eficiência em batalha: 2,4 (= ~2,5)"
+        be_div = soup.find("div", class_="be")
+        if be_div:
+            span = be_div.find("span", class_="tooltip")
+            if span:
+                # Pega o valor visível (ex: "2,5")
+                txt = span.get_text(strip=True)
+                try:
+                    status["ef"] = float(txt.replace(",", "."))
+                except:
+                    pass
+                # Ou do tooltip
+                if "ef" not in status:
+                    tt = span.get("data-tooltip", "")
+                    m = re.search(r"~([\d,]+)", tt)
+                    if m:
+                        status["ef"] = float(m.group(1).replace(",", "."))
+        # Fallback: busca no texto
+        if "ef" not in status:
+            for tag in soup.find_all(["td", "div", "span"]):
+                txt = tag.get_text(" ", strip=True)
+                m = re.search(r"Eficiência em batalha[:\s]+([\d,]+)", txt)
+                if m:
+                    status["ef"] = float(m.group(1).replace(",", "."))
+                    break
 
         # Level
         lv = soup.find("a", class_="tooltip", attrs={"data-tooltip": re.compile(r"Level:\s*\d+")})
@@ -621,7 +639,10 @@ def escolher_melhor_alvo(adversarios, eu, combates=None):
 # ═══════════════════════════════════════════════════════════════
 def buscar_adversarios(client, eu, ef_range):
     """Busca adversários no BG com range de EF especificado."""
-    ef_minha = eu.get("ef", 2.0)
+    ef_minha = eu.get("ef", 0)
+    if not ef_minha:
+        log.warning("  EF do personagem desconhecida — usando 2.0 como padrão")
+        ef_minha = 2.0
     ef_from  = max(0.5, ef_minha - 0.5)
     ef_to    = min(99.0, ef_minha + ef_range)
 
