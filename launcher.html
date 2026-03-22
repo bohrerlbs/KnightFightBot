@@ -595,21 +595,23 @@ function stopBot(name){
 
 function startBG(name, modo){
   modo = modo || 'free';
+  toast('Iniciando BG Bot...');
+  var body = JSON.stringify({modo: modo});
   fetch('/api/bg/start/'+name+'/', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({modo: modo})
+    body: body
   })
-  .then(r=>r.json())
-  .then(d=>{
+  .then(function(r){ return r.json(); })
+  .then(function(d){
     if(d.ok){
-      toast('* BG Bot iniciado! Dashboard na porta '+d.port);
-      setTimeout(loadProfiles, 1500);
+      toast('BG Bot iniciado! Porta '+d.port);
+      setTimeout(loadProfiles, 2000);
     } else {
-      toast('Erro ao iniciar BG: '+(d.error||'desconhecido'),'err');
+      toast('Erro BG: '+(d.error||'desconhecido'),'err');
     }
   })
-  .catch(e=>toast('Erro de conexão: '+e,'err'));
+  .catch(function(e){ toast('Erro BG: '+e,'err'); });
 }
 
 function stopBG(name){

@@ -383,8 +383,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _body(self):
-        n = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(n)) if n else {}
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            if not n: return {}
+            data = self.rfile.read(n)
+            return json.loads(data) if data.strip() else {}
+        except:
+            return {}
 
     def do_GET(self):
         p = self.path.split("?")[0]
@@ -412,17 +417,21 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/delete":         self._json(delete_profile(d["name"]))
         elif p == "/api/update":         self._json(download_update())
         elif p.startswith("/api/bg/start/"):
-            parts = p.split("/")
-            name = parts[-2] if len(parts) >= 5 else parts[-1]
-            modo = self._body().get("modo","free")
+            parts = [x for x in p.split("/") if x]
+            name = parts[-1] if parts else ""
+            body = self._body()
+            modo = body.get("modo", "free") if body else "free"
             import threading as _t
             result = {"ok": False, "error": "timeout"}
             def _run():
                 nonlocal result
-                result = start_bg_bot(name, modo)
+                try:
+                    result = start_bg_bot(name, modo)
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
             t = _t.Thread(target=_run, daemon=True)
             t.start()
-            t.join(timeout=5)
+            t.join(timeout=8)
             self._json(result)
         elif p == "/api/capture-cookie":
             result = {}
