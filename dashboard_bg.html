@@ -127,6 +127,8 @@ header{display:flex;justify-content:space-between;align-items:center;padding-bot
     <div class="row"><span class="rl">Força</span><span class="rv" id="eu-frc">—</span></div>
     <div class="row"><span class="rl">Resistência</span><span class="rv" id="eu-res">—</span></div>
     <div class="row"><span class="rl">Agilidade</span><span class="rv" id="eu-agi">—</span></div>
+    <div class="row"><span class="rl">Equipamento</span><span class="rv" id="eu-arm">—</span></div>
+    <div class="row"><span class="rl">Skill 1 mão</span><span class="rv" id="eu-s1">—</span></div>
     <div class="row"><span class="rl">Skill 2 mãos</span><span class="rv" id="eu-s2">—</span></div>
   </div>
 
@@ -270,7 +272,9 @@ function render(d){
   document.getElementById('eu-frc').textContent = eu.forca || '—';
   document.getElementById('eu-res').textContent = eu.resistencia || '—';
   document.getElementById('eu-agi').textContent = eu.agilidade || '—';
-  document.getElementById('eu-s2').textContent = eu.sk_2maos || '—';
+  document.getElementById('eu-arm').textContent = eu.sk_armadura || '—';
+  document.getElementById('eu-s1').textContent  = eu.sk_1mao    || '—';
+  document.getElementById('eu-s2').textContent  = eu.sk_2maos   || '—';
 
   // Último combate
   if(ult){

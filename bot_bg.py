@@ -492,12 +492,19 @@ def avaliar_adversario_bg(adv, eu, combates=None):
     minha_frc = eu.get("forca", 0)
     meu_lv    = eu.get("level", 0)
 
-    blq   = adv.get("bloqueio", 0)
-    ac_d  = adv.get("arte_combate", 0)
-    frc_d = adv.get("forca", 0)
-    lv_d  = adv.get("level", 0)
-    arm_d = adv.get("sk_armadura", 0)
-    ef_d  = adv.get("ef", 0)
+    blq    = adv.get("bloqueio", 0)
+    ac_d   = adv.get("arte_combate", 0)
+    frc_d  = adv.get("forca", 0)
+    lv_d   = adv.get("level", 0)
+    arm_d  = adv.get("sk_armadura", 0)
+    sk1_d  = adv.get("sk_1mao", 0)
+    sk2_d  = adv.get("sk_2maos", 0)
+    sk_d   = max(sk1_d, sk2_d)  # skill principal (maior entre 1h e 2h)
+    ef_d   = adv.get("ef", 0)
+    # Minhas skills
+    meu_sk1  = eu.get("sk_1mao", 0)
+    meu_sk2  = eu.get("sk_2maos", 0)
+    meu_sk   = max(meu_sk1, meu_sk2)
 
     score = 50
     problemas = []
@@ -553,7 +560,19 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         elif vantagem_dupla > 8:
             score -= 12
 
-    # ── 5. Força (dano bruto) ──────────────────────────────────
+    # ── 5. Skill de ataque (1h ou 2h) ────────────────────────────
+    if sk_d > 0 and meu_sk > 0:
+        diff_sk = sk_d - meu_sk
+        if diff_sk > 30:
+            problemas.append(f"Skill ataque {sk_d} vs minha {meu_sk}")
+            score -= 15
+        elif diff_sk > 15:
+            score -= 8
+        elif diff_sk < -20:
+            vantagens.append(f"Skill ataque superior {meu_sk} vs {sk_d} ✓")
+            score += 10
+
+    # ── 6. Força (dano bruto) ──────────────────────────────────
     if frc_d > minha_frc * 2.0:
         score -= 20
     elif frc_d > minha_frc * 1.5:
