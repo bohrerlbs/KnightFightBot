@@ -11,6 +11,7 @@ FLUXO:
 import requests
 from bs4 import BeautifulSoup
 import json, re, time, logging, os, threading
+from pathlib import Path
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from typing import Optional
