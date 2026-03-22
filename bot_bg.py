@@ -685,14 +685,22 @@ def buscar_adversarios(client, eu, ef_range):
         fsbox_count = html_debug.count('class="fsbox"')
         log.debug(f"  HTML recebido: {len(html_debug)} bytes | fsbox encontrados: {fsbox_count}")
         if fsbox_count == 0:
-            # Verifica se há indicação de CD ativo
-            if "minutos" in html_debug.lower() or "countdown" in html_debug.lower():
-                log.warning("  Servidor retornou página de CD, não resultados")
-            elif "enemy-list" in html_debug:
-                log.debug("  Página tem #enemy-list mas sem fsbox")
-            # Salva HTML para debug
             dbg_path = WORKDIR / "debug_response.html"
             dbg_path.write_text(html_debug[:5000], encoding="utf-8")
+            # Verifica se é página de CD
+            if "Apenas pode efetuar" in html_debug or "Secondscounter" in html_debug:
+                # Lê Secondscounter do JavaScript da página
+                import re as _re
+                m = _re.search(r"var Secondscounter\s*=\s*(\d+)", html_debug)
+                if m:
+                    segundos_cd = int(m.group(1)) + 3  # +3s de margem
+                else:
+                    segundos_cd = 600  # 10min default
+                log.info(f"  Personagem em CD — aguardando {fmt_t(segundos_cd)}...")
+                time.sleep(segundos_cd)
+                return []  # Tenta de novo após CD
+            elif "enemy-list" in html_debug:
+                log.debug("  Página tem #enemy-list mas sem fsbox")
             log.debug(f"  HTML salvo em {dbg_path}")
     except Exception as e:
         log.debug(f"  Debug erro: {e}")
@@ -824,6 +832,19 @@ def loop_bg(client, eu, modo):
                     time.sleep(3)
 
         if not alvo_encontrado:
+            # Verifica se é CD ou realmente sem alvos
+            try:
+                soup_cd = client.get("/raubzug/")
+                txt = soup_cd.get_text()
+                if "Apenas pode efetuar" in txt or "minutos" in txt.lower():
+                    m = __import__('re').search(r'var Secondscounter\s*=\s*(\d+)', str(soup_cd))
+                    if m:
+                        cd_seg = int(m.group(1)) + 5
+                        log.info(f"  Personagem em CD — aguardando {fmt_t(cd_seg)}")
+                        atualizar_ciclo("proximo_ataque", (agora()+timedelta(seconds=cd_seg)).isoformat())
+                        time.sleep(cd_seg)
+                        continue
+            except: pass
             log.warning("  Sem alvos viáveis após todas tentativas. Aguardando próximo ciclo...")
             atualizar_ciclo("status", "sem_alvo")
 
