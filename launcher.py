@@ -94,6 +94,7 @@ def start_bg_bot(name, modo="free"):
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONLEGACYWINDOWSSTDIO"] = "0"
     try:
         # Usa paths absolutos para evitar problemas de cwd
         log_file_abs = profile_dir.resolve() / "bot_bg.log"
@@ -110,7 +111,7 @@ def start_bg_bot(name, modo="free"):
 
         log_f = open(str(log_file_abs), "a", encoding="utf-8")
         proc = subprocess.Popen(
-            [sys.executable, "-u", str(bot_bg_abs), "--workdir", str(workdir_abs)],
+            [sys.executable, "-X", "utf8", "-u", str(bot_bg_abs), "--workdir", str(workdir_abs)],
             stdout=log_f,
             stderr=log_f,
             env=env,
