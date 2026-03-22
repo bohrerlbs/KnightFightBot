@@ -90,16 +90,23 @@ def start_bg_bot(name, modo="free"):
     cfg_path = profile_dir / "config_bg.json"
     cfg_path.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     log_file = profile_dir / "bot_bg.log"
+    err_file = profile_dir / "bot_bg_err.log"
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
-    proc = subprocess.Popen(
-        [sys.executable, str(bot_bg), "--workdir", str(profile_dir)],
-        stdout=open(log_file, "a", encoding="utf-8"),
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
-    running_bots[bg_key] = proc
-    return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
+    env["PYTHONIOENCODING"] = "utf-8"
+    try:
+        log_f = open(log_file, "a", encoding="utf-8")
+        proc = subprocess.Popen(
+            [sys.executable, "-u", str(bot_bg), "--workdir", str(profile_dir)],
+            stdout=log_f,
+            stderr=log_f,
+            env=env,
+            cwd=str(BASE_DIR),
+        )
+        running_bots[bg_key] = proc
+        return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
+    except Exception as e:
+        return {"ok": False, "error": f"Erro ao iniciar processo: {e}"}
 
 def stop_bg_bot(name):
     bg_key = f"BG_{name}"
