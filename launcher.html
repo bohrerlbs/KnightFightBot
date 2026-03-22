@@ -625,9 +625,7 @@ function stopBG(name){
 }
 
 function openDashBG(port){
-  fetch('http://localhost:'+port+'/dados')
-    .then(()=>{ window.open('http://localhost:'+port+'/dashboard','_blank'); })
-    .catch(()=>toast('BG Bot offline nesta porta'));
+  window.open('http://localhost:'+port+'/dashboard','_blank');
 }
 
 function openDash(port){

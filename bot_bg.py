@@ -896,7 +896,11 @@ def iniciar_servidor_bg(porta):
 
             elif self.path in ("/dashboard", "/dashboard/"):
                 try:
-                    html = Path("dashboard_bg.html").read_bytes()
+                    # Procura dashboard_bg.html na pasta do bot ou do workdir
+                    dash_path = Path(__file__).parent / "dashboard_bg.html"
+                    if not dash_path.exists():
+                        dash_path = WORKDIR / "dashboard_bg.html"
+                    html = dash_path.read_bytes()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.end_headers()
