@@ -1279,24 +1279,30 @@ def loop_rapido(client):
 
             # LIVRE — decide ação
 
-            # ── Altar: reza se HP < 70% ──────────────────────────────────────
-            status_atual = carregar_estado()
-            hp_atual = status_atual.get("hp_atual", 0)
-            hp_total = status_atual.get("hp_total", 0)
-            if hp_total > 0 and hp_atual > 0:
-                pct_hp = hp_atual / hp_total
-                if pct_hp < 0.70:
-                    log.info(f"HP baixo ({hp_atual}/{hp_total} = {pct_hp*100:.0f}%) — rezando no altar...")
-                    rezar_altar(client)
-                    # Atualiza status após rezar
-                    try:
-                        novo_status = parsear_status(client.get("/status/"))
-                        atualizar_ciclo_file("status", novo_status)
-                        status_atual.update(novo_status)
-                        salvar_estado(status_atual)
-                        log.info(f"HP após altar: {novo_status.get('hp_atual',0)}/{novo_status.get('hp_total',0)}")
-                    except Exception as e:
-                        log.warning(f"Altar: erro ao atualizar status — {e}")
+            # ── Altar: verifica HP atual direto do jogo e reza se < 70% ─────
+            try:
+                status_fresco = parsear_status(client.get("/status/"))
+                hp_atual = status_fresco.get("hp_atual", 0)
+                hp_total = status_fresco.get("hp_total", 0)
+                # Atualiza estado com HP fresco
+                estado_hp = carregar_estado()
+                estado_hp.update(status_fresco)
+                salvar_estado(estado_hp)
+                atualizar_ciclo_file("status", status_fresco)
+
+                if hp_total > 0 and hp_atual > 0:
+                    pct_hp = hp_atual / hp_total
+                    if pct_hp < 0.70:
+                        log.info(f"HP baixo ({hp_atual}/{hp_total} = {pct_hp*100:.0f}%) — rezando no altar...")
+                        if rezar_altar(client):
+                            # Atualiza HP após rezar
+                            status_pos = parsear_status(client.get("/status/"))
+                            estado_hp.update(status_pos)
+                            salvar_estado(estado_hp)
+                            atualizar_ciclo_file("status", status_pos)
+                            log.info(f"HP após altar: {status_pos.get('hp_atual',0)}/{status_pos.get('hp_total',0)}")
+            except Exception as e:
+                log.warning(f"Altar: erro ao verificar HP — {e}")
 
             pig_list = carregar_pig_list()
             gold_atual = estado.get("gold_atual", 0)
