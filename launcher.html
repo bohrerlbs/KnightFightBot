@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -38,7 +38,7 @@ body {
     radial-gradient(ellipse at 80% 100%, rgba(100,60,20,0.06) 0%, transparent 50%);
 }
 
-/* ── HEADER ── */
+/* -- HEADER -- */
 header {
   padding: 28px 36px 20px;
   border-bottom: 1px solid var(--border);
@@ -62,7 +62,7 @@ header {
 }
 .update-badge.show { display:inline-block; }
 
-/* ── LAYOUT ── */
+/* -- LAYOUT -- */
 .container { padding: 28px 36px; max-width: 1100px; }
 .section-title {
   font-family:'Cinzel',serif; font-size:11px; letter-spacing:3px;
@@ -73,7 +73,7 @@ header {
   content:''; flex:1; height:1px; background:var(--border);
 }
 
-/* ── PROFILE CARDS ── */
+/* -- PROFILE CARDS -- */
 .profiles-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-bottom:32px; }
 
 .profile-card {
@@ -157,7 +157,7 @@ header {
 }
 .btn-del:hover { color:#e08080; border-color:rgba(192,64,64,0.3); }
 
-/* ── NEW PROFILE CARD ── */
+/* -- NEW PROFILE CARD -- */
 .add-card {
   background:var(--surface); border:1px dashed var(--border);
   border-radius:4px; padding:28px; display:flex; flex-direction:column;
@@ -168,7 +168,7 @@ header {
 .add-icon { font-size:28px; color:var(--muted); }
 .add-label { font-family:'Cinzel',serif; font-size:11px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; }
 
-/* ── MODAL ── */
+/* -- MODAL -- */
 .modal-backdrop {
   position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100;
   display:flex; align-items:center; justify-content:center;
@@ -279,18 +279,18 @@ header {
 <body>
 
 <header>
-  <div class="logo-icon">⚔</div>
+  <div class="logo-icon">*</div>
   <div class="logo-text">
     <h1>KnightFight Bot</h1>
-    <p>Launcher — Gerenciador de Perfis</p>
+    <p>Launcher - Gerenciador de Perfis</p>
   </div>
   <div class="header-right">
     <span class="version" id="ver">v1.0.0</span>
     <button class="update-badge" id="update-badge" onclick="doUpdate()">
-      ↑ Atualização disponível — clique para instalar
+      ^ Atualização disponível - clique para instalar
     </button>
     <button class="update-badge" id="modelo-badge" onclick="exportModelo()" style="display:none;background:#1a3a2a;border-color:#4caf73;color:#4caf73;margin-left:6px" title="">
-      🧠 <span id="modelo-count">Modelo desatualizado</span>
+      [M] <span id="modelo-count">Modelo desatualizado</span>
     </button>
   </div>
 </header>
@@ -305,11 +305,11 @@ header {
 <!-- Modal novo perfil -->
 <div class="modal-backdrop" id="modal-new">
   <div class="modal">
-    <div class="modal-title">⚔ Novo Perfil</div>
+    <div class="modal-title">* Novo Perfil</div>
 
     <div class="capture-box">
       <div style="font-size:12px;color:var(--text);margin-bottom:8px">
-        <strong>Login automático</strong> — abre o browser, faça login e o bot captura o cookie sozinho
+        <strong>Login automático</strong> - abre o browser, faça login e o bot captura o cookie sozinho
       </div>
       <select class="form-select" id="cap-server" style="margin-bottom:8px" onchange="toggleCustomServer('cap')">
         
@@ -350,7 +350,7 @@ header {
       </select>
       <input class="form-input" id="cap-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-bottom:8px">
       <button class="btn-capture" id="btn-capture" onclick="captureCookie()">
-        🌐 Abrir browser e capturar cookie automaticamente
+        [web] Abrir browser e capturar cookie automaticamente
       </button>
       <div class="capture-status" id="cap-status" style="margin-top:8px;display:none"></div>
     </div>
@@ -414,11 +414,11 @@ header {
     </div>
     <div class="form-group">
       <label class="form-label">Cookie <span style="color:var(--muted)">(preenchido automaticamente acima)</span></label>
-      <textarea class="form-input" id="f-cookies" rows="3" placeholder="Ou cole manualmente: F12 → Network → Cookie"></textarea>
-      <div class="form-hint">F12 → Network → qualquer requisição → Request Headers → Cookie</div>
+      <textarea class="form-input" id="f-cookies" rows="3" placeholder="Ou cole manualmente: F12 -> Network -> Cookie"></textarea>
+      <div class="form-hint">F12 -> Network -> qualquer requisição -> Request Headers -> Cookie</div>
     </div>
 
-    <button class="btn-primary" onclick="saveProfile()">✓ Criar Perfil e Iniciar Bot</button>
+    <button class="btn-primary" onclick="saveProfile()">v Criar Perfil e Iniciar Bot</button>
     <button class="btn-secondary" onclick="closeModal('modal-new')">Cancelar</button>
   </div>
 </div>
@@ -458,7 +458,7 @@ document.querySelectorAll('.modal-backdrop').forEach(b=>{
 function logClass(line){
   if(line.includes('[ERROR]')) return 'err';
   if(line.includes('[WARNING]')) return 'warn';
-  if(line.includes('⚔')||line.includes('iniciada')||line.includes('Imunidade')) return 'ok';
+  if(line.includes('*')||line.includes('iniciada')||line.includes('Imunidade')) return 'ok';
   return 'info';
 }
 
@@ -478,12 +478,12 @@ function renderProfiles(profiles){
     }).join('\n');
 
     var startStopBtn = running
-      ? '<button class="btn btn-stop" onclick="stopBot(\''+name+'\')">■ Parar</button>'
-      : '<button class="btn btn-start" onclick="startBot(\''+name+'\')">▶ Iniciar</button>';
+      ? '<button class="btn btn-stop" onclick="stopBot(\''+name+'\')">[ Parar</button>'
+      : '<button class="btn btn-start" onclick="startBot(\''+name+'\')">> Iniciar</button>';
 
     var bgBtn = bgRunning
-      ? '<button class="btn btn-stop" onclick="stopBG(\''+name+'\')">■ Parar BG</button>'
-      : '<button class="btn btn-bg" onclick="startBG(\''+name+'\')">▶ Iniciar BG</button>';
+      ? '<button class="btn btn-stop" onclick="stopBG(\''+name+'\')">[ Parar BG</button>'
+      : '<button class="btn btn-bg" onclick="startBG(\''+name+'\')">> Iniciar BG</button>';
 
     html += '<div class="profile-card '+(running?'running':'')+'">';
     html += '<div class="card-header">';
@@ -493,18 +493,18 @@ function renderProfiles(profiles){
     html += '</div>';
     html += '<div class="card-body">';
     html += '<div class="card-info">';
-    html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||'—')+'</div></div>';
+    html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||'-')+'</div></div>';
     html += '<div class="info-item"><div class="info-label">Dashboard</div><div class="info-val" style="color:var(--gold)">:'+(p.port||8765)+'</div></div>';
     html += '</div>';
     html += '<div class="log-preview">'+(logs||'<span>Nenhum log ainda...</span>')+'</div>';
     html += '<div class="card-actions">';
     html += startStopBtn;
     html += '<button class="btn btn-dash" onclick="openDash('+(p.port||8765)+')">Dashboard</button>';
-    html += '<button class="btn btn-del" onclick="showLog(''+name+'')" title="Ver log">≡</button>';
-    html += '<button class="btn btn-del" onclick="deleteProfile(''+name+'')" title="Excluir">✕</button>';
+    html += '<button class="btn btn-del" onclick="showLog(''+name+'')" title="Ver log">=</button>';
+    html += '<button class="btn btn-del" onclick="deleteProfile(''+name+'')" title="Excluir">x</button>';
     html += '</div>';
     html += '<div class="bg-section">';
-    html += '<div class="bg-label">⚔ BattleGround</div>';
+    html += '<div class="bg-label">* BattleGround</div>';
     html += '<div class="bg-btns">';
     html += '<select class="bg-modo-sel" id="bg-modo-'+name+'">';
     html += '<option value="free">Free (100 bat.)</option>';
@@ -540,7 +540,7 @@ function startBot(name){
     .then(r=>r.json())
     .then(d=>{
       if(d.ok){
-        toast(`▶ ${name} iniciando...`);
+        toast(`> ${name} iniciando...`);
         // Aguarda servidor HTTP do bot subir (até 30s)
         var port = d.port || 8765;
         var attempts = 0;
@@ -549,13 +549,13 @@ function startBot(name){
           fetch(`http://localhost:${port}/dados`)
             .then(()=>{
               clearInterval(check);
-              toast(`▶ ${name} online!`);
+              toast(`> ${name} online!`);
               loadProfiles();
             })
             .catch(()=>{
               if(attempts >= 30){
                 clearInterval(check);
-                toast(`${name} demorou para iniciar — verifique o log`,'err');
+                toast(`${name} demorou para iniciar - verifique o log`,'err');
                 loadProfiles();
               }
             });
@@ -570,7 +570,7 @@ function stopBot(name){
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
     .then(r=>r.json())
     .then(d=>{
-      if(d.ok){ toast(`■ ${name} parado`); setTimeout(loadProfiles,500); }
+      if(d.ok){ toast(`[ ${name} parado`); setTimeout(loadProfiles,500); }
       else toast(`Erro: ${d.error}`,'err');
     });
 }
@@ -586,7 +586,7 @@ function startBG(name){
   .then(r=>r.json())
   .then(d=>{
     if(d.ok){
-      toast('⚔ BG Bot iniciado! Dashboard na porta '+d.port);
+      toast('* BG Bot iniciado! Dashboard na porta '+d.port);
       setTimeout(loadProfiles, 1500);
     } else {
       toast('Erro ao iniciar BG: '+(d.error||'desconhecido'),'err');
@@ -616,7 +616,7 @@ function openDash(port){
   fetch(`http://localhost:${port}/dados`)
     .then(()=>{ window.open(`http://localhost:${port}/dashboard`,'_blank'); })
     .catch(()=>{
-      toast('Bot ainda iniciando — aguarde alguns segundos e tente novamente','err');
+      toast('Bot ainda iniciando - aguarde alguns segundos e tente novamente','err');
     });
 }
 
@@ -624,7 +624,7 @@ function showLog(name){
   fetch(`/api/log/${name}`)
     .then(r=>r.json())
     .then(d=>{
-      document.getElementById('log-modal-title').textContent = `Log — ${name}`;
+      document.getElementById('log-modal-title').textContent = `Log - ${name}`;
       document.getElementById('log-full-content').innerHTML = (d.lines||[]).map(l=>{
         var cls = logClass(l);
         return `<span class="lline ${cls}">${l}</span>`;
@@ -670,7 +670,7 @@ function captureCookie(){
   btn.disabled = true;
   status.style.display = 'block';
   status.className = 'capture-status loading';
-  status.textContent = 'Abrindo browser — faça login no jogo';
+  status.textContent = 'Abrindo browser - faça login no jogo';
 
   fetch('/api/capture-cookie',{
     method:'POST',
@@ -694,18 +694,18 @@ function captureCookie(){
       }
       if(d.userid) document.getElementById('f-userid').value = d.userid;
       status.className = 'capture-status ok';
-      status.textContent = `✓ Cookie capturado via ${d.browser}! UserID: ${d.userid||'?'}`;
+      status.textContent = `v Cookie capturado via ${d.browser}! UserID: ${d.userid||'?'}`;
       toast('Cookie capturado com sucesso!');
     } else {
       status.className = 'capture-status err';
-      status.textContent = `✗ ${d.error}`;
+      status.textContent = `x ${d.error}`;
     }
   })
   .catch(e=>{
     capturingCookie = false;
     btn.disabled = false;
     status.className = 'capture-status err';
-    status.textContent = '✗ Erro de conexão';
+    status.textContent = 'x Erro de conexão';
   });
 }
 
@@ -744,7 +744,7 @@ function checkModelo(){
     if(d.badge){
       el.style.display='inline-block';
       el.title = d.combates_novos + ' combates novos desde o último modelo subido';
-      document.getElementById('modelo-count').textContent = '🧠 ' + d.combates_novos + ' combates novos — exportar modelo';
+      document.getElementById('modelo-count').textContent = '[M] ' + d.combates_novos + ' combates novos - exportar modelo';
     } else {
       el.style.display='none';
     }
@@ -757,7 +757,7 @@ function exportModelo(){
 Após gerar, suba o arquivo no GitHub para compartilhar com outros usuários.')) return;
   fetch('/api/modelo/export').then(r=>r.json()).then(d=>{
     if(d.ok){
-      toast('✓ modelo_combate.json gerado! ' + d.total_combates + ' combates | WR ' + d.win_rate + '%\n\nArquivo salvo na pasta do bot. Suba no GitHub!');
+      toast('v modelo_combate.json gerado! ' + d.total_combates + ' combates | WR ' + d.win_rate + '%\n\nArquivo salvo na pasta do bot. Suba no GitHub!');
       setTimeout(checkModelo, 500);
     } else {
       toast('Erro: ' + (d.error||'desconhecido'));
@@ -779,10 +779,10 @@ fetch('/api/version')
     if(d.update && d.latest){
       latestVersion = d.latest;
       var b = document.getElementById('update-badge');
-      b.textContent = `↑ v${d.latest} disponivel — clique para instalar`;
+      b.textContent = `^ v${d.latest} disponivel - clique para instalar`;
       b.classList.add('show');
     } else if(d.latest === null) {
-      // GitHub inacessivel — mostra versao apenas
+      // GitHub inacessivel - mostra versao apenas
       console.warn('GitHub inacessivel para verificar atualizacoes');
     }
   }).catch(e=>{ console.error('Erro ao verificar versao:', e); });
@@ -792,13 +792,13 @@ function doUpdate(){
   if(!confirm(`Instalar atualização v${latestVersion||'?'}?
 
 Os bots serão parados e reiniciados automaticamente.`)) return;
-  b.textContent = '⟳ Baixando atualização...';
+  b.textContent = '~ Baixando atualização...';
   b.disabled = true;
   fetch('/api/update',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
     .then(r=>r.json())
     .then(d=>{
       if(d.ok){
-        toast(`✓ Atualizado: ${d.updated.join(', ')} — reiniciando bots...`);
+        toast(`v Atualizado: ${d.updated.join(', ')} - reiniciando bots...`);
         b.classList.remove('show');
         // Reinicia todos os perfis (foram parados pelo update)
         setTimeout(()=>{
@@ -814,7 +814,7 @@ Os bots serão parados e reiniciados automaticamente.`)) return;
         }, 1500);
       } else {
         toast(`Erro na atualização: ${d.errors.join(', ')}`, 'err');
-        b.textContent = `↑ v${latestVersion} disponível — clique para instalar`;
+        b.textContent = `^ v${latestVersion} disponível - clique para instalar`;
         b.disabled = false;
       }
     })
