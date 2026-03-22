@@ -812,13 +812,16 @@ if __name__ == "__main__":
     parser.add_argument("--modo",    default="free", choices=["free","medio","premium"])
     args = parser.parse_args()
 
-    # Define workdir
+    # Define workdir — sempre usa path absoluto
     if args.workdir:
-        WORKDIR = Path(args.workdir)
-        WORKDIR.mkdir(parents=True, exist_ok=True)
-        os.chdir(WORKDIR)
+        WORKDIR = Path(args.workdir).resolve()
+    else:
+        WORKDIR = Path(".").resolve()
 
-    # Redefine paths
+    WORKDIR.mkdir(parents=True, exist_ok=True)
+    os.chdir(WORKDIR)
+
+    # Redefine paths com absoluto
     STATE_FILE    = WORKDIR / "bg_estado.json"
     COMBATES_FILE = WORKDIR / "bg_combates.json"
     CICLO_FILE    = WORKDIR / "bg_ciclo.json"
