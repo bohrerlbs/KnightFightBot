@@ -914,6 +914,9 @@ def iniciar_servidor_bg(porta):
                 self.end_headers()
 
     server = HTTPServer(("", porta), Handler)
+    server.allow_reuse_address = True  # Evita TIME_WAIT bloqueando a porta
+    import socket
+    server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     log.info(f"Dashboard BG: http://localhost:{porta}/dashboard")
     server.serve_forever()
 
