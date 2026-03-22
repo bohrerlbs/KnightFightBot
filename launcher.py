@@ -2,7 +2,7 @@
 KnightFight Bot — Launcher v1.0.5
 """
 import os, sys, json, subprocess, threading, time, re, webbrowser
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -402,6 +402,9 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self._cors(); self.end_headers()
         self.wfile.write(body)
 
@@ -494,6 +497,8 @@ class Handler(BaseHTTPRequestHandler):
             if path.exists():
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+                self.send_header("Pragma", "no-cache")
                 self._cors(); self.end_headers()
                 self.wfile.write(path.read_bytes())
                 return
@@ -507,7 +512,8 @@ def run():
     if hasattr(sys.stderr, 'buffer') and sys.stderr.encoding.lower().replace('-','') != 'utf8':
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-    server = HTTPServer(("localhost", LAUNCHER_PORT), Handler)
+    server = ThreadingHTTPServer(("localhost", LAUNCHER_PORT), Handler)
+    server.allow_reuse_address = True
     url    = f"http://localhost:{LAUNCHER_PORT}/launcher"
     print(f"KnightFight Bot Launcher {get_version()}")
     print(f"Abrindo {url}")
