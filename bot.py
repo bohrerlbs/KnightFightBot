@@ -1290,8 +1290,9 @@ def loop_rapido(client):
                 salvar_estado(estado_hp)
                 atualizar_ciclo_file("status", status_fresco)
 
-                if hp_total > 0 and hp_atual > 0:
-                    pct_hp = hp_atual / hp_total
+                log.info(f"HP atual: {hp_atual}/{hp_total}")
+                if hp_total > 0 and hp_atual >= 0:
+                    pct_hp = hp_atual / hp_total if hp_total > 0 else 1.0
                     if pct_hp < 0.70:
                         log.info(f"HP baixo ({hp_atual}/{hp_total} = {pct_hp*100:.0f}%) — rezando no altar...")
                         if rezar_altar(client):
@@ -1302,7 +1303,7 @@ def loop_rapido(client):
                             atualizar_ciclo_file("status", status_pos)
                             log.info(f"HP após altar: {status_pos.get('hp_atual',0)}/{status_pos.get('hp_total',0)}")
             except Exception as e:
-                log.warning(f"Altar: erro ao verificar HP — {e}")
+                log.warning(f"Altar: erro ao verificar HP — {e}", exc_info=True)
 
             pig_list = carregar_pig_list()
             gold_atual = estado.get("gold_atual", 0)
