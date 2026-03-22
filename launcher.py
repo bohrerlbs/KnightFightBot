@@ -396,6 +396,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(check_update())
         elif p.startswith("/api/log/"):
             self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
+        elif p.startswith("/api/bg/stop/"):
+            self._json(stop_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
+        elif p.startswith("/api/bg/status/"):
+            self._json(status_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
+        elif p == "/api/modelo/status":
+            self._json(get_modelo_status())
         else:
             self.send_response(404); self.end_headers()
 
@@ -407,17 +413,12 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/save":           self._json(save_profile(d))
         elif p == "/api/delete":         self._json(delete_profile(d["name"]))
         elif p == "/api/update":         self._json(download_update())
-        elif p == "/api/modelo/status":   self._json(get_modelo_status())
         elif p == "/api/modelo/export":   self._json(export_modelo())
         elif p.startswith("/api/bg/start/"):
             parts = p.split("/")
             name = parts[-2] if len(parts) >= 5 else parts[-1]
             modo = self._body().get("modo","free")
             self._json(start_bg_bot(name, modo))
-        elif p.startswith("/api/bg/stop/"):
-            self._json(stop_bg_bot(p.split("/")[-1]))
-        elif p.startswith("/api/bg/status/"):
-            self._json(status_bg_bot(p.split("/")[-1]))
         elif p == "/api/capture-cookie":
             result = {}
             def run(): result["r"] = capture_cookie_browser(d.get("server", "int7"))

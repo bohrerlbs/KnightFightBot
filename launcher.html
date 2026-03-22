@@ -576,26 +576,33 @@ function stopBot(name){
 }
 
 function startBG(name){
-  var modo = document.getElementById('bg-modo-'+name).value;
+  var modoEl = document.getElementById('bg-modo-'+name);
+  var modo = modoEl ? modoEl.value : 'free';
   fetch('/api/bg/start/'+name+'/', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({modo: modo})
-  }).then(r=>r.json()).then(d=>{
+  })
+  .then(r=>r.json())
+  .then(d=>{
     if(d.ok){
-      toast('BG Bot iniciado! Dashboard: porta '+d.port);
-      setTimeout(loadProfiles, 1000);
+      toast('⚔ BG Bot iniciado! Dashboard na porta '+d.port);
+      setTimeout(loadProfiles, 1500);
     } else {
-      toast('Erro: '+(d.error||'desconhecido'));
+      toast('Erro ao iniciar BG: '+(d.error||'desconhecido'),'err');
     }
-  }).catch(e=>toast('Erro: '+e));
+  })
+  .catch(e=>toast('Erro de conexão: '+e,'err'));
 }
 
 function stopBG(name){
-  fetch('/api/bg/stop/'+name+'/').then(r=>r.json()).then(d=>{
-    if(d.ok){ toast('BG Bot parado.'); setTimeout(loadProfiles,500); }
-    else toast('Erro: '+(d.error||''));
-  });
+  fetch('/api/bg/stop/'+name+'/')
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){ toast('BG Bot parado.'); setTimeout(loadProfiles,500); }
+      else toast('Erro: '+(d.error||''));
+    })
+    .catch(e=>toast('Erro ao parar BG: '+e,'err'));
 }
 
 function openDashBG(port){
