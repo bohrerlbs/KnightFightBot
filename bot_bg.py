@@ -37,6 +37,7 @@ MAX_REBUSCAS     = 3     # tentativas de busca antes de desistir do ciclo
 
 # ── Arquivos de estado ──────────────────────────────────────────
 WORKDIR        = Path(".")
+SCRIPT_DIR  = Path(__file__).parent.resolve()
 STATE_FILE     = WORKDIR / "bg_estado.json"
 COMBATES_FILE  = WORKDIR / "bg_combates.json"
 CICLO_FILE     = WORKDIR / "bg_ciclo.json"
@@ -896,8 +897,8 @@ def iniciar_servidor_bg(porta):
 
             elif self.path in ("/dashboard", "/dashboard/"):
                 try:
-                    # Procura dashboard_bg.html na pasta do bot ou do workdir
-                    dash_path = Path(__file__).parent / "dashboard_bg.html"
+                    # SCRIPT_DIR é resolvido antes do os.chdir()
+                    dash_path = SCRIPT_DIR / "dashboard_bg.html"
                     if not dash_path.exists():
                         dash_path = WORKDIR / "dashboard_bg.html"
                     html = dash_path.read_bytes()
