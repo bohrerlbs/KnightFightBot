@@ -634,9 +634,13 @@ def buscar_adversarios(client, eu, ef_range):
     # BG usa POST para battleserver/?fragment=1
     # Precisa do csrftoken da página atual
     # csrftoken vem do cookie (confirmado pelo Network tab)
-    csrf = client.session.cookies.get("csrf", "")
+    # Pega csrf do cookie (pode haver múltiplos — pega o último)
+    try:
+        csrf = client.session.cookies.get("csrf", "")
+    except Exception:
+        all_csrf = [c.value for c in client.session.cookies if c.name == "csrf"]
+        csrf = all_csrf[-1] if all_csrf else ""
     if not csrf:
-        # Fallback: tenta pegar do HTML
         soup_form = client.get("/raubzug/")
         csrf_input = soup_form.find("input", {"name": "csrftoken"})
         if csrf_input:
@@ -679,7 +683,15 @@ def atacar(client, adversario):
     """Executa ataque no BG."""
     log.info(f"  Atacando {adversario['nome']} (EF {adversario.get('ef',0)})...")
     # csrf vem do cookie
-    csrf = client.session.cookies.get("csrf", adversario.get("csrf", ""))
+    # Múltiplos cookies csrf podem existir — usa o do adversário (mais fresco)
+    csrf = adversario.get("csrf", "")
+    if not csrf:
+        try:
+            csrf = client.session.cookies.get("csrf", "")
+        except Exception:
+            # Múltiplos cookies csrf — pega o último
+            all_csrf = [c.value for c in client.session.cookies if c.name == "csrf"]
+            csrf = all_csrf[-1] if all_csrf else ""
     soup = client.post({
         "csrftoken": csrf,
         "ac": "raubzug",
