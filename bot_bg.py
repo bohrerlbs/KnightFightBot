@@ -880,7 +880,7 @@ if __name__ == "__main__":
         atualizar_ciclo("eu", eu)
 
         # Coleta sessão atual
-        soup_sessao = client.get_full("/battleserver/battleground/currentbattle/")
+        soup_sessao = client.get_full("/battleground/currentbattle/")
         sessao = parsear_sessao_bg(soup_sessao)
         log.info(f"Sessão: {sessao.get('batalhas_feitas',0)}/{sessao.get('batalhas_total','?')} batalhas")
         atualizar_ciclo("sessao", sessao)
