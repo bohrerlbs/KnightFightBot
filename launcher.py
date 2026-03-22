@@ -464,10 +464,12 @@ class Handler(BaseHTTPRequestHandler):
             modo = body.get("modo", "free") if body else "free"
             # Inicia em thread separada para não bloquear o servidor
             import threading as _t
+            bg_key = f"BG_{name.upper()}"
             def _bg_thread():
                 try:
                     r = start_bg_bot(name, modo)
                     print(f"[BG] start_bg_bot({name}) = {r}", flush=True)
+                    print(f"[BG] running_bots keys: {list(running_bots.keys())}", flush=True)
                 except Exception as e:
                     import traceback
                     print(f"[BG] ERRO: {e}", flush=True)
