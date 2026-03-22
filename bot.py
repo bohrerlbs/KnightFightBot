@@ -450,8 +450,8 @@ def avaliar_alvo(perfil, eu=None):
         score += 8
 
     # ── 2. Minha taxa de acerto (AC vs bloqueio do alvo) ──────────────────────
+    taxa = minha_ac / (minha_ac + blq) if blq > 0 else 1.0
     if blq > 0:
-        taxa = minha_ac / (minha_ac + blq)
         if taxa < 0.35:
             problemas.append(f"Hit rate {taxa*100:.0f}% — bloqueio {blq} muito alto")
             score -= 35
@@ -466,8 +466,8 @@ def avaliar_alvo(perfil, eu=None):
             score += 15
 
     # ── 3. Taxa de acerto dele (AC dele vs meu bloqueio) ─────────────────────
+    taxa_d = ac_d / (ac_d + meu_blq) if ac_d > 0 and meu_blq > 0 else 0.0
     if ac_d > 0 and meu_blq > 0:
-        taxa_d = ac_d / (ac_d + meu_blq)
         if taxa_d > 0.70:
             problemas.append(f"AC dele {ac_d} vs meu bloqueio {meu_blq} → {taxa_d*100:.0f}% — ele acerta muito")
             score -= 20
@@ -477,6 +477,17 @@ def avaliar_alvo(perfil, eu=None):
         elif taxa_d < 0.45:
             vantagens.append(f"Meu bloqueio segura {(1-taxa_d)*100:.0f}% ✓")
             score += 12
+
+    # ── 3b. Penalidade extra: build especializada (AC e Blq ambos superiores) ─
+    # Ex: azrael Lv18 com AC87/Blq87 — level baixo mas build focada em combate
+    if ac_d > minha_ac and blq > meu_blq:
+        vantagem_dupla = ((ac_d - minha_ac) + (blq - meu_blq)) / 2
+        if vantagem_dupla > 15:
+            problemas.append(f"Build especializada: AC {ac_d} > {minha_ac} E Blq {blq} > {meu_blq} — desvantagem dupla")
+            score -= 20
+        elif vantagem_dupla > 8:
+            problemas.append(f"AC e bloqueio superiores — build focada em combate")
+            score -= 12
 
     # ── 4. Força do alvo (proxy de dano bruto) ────────────────────────────────
     if frc_d > minha_frc * 2.0:
