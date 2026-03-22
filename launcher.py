@@ -26,14 +26,20 @@ running_bots  = {}
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_profiles():
     profiles = []
-    for d in sorted(PROFILES_DIR.iterdir()) if PROFILES_DIR.exists() else []:
+    # Limpa processos mortos do dicionário
+    dead = [n for n, p in running_bots.items() if p.poll() is not None]
+    for n in dead:
+        del running_bots[n]
+
+    dirs = sorted(PROFILES_DIR.iterdir()) if PROFILES_DIR.exists() else []
+    for d in dirs:
         cfg_path = d / "config.json"
         if not cfg_path.exists():
             continue
         try:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             cfg["_name"]     = d.name
-            cfg["_running"]  = d.name in running_bots and running_bots[d.name].poll() is None
+            cfg["_running"]  = d.name in running_bots
             cfg["_log_tail"] = get_log_tail(d.name, 5)
             profiles.append(cfg)
         except:
