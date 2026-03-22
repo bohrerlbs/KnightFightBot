@@ -133,11 +133,11 @@ class ClienteBG:
     def get_full(self, path):
         return self.get(path, fragment=False)
 
-    def post(self, data, fragment=True):
-        # BG usa POST para battleserver/ (com ou sem ?fragment=1)
+    def post(self, data, referer=None, fragment=True):
+        # BG usa POST para battleserver/?fragment=1
         url = self.bs_url + "/?fragment=1" if fragment else self.bs_url + "/"
         headers = {
-            "Referer":          self.bs_url + "/",
+            "Referer":          referer or (self.bs_url + "/raubzug/"),
             "Origin":           self.base_url,
             "X-Requested-With": "XMLHttpRequest",
             "Accept":           "text/html, */*; q=0.01",
@@ -654,6 +654,23 @@ def buscar_adversarios(client, eu, ef_range):
         "showOwnBaseValues": "on",
         "search_npcs": "on",
     })
+    # Debug: salva HTML recebido para análise
+    try:
+        html_debug = str(soup)
+        fsbox_count = html_debug.count('class="fsbox"')
+        log.debug(f"  HTML recebido: {len(html_debug)} bytes | fsbox encontrados: {fsbox_count}")
+        if fsbox_count == 0:
+            # Verifica se há indicação de CD ativo
+            if "minutos" in html_debug.lower() or "countdown" in html_debug.lower():
+                log.warning("  Servidor retornou página de CD, não resultados")
+            elif "enemy-list" in html_debug:
+                log.debug("  Página tem #enemy-list mas sem fsbox")
+            # Salva HTML para debug
+            dbg_path = WORKDIR / "debug_response.html"
+            dbg_path.write_text(html_debug[:5000], encoding="utf-8")
+            log.debug(f"  HTML salvo em {dbg_path}")
+    except Exception as e:
+        log.debug(f"  Debug erro: {e}")
     adversarios = parsear_adversarios(soup)
     log.info(f"  {len(adversarios)} adversários encontrados")
     return adversarios
