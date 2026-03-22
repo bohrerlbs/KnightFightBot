@@ -470,7 +470,15 @@ class Handler(BaseHTTPRequestHandler):
                     print(f"[BG] ERRO: {e}", flush=True)
                     traceback.print_exc()
             _t.Thread(target=_bg_thread, daemon=True).start()
-            self._json({"ok": True, "pid": -1, "port": 0, "msg": "Iniciando..."})
+            # Calcula porta BG para retornar ao JS
+            try:
+                import json as _j2
+                cfg_p = BASE_DIR / "profiles" / name.upper() / "config.json"
+                _cfg = _j2.loads(cfg_p.read_text(encoding="utf-8")) if cfg_p.exists() else {}
+                bg_port = _cfg.get("port", 8765) + 5
+            except:
+                bg_port = 8770
+            self._json({"ok": True, "pid": -1, "port": bg_port, "msg": "Iniciando..."})
         elif p == "/api/capture-cookie":
             result = {}
             def run(): result["r"] = capture_cookie_browser(d.get("server", "int7"))
