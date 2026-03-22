@@ -58,6 +58,8 @@ PIG_LIST_FILE = "pig_list.json"
 PERFIS_CACHE  = "perfis_cache.json"
 ESTADO_FILE   = "estado.json"
 CICLO_FILE    = "ultimo_ciclo.json"
+COMBATES_FILE = "combates_srv.json"
+MODELO_FILE   = "modelo_combate.json"
 LOG_FILE      = "bot.log"
 
 # ═══════════════════════════════════════════
@@ -96,6 +98,151 @@ def parse_num(txt):
 
 def agora():
     return datetime.now()
+
+def carregar_combates_srv():
+    try:
+        if Path(COMBATES_FILE).exists():
+            return json.loads(Path(COMBATES_FILE).read_text(encoding="utf-8"))
+    except: pass
+    return []
+
+def salvar_combates_srv(dados):
+    Path(COMBATES_FILE).write_text(
+        json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def carregar_modelo():
+    """Carrega modelo de aprendizado local ou do GitHub."""
+    try:
+        if Path(MODELO_FILE).exists():
+            return json.loads(Path(MODELO_FILE).read_text(encoding="utf-8"))
+    except: pass
+    return {}
+
+def registrar_combate_srv(perfil, resultado, gold_ganho, xp_ganho,
+                           dano_causado=0, dano_recebido=0):
+    """
+    Registra combate do servidor original para aprendizado.
+    Salva atributos de ambos os lados + resultado para análise futura.
+    """
+    eu = MY_STATS.copy()
+    combates = carregar_combates_srv()
+    registro = {
+        "ts": agora().isoformat(),
+        "resultado": resultado,
+        "gold": gold_ganho,
+        "xp": xp_ganho,
+        "dano_causado": round(dano_causado, 1),
+        "dano_recebido": round(dano_recebido, 1),
+        # Meus stats no momento do combate
+        "eu_lv":  eu.get("level", 0),
+        "eu_ac":  eu.get("arte_combate", 0),
+        "eu_blq": eu.get("bloqueio", 0),
+        "eu_frc": eu.get("forca", 0),
+        "eu_res": eu.get("resistencia", 0),
+        # Stats do adversário
+        "adv_id":   perfil.get("user_id", ""),
+        "adv_nome": perfil.get("nome", ""),
+        "adv_lv":   perfil.get("level", 0),
+        "adv_ac":   perfil.get("arte_combate", 0),
+        "adv_blq":  perfil.get("bloqueio", 0),
+        "adv_frc":  perfil.get("forca", 0),
+        "adv_res":  perfil.get("resistencia", 0),
+        "adv_arm":  perfil.get("sk_armadura", 0),
+        "adv_s1":   perfil.get("sk_1mao", 0),
+        "adv_s2":   perfil.get("sk_2maos", 0),
+        "score_previsto": perfil.get("_score_cache", 0),
+    }
+    combates.append(registro)
+    # Mantém apenas os últimos 2000 combates
+    if len(combates) > 2000:
+        combates = combates[-2000:]
+    salvar_combates_srv(combates)
+
+    # Recalcula modelo a cada 20 combates novos
+    if len(combates) % 20 == 0:
+        gerar_modelo(combates)
+
+    return registro
+
+def gerar_modelo(combates=None):
+    """
+    Gera modelo_combate.json com insights estatísticos dos combates.
+    Pode ser subido ao GitHub para compartilhar com outros usuários.
+    """
+    if combates is None:
+        combates = carregar_combates_srv()
+    if len(combates) < 10:
+        return {}
+
+    total = len(combates)
+    vitorias = sum(1 for c in combates if c["resultado"] == "vitoria")
+
+    # WR por faixa de delta_AC (meu AC - bloqueio dele)
+    wr_delta_ac = {}
+    for c in combates:
+        eu_ac  = c.get("eu_ac", 0)
+        adv_blq = c.get("adv_blq", 0)
+        if eu_ac > 0 and adv_blq > 0:
+            taxa = round(eu_ac / (eu_ac + adv_blq) * 10) / 10  # arredonda para 0.1
+            faixa = f"{taxa:.1f}"
+            if faixa not in wr_delta_ac:
+                wr_delta_ac[faixa] = {"t": 0, "v": 0}
+            wr_delta_ac[faixa]["t"] += 1
+            if c["resultado"] == "vitoria":
+                wr_delta_ac[faixa]["v"] += 1
+
+    wr_delta_ac_calc = {
+        k: round(v["v"]/v["t"]*100, 1)
+        for k, v in wr_delta_ac.items() if v["t"] >= 3
+    }
+
+    # WR por faixa de delta_level
+    wr_delta_lv = {}
+    for c in combates:
+        delta = c.get("adv_lv", 0) - c.get("eu_lv", 0)
+        faixa = str(max(-5, min(10, delta)))  # clamp -5 a +10
+        if faixa not in wr_delta_lv:
+            wr_delta_lv[faixa] = {"t": 0, "v": 0}
+        wr_delta_lv[faixa]["t"] += 1
+        if c["resultado"] == "vitoria":
+            wr_delta_lv[faixa]["v"] += 1
+
+    wr_delta_lv_calc = {
+        k: round(v["v"]/v["t"]*100, 1)
+        for k, v in wr_delta_lv.items() if v["t"] >= 3
+    }
+
+    # Score previsto vs resultado real (calibração)
+    score_calibracao = {}
+    for c in combates:
+        sp = c.get("score_previsto", 0)
+        faixa = str(int(sp // 10) * 10)  # faixas de 10 em 10
+        if faixa not in score_calibracao:
+            score_calibracao[faixa] = {"t": 0, "v": 0}
+        score_calibracao[faixa]["t"] += 1
+        if c["resultado"] == "vitoria":
+            score_calibracao[faixa]["v"] += 1
+
+    calibracao = {
+        k: round(v["v"]/v["t"]*100, 1)
+        for k, v in score_calibracao.items() if v["t"] >= 3
+    }
+
+    modelo = {
+        "versao": agora().strftime("%Y%m%d_%H%M"),
+        "total_combates": total,
+        "win_rate_global": round(vitorias/total*100, 1),
+        "wr_por_hit_rate": wr_delta_ac_calc,
+        "wr_por_delta_level": wr_delta_lv_calc,
+        "calibracao_score": calibracao,
+        "gold_total": sum(c.get("gold", 0) for c in combates),
+        "xp_total": sum(c.get("xp", 0) for c in combates),
+    }
+
+    Path(MODELO_FILE).write_text(
+        json.dumps(modelo, ensure_ascii=False, indent=2), encoding="utf-8")
+    log.info(f"Modelo atualizado: {total} combates | WR {modelo['win_rate_global']}%")
+    return modelo
 
 def seg_desde(iso):
     if not iso: return float("inf")
@@ -516,6 +663,25 @@ def avaliar_alvo(perfil, eu=None):
         vantagens.append(f"Resistência {res_d} baixa ✓")
         score += 8
 
+    # ── 7. Ajuste por modelo aprendido ───────────────────────────────────────
+    modelo = carregar_modelo()
+    if modelo and modelo.get("total_combates", 0) >= 20:
+        # Ajuste pelo hit rate real aprendido
+        if blq > 0 and minha_ac > 0:
+            taxa_key = f"{taxa:.1f}"
+            wr_hr = modelo.get("wr_por_hit_rate", {}).get(taxa_key)
+            if wr_hr is not None:
+                # Blend: 70% fórmula, 30% aprendizado real
+                score_aprendido = wr_hr
+                score = round(score * 0.7 + score_aprendido * 0.3)
+                vantagens.append(f"Modelo: hit rate {taxa*100:.0f}% → WR real {wr_hr}%")                     if wr_hr >= 60 else problemas.append(f"Modelo: hit rate real {wr_hr}%")
+
+        # Ajuste pelo delta level real aprendido
+        delta_key = str(max(-5, min(10, delta_lv)))
+        wr_lv = modelo.get("wr_por_delta_level", {}).get(delta_key)
+        if wr_lv is not None:
+            score = round(score * 0.8 + wr_lv * 0.2)
+
     score = max(0, min(100, score))
     rec = "ATACAR" if score >= 60 else ("CUIDADO" if score >= 40 else "EVITAR")
     return {"recomendacao": rec, "score": score,
@@ -668,6 +834,18 @@ def executar_ataque(client, user_id, dry_run=False):
         return {"status": "indisponivel", "user_id": user_id}
 
     resultado, gold_ganho, xp_ganho = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
+
+    # Registra para aprendizado (usa atributos frescos se disponíveis, senão usa cache)
+    perfil_aprendizado = attrs or {}
+    perfil_aprendizado["user_id"] = user_id
+    if not attrs:
+        cache = carregar_perfis_cache()
+        perfil_aprendizado.update(cache.get("perfis", {}).get(user_id, {}))
+    # Adiciona score previsto se estava na pig_list
+    pl = carregar_pig_list()
+    if user_id in pl:
+        perfil_aprendizado["_score_cache"] = pl[user_id].get("score_cache", 0)
+    registrar_combate_srv(perfil_aprendizado, resultado, gold_ganho, xp_ganho)
 
     estado = carregar_estado()
     registrar_ataque(estado, user_id, resultado, gold_ganho, xp_ganho)
@@ -1289,7 +1467,6 @@ def loop_rapido(client):
                 salvar_estado(estado_hp)
                 atualizar_ciclo_file("status", status_fresco)
 
-                log.info(f"HP atual: {hp_atual}/{hp_total}")
                 if hp_total > 0 and hp_atual >= 0:
                     pct_hp = hp_atual / hp_total if hp_total > 0 else 1.0
                     if pct_hp < 0.70:

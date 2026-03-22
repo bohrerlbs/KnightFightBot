@@ -189,6 +189,89 @@ def check_update():
     except:
         return {"current": get_version(), "latest": None, "update": False}
 
+def get_modelo_status():
+    """Verifica quantos combates novos há desde o último modelo subido."""
+    import json as _j
+    total_combates = 0
+    for profile_dir in PROFILES_DIR.iterdir():
+        if not profile_dir.is_dir(): continue
+        f = profile_dir / "combates_srv.json"
+        if f.exists():
+            try: total_combates += len(_j.loads(f.read_text(encoding="utf-8")))
+            except: pass
+    modelo_path = BASE_DIR / "modelo_combate.json"
+    modelo_combates = 0
+    if modelo_path.exists():
+        try:
+            m = _j.loads(modelo_path.read_text(encoding="utf-8"))
+            modelo_combates = m.get("total_combates", 0)
+        except: pass
+    novos = total_combates - modelo_combates
+    return {
+        "total_combates": total_combates,
+        "modelo_combates": modelo_combates,
+        "combates_novos": novos,
+        "tem_modelo": modelo_path.exists(),
+        "badge": novos >= 20,  # mostra badge se 20+ combates novos
+    }
+
+def export_modelo():
+    """Consolida combates de todos os perfis e gera modelo_combate.json."""
+    import json as _j, sys
+    todos_combates = []
+    for profile_dir in PROFILES_DIR.iterdir():
+        if not profile_dir.is_dir(): continue
+        f = profile_dir / "combates_srv.json"
+        if f.exists():
+            try: todos_combates.extend(_j.loads(f.read_text(encoding="utf-8")))
+            except: pass
+    if not todos_combates:
+        return {"ok": False, "error": "Nenhum combate encontrado"}
+    # Ordena por timestamp
+    todos_combates.sort(key=lambda x: x.get("ts",""))
+    total = len(todos_combates)
+    vitorias = sum(1 for c in todos_combates if c["resultado"] == "vitoria")
+    # WR por hit rate
+    wr_hr = {}
+    for c in todos_combates:
+        eu_ac = c.get("eu_ac",0); adv_blq = c.get("adv_blq",0)
+        if eu_ac > 0 and adv_blq > 0:
+            taxa = round(eu_ac/(eu_ac+adv_blq)*10)/10
+            k = f"{taxa:.1f}"
+            wr_hr.setdefault(k, {"t":0,"v":0})
+            wr_hr[k]["t"] += 1
+            if c["resultado"] == "vitoria": wr_hr[k]["v"] += 1
+    # WR por delta level
+    wr_lv = {}
+    for c in todos_combates:
+        delta = str(max(-5, min(10, c.get("adv_lv",0)-c.get("eu_lv",0))))
+        wr_lv.setdefault(delta, {"t":0,"v":0})
+        wr_lv[delta]["t"] += 1
+        if c["resultado"] == "vitoria": wr_lv[delta]["v"] += 1
+    # Calibração score
+    calib = {}
+    for c in todos_combates:
+        k = str(int(c.get("score_previsto",0)//10)*10)
+        calib.setdefault(k, {"t":0,"v":0})
+        calib[k]["t"] += 1
+        if c["resultado"] == "vitoria": calib[k]["v"] += 1
+
+    import datetime
+    modelo = {
+        "versao": datetime.datetime.now().strftime("%Y%m%d_%H%M"),
+        "total_combates": total,
+        "win_rate_global": round(vitorias/total*100,1),
+        "wr_por_hit_rate": {k: round(v["v"]/v["t"]*100,1) for k,v in wr_hr.items() if v["t"]>=3},
+        "wr_por_delta_level": {k: round(v["v"]/v["t"]*100,1) for k,v in wr_lv.items() if v["t"]>=3},
+        "calibracao_score": {k: round(v["v"]/v["t"]*100,1) for k,v in calib.items() if v["t"]>=3},
+        "gold_total": sum(c.get("gold",0) for c in todos_combates),
+        "xp_total": sum(c.get("xp",0) for c in todos_combates),
+    }
+    out = BASE_DIR / "modelo_combate.json"
+    out.write_text(_j.dumps(modelo, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "total_combates": total, "win_rate": modelo["win_rate_global"],
+            "arquivo": str(out)}
+
 def download_update():
     import urllib.request, shutil
     for name, p in list(running_bots.items()):
@@ -197,7 +280,7 @@ def download_update():
             try: p.wait(timeout=5)
             except: p.kill()
     updated, errors = [], []
-    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html"]:
+    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html", "modelo_combate.json"]:
         try:
             bak = BASE_DIR / (fname + ".bak")
             src = BASE_DIR / fname
@@ -324,6 +407,8 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/save":           self._json(save_profile(d))
         elif p == "/api/delete":         self._json(delete_profile(d["name"]))
         elif p == "/api/update":         self._json(download_update())
+        elif p == "/api/modelo/status":   self._json(get_modelo_status())
+        elif p == "/api/modelo/export":   self._json(export_modelo())
         elif p.startswith("/api/bg/start/"):
             parts = p.split("/")
             name = parts[-2] if len(parts) >= 5 else parts[-1]
