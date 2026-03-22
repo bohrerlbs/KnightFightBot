@@ -478,12 +478,12 @@ function renderProfiles(profiles){
     }).join('\n');
 
     var startStopBtn = running
-      ? '<button class="btn btn-stop" onclick="stopBot(''+name+'')">■ Parar</button>'
-      : '<button class="btn btn-start" onclick="startBot(''+name+'')">▶ Iniciar</button>';
+      ? '<button class="btn btn-stop" onclick="stopBot(\''+name+'\')">■ Parar</button>'
+      : '<button class="btn btn-start" onclick="startBot(\''+name+'\')">▶ Iniciar</button>';
 
     var bgBtn = bgRunning
-      ? '<button class="btn btn-stop" onclick="stopBG(''+name+'')">■ Parar BG</button>'
-      : '<button class="btn btn-bg" onclick="startBG(''+name+'')">▶ Iniciar BG</button>';
+      ? '<button class="btn btn-stop" onclick="stopBG(\''+name+'\')">■ Parar BG</button>'
+      : '<button class="btn btn-bg" onclick="startBG(\''+name+'\')">▶ Iniciar BG</button>';
 
     html += '<div class="profile-card '+(running?'running':'')+'">';
     html += '<div class="card-header">';
