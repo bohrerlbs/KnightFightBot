@@ -606,9 +606,8 @@ function startBG(name, modo){
   .then(function(d){
     if(d.ok){
       toast('BG Bot iniciando... aguarde');
-      setTimeout(function(){ loadProfiles(); }, 2000);
-      setTimeout(function(){ loadProfiles(); }, 5000);
-      setTimeout(function(){ loadProfiles(); }, 10000);
+      // Reload completo após 4s para garantir estado atualizado
+      setTimeout(function(){ location.reload(); }, 4000);
     } else {
       toast('Erro BG: '+(d.error||'desconhecido'),'err');
     }
