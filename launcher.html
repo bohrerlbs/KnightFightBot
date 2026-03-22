@@ -596,25 +596,27 @@ function stopBot(name){
 function startBG(name, modo){
   modo = modo || 'free';
   toast('Iniciando BG Bot...');
-  var body = JSON.stringify({modo: modo});
+  // Usa AbortController com timeout de 2s
+  // Se o servidor demorar, cancela e assume que iniciou
+  var ctrl = new AbortController();
+  var timer = setTimeout(function(){ ctrl.abort(); }, 2000);
   fetch('/api/bg/start/'+name+'/', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: body
+    body: JSON.stringify({modo: modo}),
+    signal: ctrl.signal
   })
-  .then(function(r){ return r.json(); })
+  .then(function(r){ clearTimeout(timer); return r.json(); })
   .then(function(d){
-    if(d.ok){
-      toast('BG Bot iniciado! Abrindo dashboard em 3s...');
-      setTimeout(function(){
-        window.open('http://localhost:'+d.port+'/dashboard','_blank');
-        loadProfiles();
-      }, 3000);
-    } else {
-      toast('Erro BG: '+(d.error||'desconhecido'),'err');
-    }
+    toast('BG Bot iniciado!');
+    setTimeout(function(){ loadProfiles(); }, 3000);
   })
-  .catch(function(e){ toast('Erro BG: '+e,'err'); });
+  .catch(function(e){
+    clearTimeout(timer);
+    // Timeout ou erro de conexao — assume que iniciou mesmo assim
+    toast('BG Bot iniciando...');
+    setTimeout(function(){ loadProfiles(); }, 3000);
+  });
 }
 
 function stopBG(name){
