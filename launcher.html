@@ -289,9 +289,7 @@ header {
     <button class="update-badge" id="update-badge" onclick="doUpdate()">
       ^ Atualização disponível - clique para instalar
     </button>
-    <button class="update-badge" id="modelo-badge" onclick="exportModelo()" style="display:none;background:#1a3a2a;border-color:#4caf73;color:#4caf73;margin-left:6px" title="">
-      [M] <span id="modelo-count">Modelo desatualizado</span>
-    </button>
+
   </div>
 </header>
 
@@ -737,38 +735,6 @@ function saveProfile(){
 }
 
 // Modelo de aprendizado
-function checkModelo(){
-  fetch('/api/modelo/status').then(r=>r.json()).then(d=>{
-    var el = document.getElementById('modelo-badge');
-    if(!el) return;
-    if(d.badge){
-      el.style.display='inline-block';
-      el.title = d.combates_novos + ' combates novos desde o último modelo subido';
-      document.getElementById('modelo-count').textContent = '[M] ' + d.combates_novos + ' combates novos - exportar modelo';
-    } else {
-      el.style.display='none';
-    }
-  }).catch(()=>{});
-}
-
-function exportModelo(){
-  if(!confirm('Gerar modelo_combate.json com todos os combates registrados?
-
-Após gerar, suba o arquivo no GitHub para compartilhar com outros usuários.')) return;
-  fetch('/api/modelo/export').then(r=>r.json()).then(d=>{
-    if(d.ok){
-      toast('v modelo_combate.json gerado! ' + d.total_combates + ' combates | WR ' + d.win_rate + '%\n\nArquivo salvo na pasta do bot. Suba no GitHub!');
-      setTimeout(checkModelo, 500);
-    } else {
-      toast('Erro: ' + (d.error||'desconhecido'));
-    }
-  }).catch(e=>toast('Erro: '+e));
-}
-
-// Verifica modelo a cada 5 minutos
-checkModelo();
-setInterval(checkModelo, 300000);
-
 // Check update
 var latestVersion = null;
 fetch('/api/version')
