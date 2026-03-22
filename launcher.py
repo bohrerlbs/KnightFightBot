@@ -99,6 +99,15 @@ def start_bg_bot(name, modo="free"):
         log_file_abs = profile_dir.resolve() / "bot_bg.log"
         bot_bg_abs   = bot_bg.resolve()
         workdir_abs  = profile_dir.resolve()
+
+        # Escreve header no log antes de iniciar
+        with open(str(log_file_abs), "a", encoding="utf-8") as f:
+            f.write(f"\n=== BG Bot iniciado pelo launcher ===\n")
+            f.write(f"bot_bg: {bot_bg_abs}\n")
+            f.write(f"workdir: {workdir_abs}\n")
+            f.write(f"python: {sys.executable}\n")
+            f.write(f"config: {cfg}\n")
+
         log_f = open(str(log_file_abs), "a", encoding="utf-8")
         proc = subprocess.Popen(
             [sys.executable, "-u", str(bot_bg_abs), "--workdir", str(workdir_abs)],
@@ -108,6 +117,15 @@ def start_bg_bot(name, modo="free"):
             cwd=str(BASE_DIR),
         )
         running_bots[bg_key] = proc
+
+        # Aguarda 2s e verifica se ainda está rodando
+        import time as _t
+        _t.sleep(2)
+        if proc.poll() is not None:
+            with open(str(log_file_abs), "a", encoding="utf-8") as f:
+                f.write(f"ERRO: processo terminou com código {proc.returncode}\n")
+            return {"ok": False, "error": f"Bot BG terminou imediatamente (código {proc.returncode}) — veja bot_bg.log"}
+
         return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
     except Exception as e:
         return {"ok": False, "error": f"Erro ao iniciar processo: {e}"}
