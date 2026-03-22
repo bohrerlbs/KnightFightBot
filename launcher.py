@@ -415,7 +415,15 @@ class Handler(BaseHTTPRequestHandler):
             parts = p.split("/")
             name = parts[-2] if len(parts) >= 5 else parts[-1]
             modo = self._body().get("modo","free")
-            self._json(start_bg_bot(name, modo))
+            import threading as _t
+            result = {"ok": False, "error": "timeout"}
+            def _run():
+                nonlocal result
+                result = start_bg_bot(name, modo)
+            t = _t.Thread(target=_run, daemon=True)
+            t.start()
+            t.join(timeout=5)
+            self._json(result)
         elif p == "/api/capture-cookie":
             result = {}
             def run(): result["r"] = capture_cookie_browser(d.get("server", "int7"))
