@@ -583,25 +583,25 @@ function startBG(name){
     body: JSON.stringify({modo: modo})
   }).then(r=>r.json()).then(d=>{
     if(d.ok){
-      showToast('BG Bot iniciado! Dashboard: porta '+d.port);
+      toast('BG Bot iniciado! Dashboard: porta '+d.port);
       setTimeout(loadProfiles, 1000);
     } else {
-      showToast('Erro: '+(d.error||'desconhecido'));
+      toast('Erro: '+(d.error||'desconhecido'));
     }
-  }).catch(e=>showToast('Erro: '+e));
+  }).catch(e=>toast('Erro: '+e));
 }
 
 function stopBG(name){
   fetch('/api/bg/stop/'+name+'/').then(r=>r.json()).then(d=>{
-    if(d.ok){ showToast('BG Bot parado.'); setTimeout(loadProfiles,500); }
-    else showToast('Erro: '+(d.error||''));
+    if(d.ok){ toast('BG Bot parado.'); setTimeout(loadProfiles,500); }
+    else toast('Erro: '+(d.error||''));
   });
 }
 
 function openDashBG(port){
   fetch('http://localhost:'+port+'/dados')
     .then(()=>{ window.open('http://localhost:'+port+'/dashboard','_blank'); })
-    .catch(()=>showToast('BG Bot offline nesta porta'));
+    .catch(()=>toast('BG Bot offline nesta porta'));
 }
 
 function openDash(port){
@@ -750,12 +750,12 @@ function exportModelo(){
 Após gerar, suba o arquivo no GitHub para compartilhar com outros usuários.')) return;
   fetch('/api/modelo/export').then(r=>r.json()).then(d=>{
     if(d.ok){
-      showToast('✓ modelo_combate.json gerado! ' + d.total_combates + ' combates | WR ' + d.win_rate + '%\n\nArquivo salvo na pasta do bot. Suba no GitHub!');
+      toast('✓ modelo_combate.json gerado! ' + d.total_combates + ' combates | WR ' + d.win_rate + '%\n\nArquivo salvo na pasta do bot. Suba no GitHub!');
       setTimeout(checkModelo, 500);
     } else {
-      showToast('Erro: ' + (d.error||'desconhecido'));
+      toast('Erro: ' + (d.error||'desconhecido'));
     }
-  }).catch(e=>showToast('Erro: '+e));
+  }).catch(e=>toast('Erro: '+e));
 }
 
 // Verifica modelo a cada 5 minutos
