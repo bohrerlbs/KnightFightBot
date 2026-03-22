@@ -72,7 +72,7 @@ def start_bg_bot(name, modo="free"):
     bot_bg = BASE_DIR / "bot_bg.py"
     if not bot_bg.exists():
         return {"ok": False, "error": "bot_bg.py não encontrado"}
-    bg_key = f"BG_{name}"
+    bg_key = f"BG_{name.upper()}"
     if bg_key in running_bots and running_bots[bg_key].poll() is None:
         return {"ok": False, "error": "BG Bot já rodando para este perfil"}
     # Sempre parte do config.json normal (tem cookies, servidor, userid)
@@ -123,7 +123,7 @@ def start_bg_bot(name, modo="free"):
         return {"ok": False, "error": f"Erro ao iniciar processo: {e}"}
 
 def stop_bg_bot(name):
-    bg_key = f"BG_{name}"
+    bg_key = f"BG_{name.upper()}"
     if bg_key in running_bots:
         p = running_bots.pop(bg_key)
         if p.poll() is None:
@@ -134,7 +134,7 @@ def stop_bg_bot(name):
     return {"ok": False, "error": "BG Bot não estava rodando"}
 
 def status_bg_bot(name):
-    bg_key = f"BG_{name}"
+    bg_key = f"BG_{name.upper()}"
     running = bg_key in running_bots and running_bots[bg_key].poll() is None
     return {"running": running}
 
