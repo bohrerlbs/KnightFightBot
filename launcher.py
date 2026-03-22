@@ -101,12 +101,12 @@ def start_bg_bot(name, modo="free"):
         workdir_abs  = profile_dir.resolve()
 
         # Escreve header no log antes de iniciar
+        import datetime as _dt
         with open(str(log_file_abs), "a", encoding="utf-8") as f:
-            f.write(f"\n=== BG Bot iniciado pelo launcher ===\n")
-            f.write(f"bot_bg: {bot_bg_abs}\n")
-            f.write(f"workdir: {workdir_abs}\n")
+            f.write(f"\n=== BG Bot {_dt.datetime.now():%H:%M:%S} ===\n")
+            f.write(f"bot_bg: {bot_bg_abs} exists={bot_bg_abs.exists()}\n")
+            f.write(f"workdir: {workdir_abs} exists={workdir_abs.exists()}\n")
             f.write(f"python: {sys.executable}\n")
-            f.write(f"config: {cfg}\n")
 
         log_f = open(str(log_file_abs), "a", encoding="utf-8")
         proc = subprocess.Popen(
