@@ -75,17 +75,19 @@ def start_bg_bot(name, modo="free"):
     bg_key = f"BG_{name}"
     if bg_key in running_bots and running_bots[bg_key].poll() is None:
         return {"ok": False, "error": "BG Bot já rodando para este perfil"}
-    cfg_path = profile_dir / "config_bg.json"
-    if cfg_path.exists():
-        cfg = _json.loads(cfg_path.read_text(encoding="utf-8"))
+    # Sempre parte do config.json normal (tem cookies, servidor, userid)
+    cfg_normal = profile_dir / "config.json"
+    if cfg_normal.exists():
+        cfg = _json.loads(cfg_normal.read_text(encoding="utf-8"))
     else:
-        cfg_normal = profile_dir / "config.json"
-        if cfg_normal.exists():
-            cfg = _json.loads(cfg_normal.read_text(encoding="utf-8"))
-            cfg["port"] = cfg.get("port", 8765) + 5
-        else:
-            cfg = {"port": 8770}
+        cfg = {}
+    # Porta BG = porta normal + 5 (evita conflito)
+    porta_normal = cfg.get("port", 8765)
+    cfg["port"] = porta_normal + 5
     cfg["modo"] = modo
+    cfg["perfil"] = name
+    # Salva config_bg.json na pasta do perfil
+    cfg_path = profile_dir / "config_bg.json"
     cfg_path.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     log_file = profile_dir / "bot_bg.log"
     env = os.environ.copy()

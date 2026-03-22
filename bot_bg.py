@@ -105,6 +105,10 @@ class ClienteBG:
     def __init__(self, base_url, cookies_raw):
         self.base_url = base_url.rstrip("/")
         self.bs_url   = self.base_url + "/battleserver"
+        log.info(f"ClienteBG: {self.bs_url}")
+        if not cookies_raw or cookies_raw == "COLE_SEUS_COOKIES_AQUI":
+            log.error("COOKIES NAO CONFIGURADOS! Configure no launcher.")
+            raise ValueError("Cookies não configurados")
         self.session  = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -826,12 +830,19 @@ if __name__ == "__main__":
     config_path = WORKDIR / "config_bg.json"
     if config_path.exists():
         cfg = json.loads(config_path.read_text(encoding="utf-8"))
-        BASE_URL       = f"https://{cfg.get('servidor','int7')}.knightfight.moonid.net"
+        servidor       = cfg.get("servidor", cfg.get("server", "int7"))
+        BASE_URL       = f"https://{servidor}.knightfight.moonid.net"
         COOKIES_RAW    = cfg.get("cookies", COOKIES_RAW)
         MY_USER_ID     = cfg.get("userid", MY_USER_ID)
         DASHBOARD_PORT = cfg.get("port", DASHBOARD_PORT)
         MODO_BG        = cfg.get("modo", args.modo)
-        print(f"⚙ Config carregada: {cfg.get('perfil','?')} | Modo: {MODO_BG}")
+        print(f"Config BG carregada:")
+        print(f"  Perfil : {cfg.get('perfil', cfg.get('profile','?'))}")
+        print(f"  Servidor: {servidor} -> {BASE_URL}")
+        print(f"  UserID : {MY_USER_ID}")
+        print(f"  Porta  : {DASHBOARD_PORT}")
+        print(f"  Modo   : {MODO_BG}")
+        print(f"  Cookies: {'OK' if COOKIES_RAW and COOKIES_RAW != 'COLE_SEUS_COOKIES_AQUI' else 'FALTANDO!'}")
     else:
         MODO_BG = args.modo
         print(f"⚠ config_bg.json não encontrado — usando padrão")
