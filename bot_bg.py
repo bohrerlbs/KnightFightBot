@@ -134,7 +134,17 @@ class ClienteBG:
         return self.get(path, fragment=False)
 
     def post(self, data):
-        r = self.session.post(self.bs_url + "/", data=data, timeout=15)
+        headers = {
+            "Referer": self.bs_url + "/",
+            "Origin":  self.base_url,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        r = self.session.post(
+            self.bs_url + "/",
+            data=data,
+            headers=headers,
+            timeout=15
+        )
         r.raise_for_status()
         return BeautifulSoup(r.text, "html.parser")
 
@@ -873,7 +883,7 @@ if __name__ == "__main__":
     # Coleta status do personagem no BG
     log.info("Coletando status no BG...")
     try:
-        soup_status = client.get_full("/")
+        soup_status = client.get_full("/status/")
         eu = parsear_status_bg(soup_status)
         log.info(f"Personagem: Lv{eu.get('level','?')} | EF {eu.get('ef','?')} | "
                  f"AC {eu.get('arte_combate','?')} Blq {eu.get('bloqueio','?')}")
