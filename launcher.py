@@ -118,15 +118,6 @@ def start_bg_bot(name, modo="free"):
             cwd=str(BASE_DIR),
         )
         running_bots[bg_key] = proc
-
-        # Aguarda 2s e verifica se ainda está rodando
-        import time as _t
-        _t.sleep(2)
-        if proc.poll() is not None:
-            with open(str(log_file_abs), "a", encoding="utf-8") as f:
-                f.write(f"ERRO: processo terminou com código {proc.returncode}\n")
-            return {"ok": False, "error": f"Bot BG terminou imediatamente (código {proc.returncode}) — veja bot_bg.log"}
-
         return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
     except Exception as e:
         return {"ok": False, "error": f"Erro ao iniciar processo: {e}"}
