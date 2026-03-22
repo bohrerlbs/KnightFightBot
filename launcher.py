@@ -424,6 +424,21 @@ class Handler(BaseHTTPRequestHandler):
             self._json(check_update())
         elif p.startswith("/api/log/"):
             self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
+        elif p == "/api/bg/diag":
+            import json as _j
+            diag = {}
+            for d in PROFILES_DIR.iterdir():
+                if d.is_dir():
+                    cfg_p = d / "config.json"
+                    bot_bg = BASE_DIR / "bot_bg.py"
+                    diag[d.name] = {
+                        "profile_dir": str(d),
+                        "profile_exists": d.exists(),
+                        "config_exists": cfg_p.exists(),
+                        "bot_bg_exists": bot_bg.exists(),
+                        "bot_bg_path": str(bot_bg),
+                    }
+            self._json(diag)
         elif p.startswith("/api/bg/stop/"):
             self._json(stop_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
         elif p.startswith("/api/bg/status/"):

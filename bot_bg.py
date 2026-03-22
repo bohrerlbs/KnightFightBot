@@ -643,7 +643,7 @@ def buscar_adversarios(client, eu, ef_range):
     if not ef_minha:
         log.warning("  EF do personagem desconhecida — usando 2.0 como padrão")
         ef_minha = 2.0
-    ef_from  = max(0.5, ef_minha - 0.5)
+    ef_from  = ef_minha          # começa do próprio EF — não vale atacar EF menor
     ef_to    = min(99.0, ef_minha + ef_range)
 
     # Arredonda para 0.5
