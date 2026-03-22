@@ -39,7 +39,8 @@ def get_profiles():
         try:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             cfg["_name"]     = d.name
-            cfg["_running"]  = d.name in running_bots
+            cfg["_running"]  = d.name in running_bots and running_bots[d.name].poll() is None
+            cfg["_bg_running"] = f"BG_{d.name}" in running_bots and running_bots[f"BG_{d.name}"].poll() is None
             cfg["_log_tail"] = get_log_tail(d.name, 5)
             profiles.append(cfg)
         except:
@@ -62,6 +63,57 @@ def get_profile_port(name):
         return int(json.loads(cfg.read_text(encoding="utf-8")).get("port", 8765))
     except:
         return 8765
+
+def start_bg_bot(name, modo="free"):
+    import json as _json
+    profile_dir = BASE_DIR / "profiles" / name.upper()
+    if not profile_dir.exists():
+        return {"ok": False, "error": f"Perfil {name} não encontrado"}
+    bot_bg = BASE_DIR / "bot_bg.py"
+    if not bot_bg.exists():
+        return {"ok": False, "error": "bot_bg.py não encontrado"}
+    bg_key = f"BG_{name}"
+    if bg_key in running_bots and running_bots[bg_key].poll() is None:
+        return {"ok": False, "error": "BG Bot já rodando para este perfil"}
+    cfg_path = profile_dir / "config_bg.json"
+    if cfg_path.exists():
+        cfg = _json.loads(cfg_path.read_text(encoding="utf-8"))
+    else:
+        cfg_normal = profile_dir / "config.json"
+        if cfg_normal.exists():
+            cfg = _json.loads(cfg_normal.read_text(encoding="utf-8"))
+            cfg["port"] = cfg.get("port", 8765) + 5
+        else:
+            cfg = {"port": 8770}
+    cfg["modo"] = modo
+    cfg_path.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    log_file = profile_dir / "bot_bg.log"
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    proc = subprocess.Popen(
+        [sys.executable, str(bot_bg), "--workdir", str(profile_dir)],
+        stdout=open(log_file, "a", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        env=env,
+    )
+    running_bots[bg_key] = proc
+    return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
+
+def stop_bg_bot(name):
+    bg_key = f"BG_{name}"
+    if bg_key in running_bots:
+        p = running_bots.pop(bg_key)
+        if p.poll() is None:
+            p.terminate()
+            try: p.wait(timeout=5)
+            except: p.kill()
+        return {"ok": True}
+    return {"ok": False, "error": "BG Bot não estava rodando"}
+
+def status_bg_bot(name):
+    bg_key = f"BG_{name}"
+    running = bg_key in running_bots and running_bots[bg_key].poll() is None
+    return {"running": running}
 
 def start_bot(name):
     if name in running_bots and running_bots[name].poll() is None:
@@ -145,7 +197,7 @@ def download_update():
             try: p.wait(timeout=5)
             except: p.kill()
     updated, errors = [], []
-    for fname in ["bot.py", "dashboard.html", "launcher.html"]:
+    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html"]:
         try:
             bak = BASE_DIR / (fname + ".bak")
             src = BASE_DIR / fname
@@ -159,6 +211,11 @@ def download_update():
     try:
         with urllib.request.urlopen(f"{GITHUB_RAW}/VERSION", timeout=5) as r:
             (BASE_DIR / "VERSION").write_bytes(r.read())
+    except:
+        pass
+    try:
+        with urllib.request.urlopen(f"{GITHUB_RAW}/VERSION_BG", timeout=5) as r:
+            (BASE_DIR / "VERSION_BG").write_bytes(r.read())
     except:
         pass
     return {"ok": len(errors) == 0, "updated": updated, "errors": errors}
@@ -267,6 +324,15 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/save":           self._json(save_profile(d))
         elif p == "/api/delete":         self._json(delete_profile(d["name"]))
         elif p == "/api/update":         self._json(download_update())
+        elif p.startswith("/api/bg/start/"):
+            parts = p.split("/")
+            name = parts[-2] if len(parts) >= 5 else parts[-1]
+            modo = self._body().get("modo","free")
+            self._json(start_bg_bot(name, modo))
+        elif p.startswith("/api/bg/stop/"):
+            self._json(stop_bg_bot(p.split("/")[-1]))
+        elif p.startswith("/api/bg/status/"):
+            self._json(status_bg_bot(p.split("/")[-1]))
         elif p == "/api/capture-cookie":
             result = {}
             def run(): result["r"] = capture_cookie_browser(d.get("server", "int7"))
