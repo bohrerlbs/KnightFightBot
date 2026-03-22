@@ -1389,6 +1389,110 @@ def parsear_status(soup):
 # ═══════════════════════════════════════════
 # LOOPS
 # ═══════════════════════════════════════════
+
+def recalcular_scores_cache():
+    """
+    Recalcula o score de todos os perfis no cache usando os stats atuais
+    do personagem + modelo aprendido.
+    Chamado automaticamente quando MY_STATS muda (level up, atributo investido).
+    Loga quem mudou de categoria (EVITAR↔ATACAR).
+    """
+    cache = carregar_perfis_cache()
+    perfis = cache.get("perfis", {})
+    if not perfis:
+        return 0
+
+    modelo = carregar_modelo()
+    combates = carregar_combates_srv()
+
+    # Peso do aprendizado aumenta com mais combates
+    n_combates = len(combates)
+    if n_combates >= 500:
+        peso_modelo = 0.60
+    elif n_combates >= 200:
+        peso_modelo = 0.45
+    elif n_combates >= 50:
+        peso_modelo = 0.30
+    else:
+        peso_modelo = 0.0  # sem dados suficientes, só fórmula
+
+    recalculados = 0
+    mudancas_atacar = []   # EVITAR → ATACAR
+    mudancas_evitar = []   # ATACAR → EVITAR
+
+    for uid, perfil in perfis.items():
+        score_antigo = perfil.get("_score", None)
+        rec_antiga   = perfil.get("_rec", None)
+
+        # Calcula novo score com stats atuais
+        av = avaliar_alvo(perfil)
+        score_novo = av["score"]
+        rec_nova   = av["recomendacao"]
+
+        # Aplica blend com modelo se tiver dados suficientes
+        if peso_modelo > 0 and modelo and modelo.get("total_combates", 0) >= 20:
+            minha_ac  = MY_STATS.get("arte_combate", 0)
+            meu_blq   = MY_STATS.get("bloqueio", 0)
+            adv_blq   = perfil.get("bloqueio", 0)
+            adv_ac    = perfil.get("arte_combate", 0)
+            delta_lv  = perfil.get("level", 0) - MY_STATS.get("level", 0)
+
+            # WR por hit rate
+            if minha_ac > 0 and adv_blq > 0:
+                taxa = round(minha_ac / (minha_ac + adv_blq) * 10) / 10
+                wr_hr = modelo.get("wr_por_hit_rate", {}).get(f"{taxa:.1f}")
+                if wr_hr is not None:
+                    score_novo = round(score_novo * (1 - peso_modelo) + wr_hr * peso_modelo)
+
+            # WR por delta level
+            dl_key = str(max(-5, min(10, delta_lv)))
+            wr_lv = modelo.get("wr_por_delta_level", {}).get(dl_key)
+            if wr_lv is not None:
+                score_novo = round(score_novo * 0.85 + wr_lv * 0.15)
+
+            score_novo = max(0, min(100, score_novo))
+            rec_nova = "ATACAR" if score_novo >= 60 else ("CUIDADO" if score_novo >= 40 else "EVITAR")
+
+        # Atualiza no cache
+        perfil["_score"] = score_novo
+        perfil["_rec"]   = rec_nova
+        recalculados += 1
+
+        # Detecta mudança de categoria
+        if score_antigo is not None and rec_antiga is not None:
+            foi_evitar  = rec_antiga == "EVITAR"
+            foi_atacar  = rec_antiga == "ATACAR"
+            agora_atacar = rec_nova == "ATACAR"
+            agora_evitar = rec_nova == "EVITAR"
+
+            if foi_evitar and agora_atacar:
+                mudancas_atacar.append(
+                    f"{perfil.get('nome','?')} Lv{perfil.get('level','?')} "
+                    f"({score_antigo}→{score_novo})"
+                )
+            elif foi_atacar and agora_evitar:
+                mudancas_evitar.append(
+                    f"{perfil.get('nome','?')} Lv{perfil.get('level','?')} "
+                    f"({score_antigo}→{score_novo})"
+                )
+
+    cache["perfis"] = perfis
+    cache["score_recalculado_em"] = agora().isoformat()
+    cache["peso_modelo_usado"] = peso_modelo
+    salvar_perfis_cache(cache)
+
+    log.info(f"Scores recalculados: {recalculados} perfis | "
+             f"Modelo: {peso_modelo*100:.0f}% | Combates: {n_combates}")
+
+    if mudancas_atacar:
+        log.info(f"  ✅ Passaram para ATACAR ({len(mudancas_atacar)}): "
+                 + " | ".join(mudancas_atacar[:10]))
+    if mudancas_evitar:
+        log.info(f"  ⛔ Passaram para EVITAR ({len(mudancas_evitar)}): "
+                 + " | ".join(mudancas_evitar[:10]))
+
+    return recalculados
+
 def loop_lento(client):
     """A cada 1h: ranking + pig list + status. Às 3h: cache de perfis."""
     while True:
@@ -1401,6 +1505,33 @@ def loop_lento(client):
                 status = parsear_status(client.get("/status/"))
                 atualizar_ciclo_file("status", status)
                 log.info(f"Status: Lv{status['level']} | {status['vitorias']}V/{status['derrotas']}D | {status['preciosidades']} prec")
+
+                # ── Detecta mudança de atributos e recalcula scores ──────────
+                stats_chave = ("level", "arte_combate", "bloqueio", "forca", "resistencia")
+                stats_antes = {k: estado.get(f"_last_{k}", 0) for k in stats_chave}
+                stats_agora = {k: status.get(k, 0) for k in stats_chave}
+                mudou = any(stats_agora[k] != stats_antes[k] for k in stats_chave)
+
+                if mudou:
+                    mudancas = [f"{k}: {stats_antes[k]}→{stats_agora[k]}"
+                                for k in stats_chave if stats_agora[k] != stats_antes[k]]
+                    log.info(f"⬆ Atributos mudaram: {', '.join(mudancas)} — recalculando scores...")
+                    recalcular_scores_cache()
+                    # Salva stats atuais para próxima comparação
+                    for k in stats_chave:
+                        estado[f"_last_{k}"] = stats_agora[k]
+                    salvar_estado(estado)
+                else:
+                    # Recalcula scores periodicamente mesmo sem mudança de atributo
+                    # (modelo pode ter melhorado com novos combates)
+                    ultima_rec = estado.get("_score_recalc_em")
+                    horas_desde = seg_desde(ultima_rec) / 3600 if ultima_rec else 999
+                    if horas_desde >= 6:
+                        log.info("Recalculando scores (atualização periódica do modelo)...")
+                        recalcular_scores_cache()
+                        estado["_score_recalc_em"] = agora().isoformat()
+                        salvar_estado(estado)
+
             except Exception as e:
                 log.error(f"Erro status: {e}")
 
