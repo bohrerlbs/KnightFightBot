@@ -461,8 +461,15 @@ class Handler(BaseHTTPRequestHandler):
             modo = body.get("modo", "free") if body else "free"
             # Inicia em thread separada para não bloquear o servidor
             import threading as _t
-            _t.Thread(target=start_bg_bot, args=(name, modo), daemon=True).start()
-            # Retorna imediatamente — JS vai verificar status depois
+            def _bg_thread():
+                try:
+                    r = start_bg_bot(name, modo)
+                    print(f"[BG] start_bg_bot({name}) = {r}", flush=True)
+                except Exception as e:
+                    import traceback
+                    print(f"[BG] ERRO: {e}", flush=True)
+                    traceback.print_exc()
+            _t.Thread(target=_bg_thread, daemon=True).start()
             self._json({"ok": True, "pid": -1, "port": 0, "msg": "Iniciando..."})
         elif p == "/api/capture-cookie":
             result = {}
