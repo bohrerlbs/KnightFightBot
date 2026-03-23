@@ -850,7 +850,7 @@ def executar_ataque(client, user_id, dry_run=False):
         "sac": "attack",
         "gegnerid": gegnerid,
     }
-    r = client.session.post(BASE_URL + "/", data=data, timeout=15)
+    r = client.session.post(BASE_URL + "/raubzug/", data=data, timeout=15)
     r.raise_for_status()
     soup_result = BeautifulSoup(r.text, "html.parser")
 
