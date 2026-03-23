@@ -446,6 +446,39 @@ header {
 </div>
 
 <!-- Modal log -->
+<div class="modal-backdrop" id="modal-cfg">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">cfg Configuracoes do Perfil: <span id="cfg-name-title"></span></div>
+    <input type="hidden" id="cfg-profile-name">
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div>
+        <label class="form-label" style="font-size:11px">Gold minimo pig (g)</label>
+        <input class="form-input" id="cfg-gold-min" type="number" placeholder="50">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Perda XP maxima</label>
+        <input class="form-input" id="cfg-xp-max" type="number" placeholder="0">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Gold ignorar XP (g)</label>
+        <input class="form-input" id="cfg-gold-xp" type="number" placeholder="500">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding-top:18px">
+        <input type="checkbox" id="cfg-premium" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-premium" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Premium <span style="color:var(--muted);font-size:10px">(5min CD, 2h missao)</span>
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn-primary" style="flex:1" onclick="saveCfg()">v Salvar</button>
+      <button class="btn-secondary" onclick="closeModal('modal-cfg')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-log">
   <div class="modal">
     <div class="modal-title" id="log-modal-title">Log</div>
@@ -471,6 +504,49 @@ function toast(msg, type='ok'){
 
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+
+function openCfgModal(name){
+  // Busca config atual do perfil
+  fetch('/api/profiles').then(r=>r.json()).then(profiles=>{
+    var p = profiles.find(function(x){ return x._name===name || x._name===name.toUpperCase(); });
+    if(!p) return toast('Perfil nao encontrado','err');
+    document.getElementById('cfg-profile-name').value = name;
+    document.getElementById('cfg-name-title').textContent = name;
+    document.getElementById('cfg-gold-min').value = p.gold_min_pig   != null ? p.gold_min_pig   : 50;
+    document.getElementById('cfg-xp-max').value   = p.perda_xp_max  != null ? p.perda_xp_max   : 0;
+    document.getElementById('cfg-gold-xp').value  = p.gold_ignorar_xp != null ? p.gold_ignorar_xp : 500;
+    document.getElementById('cfg-premium').checked = !!p.premium;
+    openModal('modal-cfg');
+  });
+}
+
+function saveCfg(){
+  var name = document.getElementById('cfg-profile-name').value;
+  var data = {
+    name:            name,
+    gold_min_pig:    parseInt(document.getElementById('cfg-gold-min').value||50),
+    perda_xp_max:    parseInt(document.getElementById('cfg-xp-max').value||0),
+    gold_ignorar_xp: parseInt(document.getElementById('cfg-gold-xp').value||500),
+    premium:         document.getElementById('cfg-premium').checked,
+    _patch: true,
+    _restart: true,  // reinicia o bot para aplicar imediatamente
+  };
+  fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  .then(r=>r.json())
+  .then(function(d){
+    if(d.ok){
+      closeModal('modal-cfg');
+      if(d.restarted){
+        toast('Configs salvas e bot reiniciado!');
+      } else {
+        toast('Configs salvas! Reinicie o bot para aplicar.');
+      }
+      setTimeout(loadProfiles, 2000);
+    } else {
+      toast('Erro: '+(d.error||'desconhecido'),'err');
+    }
+  });
+}
 
 // Fecha modal clicando fora
 document.querySelectorAll('.modal-backdrop').forEach(b=>{
@@ -520,6 +596,7 @@ function renderProfiles(profiles){
     html += '<button class="btn btn-dash" data-action="dash" data-port="'+(p.port||8765)+'">Dashboard</button>';
     html += '<button class="btn btn-dash" data-action="game" data-server="'+(p.server||p.servidor||'int7')+'">Abrir Jogo</button>';
     html += '<button class="btn btn-del" data-action="log" data-name="'+name+'" title="Ver log">=</button>';
+    html += '<button class="btn btn-del" data-action="cfg" data-name="'+name+'" title="Configuracoes" style="color:var(--gold)">cfg</button>';
     html += '<button class="btn btn-del" data-action="del" data-name="'+name+'" title="Excluir">x</button>';
     html += '</div>';
     html += '<div class="bg-section">';
@@ -571,6 +648,7 @@ function renderProfiles(profiles){
       var srv = btn.dataset.server || 'int7';
       window.open('https://'+srv+'.knightfight.moonid.net','_blank');
     }
+    if(action === 'cfg')     openCfgModal(name);
     if(action === 'new')     openModal('modal-new');
   };
 }

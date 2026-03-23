@@ -178,6 +178,29 @@ def stop_bot(name):
 def save_profile(data):
     name = re.sub(r'[^\w\-]', '_', data.get("name", "novo")).lower()
     path = PROFILES_DIR / name
+    cfg_path = path / "config.json"
+
+    # Modo patch: só atualiza campos específicos sem recriar perfil
+    if data.get("_patch") and cfg_path.exists():
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium"]:
+            if field in data:
+                cfg[field] = data[field]
+        cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+        restarted = False
+        # Reinicia o bot se estiver rodando e _restart=True
+        if data.get("_restart") and name in running_bots:
+            proc = running_bots.get(name)
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try: proc.wait(timeout=5)
+                except: proc.kill()
+                import time as _t; _t.sleep(1)
+                r = start_bot(name)
+                restarted = r.get("ok", False)
+        return {"ok": True, "name": name, "config": cfg, "restarted": restarted}
+
+    # Criação normal
     path.mkdir(exist_ok=True)
     port = int(data.get("port") or 8765 + len(get_profiles()))
     cfg  = {
@@ -186,8 +209,12 @@ def save_profile(data):
         "userid":  data.get("userid", ""),
         "cookies": data.get("cookies", ""),
         "port":    port,
+        "gold_min_pig":    data.get("gold_min_pig", 50),
+        "perda_xp_max":    data.get("perda_xp_max", 0),
+        "gold_ignorar_xp": data.get("gold_ignorar_xp", 500),
+        "premium":         data.get("premium", False),
     }
-    (path / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     bat = f'@echo off\ncd /d "{BASE_DIR}"\npython bot.py --profile {name}\npause\n'
     (BASE_DIR / f"iniciar_{name}.bat").write_text(bat)
     return {"ok": True, "name": name, "config": cfg}

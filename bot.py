@@ -1544,12 +1544,45 @@ def recalcular_scores_cache():
 
     return recalculados
 
+def recarregar_config():
+    """Relê config.json e atualiza globals dinâmicos sem reiniciar."""
+    if not os.path.exists("config.json"):
+        return
+    try:
+        with open("config.json", encoding="utf-8") as f:
+            cfg = json.load(f)
+        changed = []
+        for field, key, cast in [
+            ("gold_min_pig",    "GOLD_MIN_PIG",    int),
+            ("perda_xp_max",    "PERDA_XP_MAX",    int),
+            ("gold_ignorar_xp", "GOLD_IGNORAR_XP", int),
+            ("premium",         "IS_PREMIUM",       bool),
+        ]:
+            if field in cfg:
+                novo = cast(cfg[field])
+                if globals().get(key) != novo:
+                    changed.append(f"{key}: {globals().get(key)} -> {novo}")
+                    globals()[key] = novo
+        if "premium" in cfg:
+            novo_cd = 300 if globals()["IS_PREMIUM"] else 900
+            novo_h  = 2   if globals()["IS_PREMIUM"] else 1
+            if globals().get("COOLDOWN_ATAQUE_SEG") != novo_cd:
+                globals()["COOLDOWN_ATAQUE_SEG"] = novo_cd
+                globals()["HORAS_MISSAO_DIA"]    = novo_h
+                changed.append(f"COOLDOWN={novo_cd}s MISSAO={novo_h}h")
+        if changed:
+            log.info(f"Config recarregada: {', '.join(changed)}")
+    except Exception as e:
+        log.warning(f"Erro ao recarregar config: {e}")
+
 def loop_lento(client):
     """A cada 1h: ranking + pig list + status. Às 3h: cache de perfis."""
     while True:
-        log.info("\n🔄 [LENTO] Iniciando ciclo horário...")
+        log.info("\n[LENTO] Iniciando ciclo horário...")
         try:
             estado = carregar_estado()
+            # Recarrega config.json para pegar mudanças feitas pelo launcher
+            recarregar_config()
 
             # Status do personagem → dashboard
             try:
