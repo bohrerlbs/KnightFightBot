@@ -856,8 +856,26 @@ def executar_ataque(client, user_id, dry_run=False):
 
     # Verifica se o combate realmente ocorreu
     if "displayFightReport" not in r.text:
-        log.warning(f"displayFightReport ausente — combate não ocorreu para {user_id}")
-        return {"status": "indisponivel", "user_id": user_id}
+        # Tenta identificar o motivo
+        motivo = "desconhecido"
+        txt = r.text[:500].lower()
+        if "imunidade" in txt or "immune" in txt:
+            motivo = "alvo imune"
+        elif "cooldown" in txt or "minutos" in txt or "secondscounter" in txt:
+            motivo = "cooldown ativo"
+        elif "login" in txt or "session" in txt:
+            motivo = "sessão expirada"
+        elif "not found" in txt or "404" in txt:
+            motivo = "página não encontrada"
+        log.warning(f"displayFightReport ausente para {user_id} — motivo: {motivo}")
+        # Salva HTML para debug se motivo desconhecido
+        if motivo == "desconhecido":
+            try:
+                from pathlib import Path as _P
+                (_P(os.getcwd()) / "debug_ataque.html").write_text(r.text[:2000], encoding="utf-8")
+                log.debug("HTML salvo em debug_ataque.html")
+            except: pass
+        return {"status": "indisponivel", "motivo": motivo, "user_id": user_id}
 
     resultado, gold_ganho, xp_ganho = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
 
