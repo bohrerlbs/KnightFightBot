@@ -934,12 +934,25 @@ def buscar_alvo_imunizacao(client, estado, score_min):
 
     log.info(f"Candidatos imunização no cache: {len(candidatos)} (score_min={score_min})")
 
-    # Filtra por score mínimo
-    validos = [c for c in candidatos if c["score"] >= score_min]
-    log.info(f"  Com score >= {score_min}: {len(validos)}")
+    meu_lv = MY_STATS.get("level", 22)
+
+    # Filtra por score mínimo e perda de XP aceitável
+    def xp_perda(c):
+        delta = meu_lv - c.get("level", meu_lv)
+        return max(0, delta - 5)
+
+    validos = [c for c in candidatos
+               if c["score"] >= score_min
+               and xp_perda(c) <= PERDA_XP_MAX]
+    log.info(f"  Com score >= {score_min} e XP perda <= {PERDA_XP_MAX}: {len(validos)}")
+
+    # Se não encontrou respeitando XP, relaxa só o score (mantém XP)
+    if not validos:
+        validos = [c for c in candidatos if xp_perda(c) <= PERDA_XP_MAX]
+        log.info(f"  Relaxando score (mantendo XP <= {PERDA_XP_MAX}): {len(validos)}")
 
     if not validos:
-        # Relaxa o score se não encontrou ninguém
+        # Relaxa tudo se realmente não tem ninguém
         score_relaxado = max(score_min - 15, 30)
         validos = [c for c in candidatos if c["score"] >= score_relaxado]
         log.info(f"  Score relaxado para {score_relaxado}: {len(validos)} candidatos")
@@ -1789,8 +1802,13 @@ def loop_rapido(client):
 
             # Precisa imunizar e não atacou pig?
             if not ataque_feito and precisa_imunizar:
-                log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
-                alvo = buscar_alvo_imunizacao(client, estado, score_min_imun)
+                # Verifica se cache já foi populado
+                cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 10
+                if not cache_ok:
+                    log.info("Cache ainda sendo populado — aguardando para imunizar...")
+                else:
+                    log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
+                alvo = buscar_alvo_imunizacao(client, estado, score_min_imun) if cache_ok else None
                 if alvo:
                     log.info(f"Imunizando com {alvo['nome']} Lv{alvo['level']}")
                     executar_ataque(client, alvo["user_id"])
