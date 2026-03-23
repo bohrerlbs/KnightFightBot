@@ -303,7 +303,7 @@ def download_update():
             try: p.wait(timeout=5)
             except: p.kill()
     updated, errors = [], []
-    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html", "modelo_combate.json"]:
+    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html", "modelo_combate.json", "export_modelo.py"]:
         try:
             bak = BASE_DIR / (fname + ".bak")
             src = BASE_DIR / fname
@@ -324,7 +324,21 @@ def download_update():
             (BASE_DIR / "VERSION_BG").write_bytes(r.read())
     except:
         pass
-    return {"ok": len(errors) == 0, "updated": updated, "errors": errors}
+    # Atualiza launcher.py via arquivo temporário + updater.bat
+    try:
+        with urllib.request.urlopen(f"{GITHUB_RAW}/launcher.py", timeout=15) as r:
+            new_content = r.read()
+        (BASE_DIR / "launcher.py.new").write_bytes(new_content)
+        updated.append("launcher.py")
+        # Dispara updater.bat que substitui e reinicia após o launcher fechar
+        import subprocess as _sp
+        updater = BASE_DIR / "updater.bat"
+        if updater.exists():
+            _sp.Popen(["cmd", "/c", str(updater)], creationflags=0x00000008)
+    except Exception as e:
+        errors.append(f"launcher.py: {e}")
+
+    return {"ok": len(errors) == 0, "updated": updated, "errors": errors, "restart": "launcher.py" in updated}
 
 def capture_cookie_browser(server="int7"):
     try:
