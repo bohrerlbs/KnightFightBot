@@ -175,6 +175,29 @@ def stop_bot(name):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def get_used_ports():
+    """Retorna set de todas as portas já em uso pelos perfis."""
+    ports = set()
+    if not PROFILES_DIR.exists():
+        return ports
+    for d in PROFILES_DIR.iterdir():
+        cfg_p = d / "config.json"
+        if cfg_p.exists():
+            try:
+                cfg = json.loads(cfg_p.read_text(encoding="utf-8"))
+                p = cfg.get("port")
+                if p: ports.add(int(p))
+            except: pass
+    return ports
+
+def alloc_port(start=8765, step=2):
+    """Aloca próxima porta livre (pula de 2 em 2 para deixar espaço pro BG)."""
+    used = get_used_ports()
+    port = start
+    while port in used or (port+1) in used:
+        port += step
+    return port
+
 def save_profile(data):
     name = re.sub(r'[^\w\-]', '_', data.get("name", "novo")).lower()
     path = PROFILES_DIR / name
@@ -201,9 +224,13 @@ def save_profile(data):
                 restarted = r.get("ok", False)
         return {"ok": True, "name": name, "config": cfg, "restarted": restarted}
 
-    # Criação normal
+    # Criação normal — verifica nome duplicado
+    if path.exists() and cfg_path.exists():
+        return {"ok": False, "error": f"Perfil '{name}' já existe! Escolha outro nome."}
+
     path.mkdir(exist_ok=True)
-    port = int(data.get("port") or 8765 + len(get_profiles()))
+    # Porta automática: aloca próxima disponível (pula de 2 em 2 para BG = porta+1)
+    port = int(data.get("port")) if data.get("port") else alloc_port()
     cfg  = {
         "profile": name,
         "server":  data.get("server", "int7"),

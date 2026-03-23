@@ -406,8 +406,8 @@ header {
         <input class="form-input" id="f-userid" placeholder="522001100">
       </div>
       <div class="form-group">
-        <label class="form-label">Porta dashboard</label>
-        <input class="form-input" id="f-port" placeholder="8765" type="number">
+        <label class="form-label" style="color:var(--muted)">Porta (auto)</label>
+        <input class="form-input" id="f-port" placeholder="auto" type="number" style="opacity:0.4" title="Deixe vazio para alocar automaticamente">
       </div>
     </div>
     <div class="form-group">
@@ -908,8 +908,8 @@ function saveProfile(){
     premium:        document.getElementById('f-premium').checked,
   };
   if(!data.name){ toast('Informe um nome para o perfil','err'); return; }
-  if(!data.cookies){ toast('Cookie é obrigatório','err'); return; }
-  if(!data.userid){ toast('UserID é obrigatório','err'); return; }
+  if(!data.cookies){ toast('Cookie e obrigatorio','err'); return; }
+  if(!data.userid){ toast('UserID e obrigatorio','err'); return; }
 
   fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(r=>r.json())
@@ -917,7 +917,7 @@ function saveProfile(){
       if(d.ok){
         closeModal('modal-new');
         loadProfiles();
-        toast(`Perfil "${d.name}" criado!`);
+        toast('Perfil "'+d.name+'" criado! Porta: '+d.config.port+' | BG: '+(d.config.port+1));
         // Inicia automaticamente
         setTimeout(()=>startBot(d.name), 500);
       } else {
