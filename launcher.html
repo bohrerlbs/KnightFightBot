@@ -492,12 +492,23 @@ header {
       </div>
     </div>
 
-    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn-primary" style="flex:2;min-width:120px" onclick="saveCfg()">v Salvar</button>
-      <button class="btn-secondary" style="flex:1;min-width:100px;color:var(--gold);border-color:var(--gold)" onclick="renovarCookie()">Renovar Cookie</button>
-      <button class="btn-secondary" style="flex:0" onclick="closeModal('modal-cfg')">x</button>
+    <div style="margin-top:14px;border-top:1px solid var(--border2);padding-top:12px">
+      <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Cookie</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button class="btn-secondary" style="flex:1;color:var(--gold);border-color:var(--gold);font-size:10px" onclick="renovarCookie()">Abrir browser e capturar</button>
+        <button class="btn-secondary" style="flex:1;font-size:10px" onclick="toggleManualCookie()">Colar manualmente</button>
+      </div>
+      <div id="cfg-manual-cookie" style="display:none;margin-bottom:8px">
+        <textarea class="form-input" id="cfg-cookie-text" rows="2" placeholder="Cole aqui o cookie copiado do F12 -> Network -> Request Headers -> Cookie" style="font-size:10px;resize:vertical"></textarea>
+        <button class="btn-primary" style="width:100%;margin-top:4px;font-size:11px" onclick="salvarCookieManual()">v Salvar Cookie e Reiniciar Bot</button>
+      </div>
+      <div id="cfg-cookie-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:3px;background:rgba(0,0,0,0.3)"></div>
     </div>
-    <div id="cfg-cookie-status" style="display:none;margin-top:8px;font-size:11px;padding:6px 8px;border-radius:3px;background:rgba(0,0,0,0.3)"></div>
+
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-primary" style="flex:1" onclick="saveCfg()">v Salvar Configuracoes</button>
+      <button class="btn-secondary" style="flex:0" onclick="closeModal('modal-cfg')">x Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -770,6 +781,37 @@ function openDash(port){
     });
 }
 
+
+function toggleManualCookie(){
+  var el = document.getElementById('cfg-manual-cookie');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function salvarCookieManual(){
+  var name   = document.getElementById('cfg-profile-name').value;
+  var cookie = document.getElementById('cfg-cookie-text').value.trim();
+  var status = document.getElementById('cfg-cookie-status');
+  if(!cookie){ toast('Cole o cookie primeiro','err'); return; }
+  status.style.display = 'block';
+  status.style.color = 'var(--gold)';
+  status.textContent = 'Salvando cookie...';
+  fetch('/api/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name:name, cookies:cookie, _patch:true, _restart:true})
+  }).then(r=>r.json()).then(function(d){
+    if(d.ok){
+      status.style.color = 'var(--green2)';
+      status.textContent = 'v Cookie salvo! Bot reiniciado.';
+      document.getElementById('cfg-cookie-text').value = '';
+      document.getElementById('cfg-manual-cookie').style.display = 'none';
+      setTimeout(loadProfiles, 2000);
+    } else {
+      status.style.color = '#e08080';
+      status.textContent = 'Erro: '+(d.error||'?');
+    }
+  });
+}
 
 function renovarCookie(){
   var name   = document.getElementById('cfg-profile-name').value;
