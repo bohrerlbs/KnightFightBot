@@ -477,12 +477,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
         elif p.startswith("/api/cfg/"):
             # Retorna config.json de um perfil específico
-            pname = p.split("/")[-1].lower()
-            cfg_p = PROFILES_DIR / pname / "config.json"
-            if cfg_p.exists():
+            pname = p.split("/")[-1]
+            # Tenta lowercase e uppercase
+            cfg_p = None
+            for attempt in [pname.lower(), pname.upper(), pname]:
+                c = PROFILES_DIR / attempt / "config.json"
+                if c.exists():
+                    cfg_p = c
+                    break
+            if cfg_p:
                 self._json(json.loads(cfg_p.read_text(encoding="utf-8")))
             else:
-                self._json({"error": "perfil nao encontrado"})
+                self._json({"error": f"perfil '{pname}' nao encontrado"})
         elif p == "/api/bg/diag":
             import json as _j
             diag = {}

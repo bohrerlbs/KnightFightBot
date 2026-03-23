@@ -603,7 +603,7 @@ function renderProfiles(profiles){
     html += '</div>';
     html += '<div class="card-body">';
     html += '<div class="card-info">';
-    html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||'-')+'</div></div>';
+    html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||p.user_id||'-')+'</div></div>';
     html += '<div class="info-item"><div class="info-label">Dashboard</div><div class="info-val" style="color:var(--gold)">:'+(p.port||8765)+'</div></div>';
     html += '</div>';
     html += '<div class="log-preview">'+(logs||'<span>Nenhum log ainda...</span>')+'</div>';
@@ -780,7 +780,7 @@ function renovarCookie(){
     var server = p ? (p.server || p.servidor || 'int7') : 'int7';
     status.style.display = 'block';
     status.style.color = 'var(--gold)';
-    status.textContent = 'Abrindo browser — faca login no jogo...';
+    status.textContent = 'Abrindo browser — faca login no jogo e aguarde...';
     fetch('/api/capture-cookie', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -789,28 +789,34 @@ function renovarCookie(){
     .then(r=>r.json())
     .then(function(d){
       if(d.ok && d.cookie){
-        // Salva cookie novo no perfil
+        status.textContent = 'Cookie capturado! Salvando...';
         return fetch('/api/save', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({name: name, cookies: d.cookie, _patch: true, _restart: true})
+          body: JSON.stringify({name: name, cookies: d.cookie, userid: d.userid||'', _patch: true, _restart: true})
         }).then(r=>r.json()).then(function(r){
           if(r.ok){
             status.style.color = 'var(--green2)';
             status.textContent = 'v Cookie renovado! Bot reiniciado.';
+            setTimeout(loadProfiles, 2000);
           } else {
             status.style.color = '#e08080';
-            status.textContent = 'Erro ao salvar cookie: '+(r.error||'?');
+            status.textContent = 'Erro ao salvar: '+(r.error||'?');
           }
         });
       } else {
         status.style.color = '#e08080';
-        status.textContent = 'Falhou: '+(d.error||'cookie nao capturado');
+        var msg = d.error || 'cookie nao capturado';
+        if(msg.includes('selenium')) {
+          status.innerHTML = 'Selenium nao instalado.<br>Execute no CMD: <code>pip install selenium webdriver-manager</code>';
+        } else {
+          status.textContent = 'Falhou: '+msg;
+        }
       }
     })
     .catch(function(e){
       status.style.color = '#e08080';
-      status.textContent = 'Erro: '+e;
+      status.textContent = 'Erro de conexao: '+e;
     });
   });
 }
