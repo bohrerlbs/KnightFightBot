@@ -492,10 +492,12 @@ header {
       </div>
     </div>
 
-    <div style="margin-top:16px;display:flex;gap:8px">
-      <button class="btn-primary" style="flex:1" onclick="saveCfg()">v Salvar</button>
-      <button class="btn-secondary" onclick="closeModal('modal-cfg')">Cancelar</button>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-primary" style="flex:2;min-width:120px" onclick="saveCfg()">v Salvar</button>
+      <button class="btn-secondary" style="flex:1;min-width:100px;color:var(--gold);border-color:var(--gold)" onclick="renovarCookie()">Renovar Cookie</button>
+      <button class="btn-secondary" style="flex:0" onclick="closeModal('modal-cfg')">x</button>
     </div>
+    <div id="cfg-cookie-status" style="display:none;margin-top:8px;font-size:11px;padding:6px 8px;border-radius:3px;background:rgba(0,0,0,0.3)"></div>
   </div>
 </div>
 
@@ -520,21 +522,19 @@ function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
 function openCfgModal(name){
-  // Busca config atual do perfil
-  fetch('/api/profiles').then(r=>r.json()).then(profiles=>{
-    var p = profiles.find(function(x){ return x._name===name || x._name===name.toUpperCase(); });
-    if(!p) return toast('Perfil nao encontrado','err');
-    document.getElementById('cfg-profile-name').value = name;
-    document.getElementById('cfg-name-title').textContent = name;
-    document.getElementById('cfg-gold-min').value    = p.gold_min_pig    != null ? p.gold_min_pig    : 50;
-    document.getElementById('cfg-xp-max').value      = p.perda_xp_max   != null ? p.perda_xp_max    : 0;
-    document.getElementById('cfg-gold-xp').value     = p.gold_ignorar_xp != null ? p.gold_ignorar_xp : 500;
-    document.getElementById('cfg-ranking-max').value = p.ranking_max     != null ? p.ranking_max     : 500;
-    document.getElementById('cfg-pausa').value       = p.pausa_cache     != null ? p.pausa_cache     : 0.5;
-    document.getElementById('cfg-hora-cache').value  = p.hora_cache      != null ? p.hora_cache      : 3;
-    document.getElementById('cfg-premium').checked   = !!p.premium;
-    openModal('modal-cfg');
-  });
+  document.getElementById('cfg-profile-name').value = name;
+  document.getElementById('cfg-name-title').textContent = name;
+    // Lê direto do config.json via API para garantir valores atuais
+    fetch('/api/cfg/'+name).then(r=>r.json()).then(function(cfg){
+      document.getElementById('cfg-gold-min').value    = cfg.gold_min_pig    != null ? cfg.gold_min_pig    : 50;
+      document.getElementById('cfg-xp-max').value      = cfg.perda_xp_max   != null ? cfg.perda_xp_max    : 0;
+      document.getElementById('cfg-gold-xp').value     = cfg.gold_ignorar_xp != null ? cfg.gold_ignorar_xp : 500;
+      document.getElementById('cfg-ranking-max').value = cfg.ranking_max     != null ? cfg.ranking_max     : 500;
+      document.getElementById('cfg-pausa').value       = cfg.pausa_cache     != null ? cfg.pausa_cache     : 0.5;
+      document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
+      document.getElementById('cfg-premium').checked   = !!cfg.premium;
+    });
+  openModal('modal-cfg');
 }
 
 function saveCfg(){
@@ -770,6 +770,50 @@ function openDash(port){
     });
 }
 
+
+function renovarCookie(){
+  var name   = document.getElementById('cfg-profile-name').value;
+  var status = document.getElementById('cfg-cookie-status');
+  // Pega servidor do perfil atual
+  fetch('/api/profiles').then(r=>r.json()).then(function(profiles){
+    var p = profiles.find(function(x){ return (x._name||'').toUpperCase() === name.toUpperCase(); });
+    var server = p ? (p.server || p.servidor || 'int7') : 'int7';
+    status.style.display = 'block';
+    status.style.color = 'var(--gold)';
+    status.textContent = 'Abrindo browser — faca login no jogo...';
+    fetch('/api/capture-cookie', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({server: server})
+    })
+    .then(r=>r.json())
+    .then(function(d){
+      if(d.ok && d.cookie){
+        // Salva cookie novo no perfil
+        return fetch('/api/save', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name: name, cookies: d.cookie, _patch: true, _restart: true})
+        }).then(r=>r.json()).then(function(r){
+          if(r.ok){
+            status.style.color = 'var(--green2)';
+            status.textContent = 'v Cookie renovado! Bot reiniciado.';
+          } else {
+            status.style.color = '#e08080';
+            status.textContent = 'Erro ao salvar cookie: '+(r.error||'?');
+          }
+        });
+      } else {
+        status.style.color = '#e08080';
+        status.textContent = 'Falhou: '+(d.error||'cookie nao capturado');
+      }
+    })
+    .catch(function(e){
+      status.style.color = '#e08080';
+      status.textContent = 'Erro: '+e;
+    });
+  });
+}
 
 function deleteProfile(name){
   if(!confirm(`Excluir perfil "${name}"? Os dados serão removidos permanentemente.`)) return;

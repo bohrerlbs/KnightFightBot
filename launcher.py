@@ -184,7 +184,7 @@ def save_profile(data):
     if data.get("_patch") and cfg_path.exists():
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium",
-                       "ranking_max", "pausa_cache", "hora_cache"]:
+                       "ranking_max", "pausa_cache", "hora_cache", "cookies"]:
             if field in data:
                 cfg[field] = data[field]
         cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -475,6 +475,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(check_update())
         elif p.startswith("/api/log/"):
             self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
+        elif p.startswith("/api/cfg/"):
+            # Retorna config.json de um perfil específico
+            pname = p.split("/")[-1].lower()
+            cfg_p = PROFILES_DIR / pname / "config.json"
+            if cfg_p.exists():
+                self._json(json.loads(cfg_p.read_text(encoding="utf-8")))
+            else:
+                self._json({"error": "perfil nao encontrado"})
         elif p == "/api/bg/diag":
             import json as _j
             diag = {}
