@@ -744,19 +744,6 @@ function openDash(port){
     });
 }
 
-  fetch(`/api/log/${name}`)
-    .then(r=>r.json())
-    .then(d=>{
-      document.getElementById('log-modal-title').textContent = `Log - ${name}`;
-      document.getElementById('log-full-content').innerHTML = (d.lines||[]).map(l=>{
-        var cls = logClass(l);
-        return `<span class="lline ${cls}">${l}</span>`;
-      }).join('');
-      var box = document.getElementById('log-full-content');
-      openModal('modal-log');
-      setTimeout(()=>{ box.scrollTop = box.scrollHeight; }, 100);
-    });
-}
 
 function deleteProfile(name){
   if(!confirm(`Excluir perfil "${name}"? Os dados serão removidos permanentemente.`)) return;
