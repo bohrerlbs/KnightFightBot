@@ -55,7 +55,8 @@ GOLD_ALTO_THRESHOLD  = 5000
 INTERVALO_RAPIDO_SEG = 120
 INTERVALO_LENTO_SEG  = 3600
 HORA_CACHE_PERFIS    = 3      # 3h da manhã
-PAUSA_CACHE_SEG      = 2.0   # pausa entre perfis (mais seguro)
+PAUSA_CACHE_SEG      = 0.5   # pausa entre perfis
+RANKING_MAX_PLAYERS  = 500   # quantos jogadores do ranking varrer (100-10000)
 
 RANKING_FILE  = "ranking_snapshots.json"
 PIG_LIST_FILE = "pig_list.json"
@@ -949,7 +950,9 @@ def buscar_alvo_imunizacao(client, estado, score_min):
 # ═══════════════════════════════════════════
 def scrape_ranking(client, paginas=None):
     if paginas is None:
-        paginas = [100, 200, 300, 400, 500]
+        # Gera lista de páginas com base em RANKING_MAX_PLAYERS (cada página = 100 jogadores)
+        n = max(1, min(100, RANKING_MAX_PLAYERS // 100))
+        paginas = [i * 100 for i in range(1, n + 1)]
     ts = agora().isoformat()
     soup_form = client.get("/highscore/spieler/")
     csrf = ""
@@ -1906,6 +1909,12 @@ if __name__ == "__main__":
         globals()["IS_PREMIUM"] = bool(cfg["premium"])
         globals()["COOLDOWN_ATAQUE_SEG"] = 300 if IS_PREMIUM else 900
         globals()["HORAS_MISSAO_DIA"]    = 2   if IS_PREMIUM else 1
+    if cfg.get("ranking_max") is not None:
+        globals()["RANKING_MAX_PLAYERS"] = int(cfg["ranking_max"])
+    if cfg.get("pausa_cache") is not None:
+        globals()["PAUSA_CACHE_SEG"] = float(cfg["pausa_cache"])
+    if cfg.get("hora_cache") is not None:
+        globals()["HORA_CACHE_PERFIS"] = int(cfg["hora_cache"])
     if cfg.get("gold_min_pig") is not None:
         globals()["GOLD_MIN_PIG"]    = int(cfg["gold_min_pig"])
     if cfg.get("perda_xp_max") is not None:

@@ -451,9 +451,10 @@ header {
     <div class="modal-title">cfg Configuracoes do Perfil: <span id="cfg-name-title"></span></div>
     <input type="hidden" id="cfg-profile-name">
 
-    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div style="margin-top:12px;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px">Pig e XP</div>
+    <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
       <div>
-        <label class="form-label" style="font-size:11px">Gold minimo pig (g)</label>
+        <label class="form-label" style="font-size:11px">Gold minimo (g)</label>
         <input class="form-input" id="cfg-gold-min" type="number" placeholder="50">
       </div>
       <div>
@@ -464,10 +465,29 @@ header {
         <label class="form-label" style="font-size:11px">Gold ignorar XP (g)</label>
         <input class="form-input" id="cfg-gold-xp" type="number" placeholder="500">
       </div>
-      <div style="display:flex;align-items:center;gap:8px;padding-top:18px">
+    </div>
+
+    <div style="margin-top:12px;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px">Varredura do Ranking</div>
+    <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div>
+        <label class="form-label" style="font-size:11px">Max jogadores</label>
+        <input class="form-input" id="cfg-ranking-max" type="number" placeholder="500" min="100" max="10000" step="100">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Delay entre perfis (s)</label>
+        <input class="form-input" id="cfg-pausa" type="number" placeholder="0.5" step="0.1" min="0">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Hora da varredura (0-23)</label>
+        <input class="form-input" id="cfg-hora-cache" type="number" placeholder="3" min="0" max="23">
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <div style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="cfg-premium" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="cfg-premium" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
-          Premium <span style="color:var(--muted);font-size:10px">(5min CD, 2h missao)</span>
+          Conta <strong style="color:var(--gold)">Premium</strong> — cooldown 5min + missao 2h/dia
         </label>
       </div>
     </div>
@@ -506,10 +526,13 @@ function openCfgModal(name){
     if(!p) return toast('Perfil nao encontrado','err');
     document.getElementById('cfg-profile-name').value = name;
     document.getElementById('cfg-name-title').textContent = name;
-    document.getElementById('cfg-gold-min').value = p.gold_min_pig   != null ? p.gold_min_pig   : 50;
-    document.getElementById('cfg-xp-max').value   = p.perda_xp_max  != null ? p.perda_xp_max   : 0;
-    document.getElementById('cfg-gold-xp').value  = p.gold_ignorar_xp != null ? p.gold_ignorar_xp : 500;
-    document.getElementById('cfg-premium').checked = !!p.premium;
+    document.getElementById('cfg-gold-min').value    = p.gold_min_pig    != null ? p.gold_min_pig    : 50;
+    document.getElementById('cfg-xp-max').value      = p.perda_xp_max   != null ? p.perda_xp_max    : 0;
+    document.getElementById('cfg-gold-xp').value     = p.gold_ignorar_xp != null ? p.gold_ignorar_xp : 500;
+    document.getElementById('cfg-ranking-max').value = p.ranking_max     != null ? p.ranking_max     : 500;
+    document.getElementById('cfg-pausa').value       = p.pausa_cache     != null ? p.pausa_cache     : 0.5;
+    document.getElementById('cfg-hora-cache').value  = p.hora_cache      != null ? p.hora_cache      : 3;
+    document.getElementById('cfg-premium').checked   = !!p.premium;
     openModal('modal-cfg');
   });
 }
@@ -521,6 +544,9 @@ function saveCfg(){
     gold_min_pig:    parseInt(document.getElementById('cfg-gold-min').value||50),
     perda_xp_max:    parseInt(document.getElementById('cfg-xp-max').value||0),
     gold_ignorar_xp: parseInt(document.getElementById('cfg-gold-xp').value||500),
+    ranking_max:     parseInt(document.getElementById('cfg-ranking-max').value||500),
+    pausa_cache:     parseFloat(document.getElementById('cfg-pausa').value||0.5),
+    hora_cache:      parseInt(document.getElementById('cfg-hora-cache').value||3),
     premium:         document.getElementById('cfg-premium').checked,
     _patch: true,
     _restart: true,  // reinicia o bot para aplicar imediatamente

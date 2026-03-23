@@ -183,7 +183,8 @@ def save_profile(data):
     # Modo patch: só atualiza campos específicos sem recriar perfil
     if data.get("_patch") and cfg_path.exists():
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium"]:
+        for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium",
+                       "ranking_max", "pausa_cache", "hora_cache"]:
             if field in data:
                 cfg[field] = data[field]
         cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -213,6 +214,9 @@ def save_profile(data):
         "perda_xp_max":    data.get("perda_xp_max", 0),
         "gold_ignorar_xp": data.get("gold_ignorar_xp", 500),
         "premium":         data.get("premium", False),
+        "ranking_max":     data.get("ranking_max", 500),
+        "pausa_cache":     data.get("pausa_cache", 0.5),
+        "hora_cache":      data.get("hora_cache", 3),
     }
     cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     bat = f'@echo off\ncd /d "{BASE_DIR}"\npython bot.py --profile {name}\npause\n'
