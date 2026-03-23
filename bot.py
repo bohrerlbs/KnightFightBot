@@ -1294,10 +1294,19 @@ def gerenciar_missao(client, dry_run=False):
             "gesinnung": gesinnung, "jagdzeit": str(jagdzeit)}
     r = client.session.post(BASE_URL + "/raubzug/", data=data, timeout=15)
     if r.status_code == 403:
-        log.warning("403 — recarregando CSRF...")
+        log.warning("403 na missão — verificando se cota esgotada...")
         rv2 = verificar_raubzug(client)
+        # Verifica se realmente ainda tem missão disponível
+        min_usados2 = rv2.get("minutos_usados_hoje", 0) or estado.get("minutos_missao_hoje", 0)
+        if min_usados2 >= limite_min:
+            log.info(f"Cota diária confirmada pelo servidor ({min_usados2}/{limite_min}min)")
+            return {"status": "cota_diaria", "minutos_usados": min_usados2}
+        # Tenta uma vez mais com CSRF novo
         data["csrftoken"] = rv2["csrf_missao"]
         r = client.session.post(BASE_URL + "/raubzug/", data=data, timeout=15)
+        if r.status_code == 403:
+            log.warning("403 persistente — assumindo cota esgotada")
+            return {"status": "cota_diaria", "minutos_usados": min_usados2}
     r.raise_for_status()
 
     estado["minutos_missao_hoje"] = minutos_usados + jagdzeit
