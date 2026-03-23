@@ -1292,12 +1292,12 @@ def gerenciar_missao(client, dry_run=False):
     csrf = rv["csrf_missao"]
     data = {"csrftoken": csrf, "ac": "raubzug", "sac": "mission",
             "gesinnung": gesinnung, "jagdzeit": str(jagdzeit)}
-    r = client.session.post(BASE_URL + "/", data=data, timeout=15)
+    r = client.session.post(BASE_URL + "/raubzug/", data=data, timeout=15)
     if r.status_code == 403:
         log.warning("403 — recarregando CSRF...")
         rv2 = verificar_raubzug(client)
         data["csrftoken"] = rv2["csrf_missao"]
-        r = client.session.post(BASE_URL + "/", data=data, timeout=15)
+        r = client.session.post(BASE_URL + "/raubzug/", data=data, timeout=15)
     r.raise_for_status()
 
     estado["minutos_missao_hoje"] = minutos_usados + jagdzeit
