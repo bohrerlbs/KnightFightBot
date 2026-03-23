@@ -479,13 +479,7 @@ header {
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-log">
-  <div class="modal">
-    <div class="modal-title" id="log-modal-title">Log</div>
-    <div class="log-full" id="log-full-content"></div>
-    <button class="btn-secondary" onclick="closeModal('modal-log')" style="margin-top:12px">Fechar</button>
-  </div>
-</div>
+<div class="modal-backdrop"
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -594,10 +588,11 @@ function renderProfiles(profiles){
       html += '<button class="btn btn-start" data-action="start" data-name="'+name+'"> > Iniciar</button>';
     }
     html += '<button class="btn btn-dash" data-action="dash" data-port="'+(p.port||8765)+'">Dashboard</button>';
-    html += '<button class="btn btn-dash" data-action="game" data-server="'+(p.server||p.servidor||'int7')+'">Abrir Jogo</button>';
-    html += '<button class="btn btn-del" data-action="log" data-name="'+name+'" title="Ver log">=</button>';
-    html += '<button class="btn btn-del" data-action="cfg" data-name="'+name+'" title="Configuracoes" style="color:var(--gold)">cfg</button>';
-    html += '<button class="btn btn-del" data-action="del" data-name="'+name+'" title="Excluir">x</button>';
+    html += '</div>';
+    html += '<div class="card-actions" style="margin-top:4px">';
+    html += '<button class="btn btn-dash" data-action="game" data-server="'+(p.server||p.servidor||'int7')+'" style="flex:1">Abrir Jogo</button>';
+    html += '<button class="btn btn-del" data-action="cfg" data-name="'+name+'" style="color:var(--gold);flex:1">cfg</button>';
+    html += '<button class="btn btn-del" data-action="del" data-name="'+name+'" title="Excluir" style="flex:0">x</button>';
     html += '</div>';
     html += '<div class="bg-section">';
     html += '<div class="bg-label">* BattleGround</div>';
@@ -636,7 +631,7 @@ function renderProfiles(profiles){
     if(action === 'start')   startBot(name);
     if(action === 'stop')    stopBot(name);
     if(action === 'dash')    openDash(parseInt(port));
-    if(action === 'log')     showLog(name);
+
     if(action === 'del')     deleteProfile(name);
     if(action === 'bgstart'){
       var sel = grid.querySelector('.bg-modo-sel[data-name="'+name+'"]');
@@ -749,7 +744,6 @@ function openDash(port){
     });
 }
 
-function showLog(name){
   fetch(`/api/log/${name}`)
     .then(r=>r.json())
     .then(d=>{
