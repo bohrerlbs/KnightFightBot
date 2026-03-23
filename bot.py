@@ -31,7 +31,10 @@ MY_STATS = {
     "skill_2maos": 66, "dano_min": 58, "dano_max": 63, "hp": 1540,
 }
 
-IS_PREMIUM = False
+IS_PREMIUM      = False
+GOLD_MIN_PIG    = 50    # gold esperado mínimo para considerar pig
+PERDA_XP_MAX    = 0     # máximo de XP a perder (0 = não aceita perder XP)
+GOLD_IGNORAR_XP = 500   # pigs acima desse gold ignoram limite de XP
 
 def level_min_xp():
     """Calcula dinamicamente para acompanhar o level atual."""
@@ -1102,13 +1105,22 @@ def atualizar_pig_list(pig_list, jogadores_ant, jogadores_atu, estado):
         # Estava na lista como confirmado, nova hora: derrotas++ mas ouro_perdido == 0
         # Significa que foi atacado mas não tinha gold → removido
         if uid in pig_list and pig_list[uid].get("status","ativo") == "ativo":
-            if pig_list[uid].get("categoria") == "PIG_CONFIRMADO":
+            pig_cat = pig_list[uid].get("categoria", "")
+            if pig_cat in ("PIG_CONFIRMADO", "PIG_PROVAVEL"):
                 ouro_ref = pig_list[uid].get("ouro_perdido", 0)
                 if dd > 0 and j["ouro_perdido"] == ouro_ref:
-                    log.info(f"  - ZEROU: {j['nome']} (tomou derrota mas ouro_perdido={j['ouro_perdido']} não subiu)")
+                    # Derrotas subiram mas ouro_perdido NÃO subiu → zerou a conta
+                    log.info(f"  - ZEROU: {j['nome']} (derrota nova mas ouro_perdido não subiu → zerou conta)")
                     del pig_list[uid]
                     removidos += 1
                     continue
+                # PIG_PROVAVEL ganhou derrotas + preciosidades + ouro subiu → vira CONFIRMADO
+                if pig_cat == "PIG_PROVAVEL" and dd > 0 and dp > 0:
+                    pig_list[uid]["categoria"] = "PIG_CONFIRMADO"
+                    pig_list[uid]["delta_ouro_perdido"] = pig_list[uid].get("delta_ouro_perdido",0) + dp
+                    pig_list[uid]["delta_derrotas"] = pig_list[uid].get("delta_derrotas",0) + dd
+                    pig_list[uid]["gold_esperado"] = round(pig_list[uid]["delta_ouro_perdido"] / pig_list[uid]["delta_derrotas"])
+                    log.info(f"  ~ CONFIRMADO: {j['nome']} (prec+derrota+ouro → gold_esperado={pig_list[uid]['gold_esperado']}g)")
 
         # Adiciona/atualiza pigs
         if dp > 0 or dd > 0:
@@ -1118,21 +1130,38 @@ def atualizar_pig_list(pig_list, jogadores_ant, jogadores_atu, estado):
                 base["motivos"] = motivos
                 base["status"] = "ativo"
                 base["delta_ouro_perdido"] = dp
-                base["delta_derrotas"] = dd
+                base["delta_derrotas"]    = dd
+                # Gold esperado inicial
+                if dd > 0 and dp > 0:
+                    base["gold_esperado"] = round(dp / dd)
+                elif dp > 0:
+                    base["gold_esperado"] = dp
+                else:
+                    base["gold_esperado"] = 0
                 pig_list[uid] = base
                 adicionados += 1
                 log.info(f"  + CONFIRMADO: {j['nome']} Lv{j['level']} | {', '.join(motivos)}")
             else:
                 # Atualiza delta acumulado
                 pig_list[uid]["delta_ouro_perdido"] = pig_list[uid].get("delta_ouro_perdido", 0) + dp
-                pig_list[uid]["delta_derrotas"] = pig_list[uid].get("delta_derrotas", 0) + dd
+                pig_list[uid]["delta_derrotas"]    = pig_list[uid].get("delta_derrotas", 0) + dd
                 pig_list[uid]["motivos"] = motivos
+                # Recalcula gold_esperado
+                dd_total = pig_list[uid]["delta_derrotas"]
+                dp_total = pig_list[uid]["delta_ouro_perdido"]
+                if dd_total > 0 and dp_total > 0:
+                    pig_list[uid]["gold_esperado"] = round(dp_total / dd_total)
+                elif dp_total > 0:
+                    pig_list[uid]["gold_esperado"] = dp_total
+                else:
+                    pig_list[uid]["gold_esperado"] = pig_list[uid].get("gold_esperado", 0)
         elif dprec > 0 and uid not in pig_list:
             base["categoria"] = "PIG_PROVAVEL"
             base["motivos"] = [f"+{dprec} preciosidades (terminou missão)"]
             base["status"] = "ativo"
             base["delta_prec"] = dprec
             base["delta_ouro_perdido"] = 0
+            base["gold_esperado"] = round(dprec * 0.10)  # 10% das preciosidades
             pig_list[uid] = base
             adicionados += 1
             log.info(f"  + PROVÁVEL: {j['nome']} Lv{j['level']} | +{dprec} prec")
@@ -1670,14 +1699,26 @@ def loop_rapido(client):
                 av = avaliar_alvo(perfil)
                 log.info(f"    Score: {av['score']} → {av['recomendacao']}")
 
-                if perfil["level"] < level_min_xp():
-                    if not (pig["categoria"] == "PIG_CONFIRMADO" and av["score"] >= SCORE_MIN_PIG):
-                        log.info(f"    Lv{perfil['level']} < {level_min_xp()} — pulando"); continue
+                # Verifica perda de XP esperada
+                delta_lv   = MY_STATS["level"] - perfil["level"]
+                xp_perda   = max(0, delta_lv - 5)  # 0 até 5 levels abaixo, +1 por cada level extra
+                gold_esp   = pig.get("gold_esperado", 0)
+
+                if xp_perda > 0:
+                    # Verifica se vale a pena perder XP
+                    if gold_esp >= GOLD_IGNORAR_XP:
+                        log.info(f"    XP -{xp_perda} ignorado (gold_esp={gold_esp}g >= {GOLD_IGNORAR_XP}g)")
+                    elif xp_perda > PERDA_XP_MAX:
+                        log.info(f"    Pulando: perderia {xp_perda} XP (max={PERDA_XP_MAX}, gold_esp={gold_esp}g)"); continue
+
+                # Verifica gold mínimo esperado
+                if gold_esp < GOLD_MIN_PIG and pig.get("categoria") != "PIG_CONFIRMADO":
+                    log.info(f"    Gold esperado {gold_esp}g < mínimo {GOLD_MIN_PIG}g — pulando"); continue
 
                 if av["score"] < SCORE_MIN_PIG:
                     log.info(f"    Score insuficiente ({av['score']} < {SCORE_MIN_PIG})"); continue
 
-                log.info(f"    ✓ ATACANDO {pig['nome']}!")
+                log.info(f"    ✓ ATACANDO {pig['nome']}! (gold_esp={gold_esp}g, xp_perda={xp_perda})")
                 executar_ataque(client, uid)
                 pig_list.pop(uid, None); salvar_pig_list(pig_list)
                 ataque_feito = True
@@ -1826,6 +1867,18 @@ if __name__ == "__main__":
         globals()["MY_USER_ID"] = args.userid or cfg["userid"]
     if args.port or cfg.get("port"):
         globals()["DASHBOARD_PORT"] = int(args.port or cfg["port"])
+
+    # Novas configs opcionais
+    if cfg.get("premium") is not None:
+        globals()["IS_PREMIUM"] = bool(cfg["premium"])
+        globals()["COOLDOWN_ATAQUE_SEG"] = 300 if IS_PREMIUM else 900
+        globals()["HORAS_MISSAO_DIA"]    = 2   if IS_PREMIUM else 1
+    if cfg.get("gold_min_pig") is not None:
+        globals()["GOLD_MIN_PIG"]    = int(cfg["gold_min_pig"])
+    if cfg.get("perda_xp_max") is not None:
+        globals()["PERDA_XP_MAX"]    = int(cfg["perda_xp_max"])
+    if cfg.get("gold_ignorar_xp") is not None:
+        globals()["GOLD_IGNORAR_XP"] = int(cfg["gold_ignorar_xp"])
 
     if COOKIES_RAW == "COLE_SEUS_COOKIES_AQUI":
         print("\n❌ Configure COOKIES_RAW no bot.py ou passe --cookies 'seu_cookie'\n")

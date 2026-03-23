@@ -469,6 +469,11 @@ function render(d){
 }
 
 function calcGoldEsp(p){
+  // Usa gold_esperado calculado pelo bot (delta/derrotas ou prec*10%)
+  if(p.gold_esperado!=null && p.gold_esperado>0) return p.gold_esperado;
+  // Fallback legado
+  if(p.delta_ouro_perdido>0 && p.delta_derrotas>0)
+    return Math.round(p.delta_ouro_perdido/p.delta_derrotas);
   if(p.delta_ouro_perdido>0) return p.delta_ouro_perdido;
   if(p.delta_prec>0) return Math.round(p.delta_prec*0.1);
   return 0;
