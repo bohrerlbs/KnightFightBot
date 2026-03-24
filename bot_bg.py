@@ -112,6 +112,10 @@ class ClienteBG:
             raise ValueError("Cookies não configurados")
         self.session  = requests.Session()
         self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+        })
+        self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "pt-BR,pt;q=0.9",
             "Referer": self.bs_url + "/",
@@ -144,6 +148,11 @@ class ClienteBG:
             "Accept":           "text/html, */*; q=0.01",
         }
         r = self.session.post(url, data=data, headers=headers, timeout=15)
+        if r.status_code == 418:
+            # Servidor detectou automação — espera antes de tentar de novo
+            log.warning(f"418 I'm a teapot — servidor bloqueou temporariamente. Aguardando 5min...")
+            time.sleep(300)
+            r = self.session.post(url, data=data, headers=headers, timeout=15)
         r.raise_for_status()
         return BeautifulSoup(r.text, "html.parser")
 
