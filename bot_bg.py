@@ -229,18 +229,36 @@ def parsear_sessao_bg(soup):
     try:
         texto = soup.get_text(" ", strip=True)
 
-        # Batalhas ofensivas no dia e total
-        for m in re.finditer(r"(\d+)\s+de\s+um\s+máximo\s+de\s+(\d+)", texto):
-            val, max = int(m.group(1)), int(m.group(2))
-            if max == 100 or max == 200 or max == 400:
-                sessao["batalhas_total"] = max
-                sessao["batalhas_feitas"] = val
+        # Pega todos os "X de um máximo de Y"
+        matches = re.findall(r"(\d+)\s+de\s+um\s+m[aá]ximo\s+de\s+(\d+)", texto)
+        for val_s, max_s in matches:
+            val, maximo = int(val_s), int(max_s)
+            if maximo == 100:
+                # Limite diário (sempre 100, independente do modo)
+                sessao["batalhas_dia"]     = val
+                sessao["batalhas_dia_max"] = maximo
+            elif maximo in (200, 400):
+                # Total da sessão (modo médio=200, premium=400)
+                sessao["batalhas_total"]   = maximo
+                sessao["batalhas_feitas"]  = val
+
+        # Se modo free (max=100), total = dia
+        if "batalhas_total" not in sessao and "batalhas_dia" in sessao:
+            sessao["batalhas_total"]  = sessao["batalhas_dia_max"]
+            sessao["batalhas_feitas"] = sessao["batalhas_dia"]
+
+        # Restante do dia
+        if "batalhas_dia" in sessao:
+            sessao["restantes_hoje"] = sessao["batalhas_dia_max"] - sessao["batalhas_dia"]
 
         # Datas
         m = re.search(r"Inicio da sessão[^:]*:\s*([\d.]+\s[\d:]+)", texto)
         if m: sessao["inicio"] = m.group(1)
         m = re.search(r"Fim da sessão[^:]*:\s*([\d.]+\s[\d:]+)", texto)
         if m: sessao["fim"] = m.group(1)
+        # Limite diário: "pode realizar mais X ataques"
+        m = re.search(r"pode realizar mais\s+(\d+)\s+ataques", texto)
+        if m: sessao["restantes_hoje"] = int(m.group(1))
 
     except Exception as e:
         log.warning(f"parsear_sessao_bg: {e}")
@@ -808,6 +826,15 @@ def loop_bg(client, eu, modo):
             atualizar_ciclo("status", "concluido")
             break
 
+        # Verifica limite diário (sempre 100/dia independente do modo)
+        sessao = estado.get("sessao_bg", {})
+        restantes_hoje = sessao.get("restantes_hoje", 100)
+        if restantes_hoje <= 0:
+            log.info("Limite diário de 100 batalhas atingido — aguardando próximo dia...")
+            atualizar_ciclo("status", "limite_diario")
+            time.sleep(3600)  # aguarda 1h e verifica novamente
+            continue
+
         restantes = max_batalhas - feitas
         log.info(f"\n⚔ [BG] Batalha {feitas+1}/{max_batalhas} ({restantes} restantes)")
 
@@ -1067,10 +1094,14 @@ if __name__ == "__main__":
         # Coleta sessão atual
         soup_sessao = client.get_full("/battleground/currentbattle/")
         sessao = parsear_sessao_bg(soup_sessao)
-        log.info(f"Sessão: {sessao.get('batalhas_feitas',0)}/{sessao.get('batalhas_total','?')} batalhas")
+        restantes = sessao.get("restantes_hoje", "?")
+        log.info(f"Sessão: {sessao.get('batalhas_feitas',0)}/{sessao.get('batalhas_total','?')} batalhas | Hoje: {sessao.get('batalhas_dia',0)}/100 | Restantes: {restantes}")
         atualizar_ciclo("sessao", sessao)
 
-        # Sincroniza batalhas feitas
+        # Salva sessao no estado para verificação do limite diário
+        estado = carregar_estado()
+        estado["sessao_bg"] = sessao
+        salvar_estado(estado)
         estado = carregar_estado()
         if sessao.get("batalhas_feitas"):
             estado["batalhas_feitas"] = sessao["batalhas_feitas"]
