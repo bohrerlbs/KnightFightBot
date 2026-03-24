@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KnightFight Bot — Login</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Open+Sans:wght@400;600&display=swap');
+  :root {
+    --bg:      #0d0d0f;
+    --surface: #16161a;
+    --border:  #2a2a30;
+    --gold:    #c8943a;
+    --gold2:   #e8b860;
+    --text:    #d4c9b0;
+    --muted:   #6b6455;
+    --green2:  #6abf69;
+    --red:     #c05050;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Open Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 40px 36px;
+    width: 360px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .logo {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    color: var(--gold);
+    text-align: center;
+    margin-bottom: 4px;
+    letter-spacing: 2px;
+  }
+  .sub {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 32px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  input {
+    width: 100%;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: 'Open Sans', sans-serif;
+    font-size: 13px;
+    padding: 10px 12px;
+    margin-bottom: 18px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: var(--gold); }
+  button {
+    width: 100%;
+    background: rgba(200,148,58,0.15);
+    border: 1px solid rgba(200,148,58,0.4);
+    border-radius: 3px;
+    color: var(--gold2);
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 2px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all .15s;
+    text-transform: uppercase;
+  }
+  button:hover { background: rgba(200,148,58,0.25); }
+  .error {
+    color: var(--red);
+    font-size: 12px;
+    text-align: center;
+    margin-top: 14px;
+    display: none;
+  }
+  .sep {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 24px 0;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">⚔ KnightFight Bot</div>
+  <div class="sub">Painel de Controle</div>
+  <label>Usuário</label>
+  <input type="text" id="user" placeholder="usuário" autocomplete="username">
+  <label>Senha</label>
+  <input type="password" id="pass" placeholder="••••••••" autocomplete="current-password">
+  <button onclick="login()">Entrar</button>
+  <div class="error" id="err">Usuário ou senha inválidos</div>
+</div>
+<script>
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Enter') login();
+});
+function login(){
+  var user = document.getElementById('user').value.trim();
+  var pass = document.getElementById('pass').value;
+  if(!user || !pass) return;
+  fetch('/api/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user: user, password: pass})
+  })
+  .then(r => r.json())
+  .then(function(d){
+    if(d.ok){
+      window.location.href = '/';
+    } else {
+      document.getElementById('err').style.display = 'block';
+      document.getElementById('err').textContent = d.error || 'Erro ao fazer login';
+    }
+  })
+  .catch(function(){
+    document.getElementById('err').style.display = 'block';
+    document.getElementById('err').textContent = 'Erro de conexão';
+  });
+}
+</script>
+</body>
+</html>

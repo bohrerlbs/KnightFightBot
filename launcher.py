@@ -1,7 +1,7 @@
 """
 KnightFight Bot — Launcher v1.0.5
 """
-import os, sys, json, subprocess, threading, time, re, webbrowser
+import os, sys, json, subprocess, threading, time, re, webbrowser, hashlib, secrets
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -10,6 +10,52 @@ BASE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Pat
 os.chdir(BASE_DIR)
 PROFILES_DIR = BASE_DIR / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
+USERS_FILE = BASE_DIR / "users.json"
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+SESSIONS = {}  # token -> {user, role, profiles}
+
+def _hash_pw(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def load_users():
+    if not USERS_FILE.exists():
+        default = {"admin": {"password": _hash_pw("admin123"), "role": "admin", "profiles": []}}
+        USERS_FILE.write_text(json.dumps(default, indent=2), encoding="utf-8")
+        print("[AUTH] users.json criado — login: admin / senha: admin123")
+    try:
+        return json.loads(USERS_FILE.read_text(encoding="utf-8"))
+    except:
+        return {}
+
+def save_users(users):
+    USERS_FILE.write_text(json.dumps(users, indent=2, ensure_ascii=False), encoding="utf-8")
+
+def do_login(username, password):
+    users = load_users()
+    u = users.get(username)
+    if not u or u["password"] != _hash_pw(password):
+        return None
+    token = secrets.token_hex(32)
+    SESSIONS[token] = {"user": username, "role": u.get("role","user"), "profiles": u.get("profiles",[])}
+    return token
+
+def get_session(handler):
+    cookie = handler.headers.get("Cookie", "")
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith("kf_session="):
+            return SESSIONS.get(part[len("kf_session="):])
+    return None
+
+def filter_profiles(profiles, session):
+    if session["role"] == "admin":
+        return profiles
+    allowed = [p.lower() for p in session["profiles"]]
+    return [p for p in profiles if p.get("_name","").lower() in allowed]
+
+def is_admin(session):
+    return session and session.get("role") == "admin"
 
 # ── Versão — lida do arquivo externo para funcionar com auto-update ───────────
 def get_version():
@@ -494,10 +540,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path.split("?")[0]
+        # Rotas públicas
+        if p == "/login":
+            self._file("login.html", "text/html"); return
+        if p == "/logout":
+            cookie = self.headers.get("Cookie","")
+            for part in cookie.split(";"):
+                part = part.strip()
+                if part.startswith("kf_session="):
+                    SESSIONS.pop(part[len("kf_session="):], None)
+            self.send_response(302)
+            self.send_header("Location", "/login")
+            self.send_header("Set-Cookie", "kf_session=; Max-Age=0; Path=/")
+            self.end_headers(); return
+        # Verifica sessão
+        session = get_session(self)
+        if not session:
+            self.send_response(302)
+            self.send_header("Location", "/login")
+            self.end_headers(); return
         if p in ("/", "/launcher"):
             self._file("launcher.html", "text/html")
         elif p == "/api/profiles":
-            self._json(get_profiles())
+            self._json(filter_profiles(get_profiles(), session))
         elif p == "/api/version":
             self._json(check_update())
         elif p.startswith("/api/log/"):
@@ -516,6 +581,34 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(json.loads(cfg_p.read_text(encoding="utf-8")))
             else:
                 self._json({"error": f"perfil '{pname}' nao encontrado"})
+        # Admin: gerenciamento de usuários
+        elif p == "/api/users/list":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            users = load_users()
+            safe = {u: {"role": d["role"], "profiles": d.get("profiles",[])} for u,d in users.items()}
+            self._json({"ok": True, "users": safe})
+        elif p == "/api/users/save":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            users = load_users()
+            uname = d.get("username","").strip()
+            if not uname: self._json({"ok":False,"error":"Nome obrigatório"}); return
+            users[uname] = {
+                "password": _hash_pw(d["password"]) if d.get("password") else users.get(uname,{}).get("password",""),
+                "role": d.get("role","user"),
+                "profiles": d.get("profiles",[])
+            }
+            save_users(users)
+            self._json({"ok": True})
+        elif p == "/api/users/delete":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            uname = d.get("username","")
+            if uname == "admin": self._json({"ok":False,"error":"Não pode deletar admin"}); return
+            users = load_users()
+            users.pop(uname, None)
+            save_users(users)
+            self._json({"ok": True})
+        elif p == "/api/me":
+            self._json({"ok":True,"user":session["user"],"role":session["role"]})
         elif p == "/api/bg/diag":
             import json as _j
             diag = {}
@@ -539,13 +632,37 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers()
 
     def do_POST(self):
-        d = self._body()
         p = self.path
+        # Login é público
+        if p == "/api/login":
+            d = self._body()
+            token = do_login(d.get("user",""), d.get("password",""))
+            if token:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Set-Cookie", f"kf_session={token}; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Cache-Control", "no-store")
+                self._cors(); self.end_headers()
+                self.wfile.write(json.dumps({"ok": True}).encode())
+            else:
+                self._json({"ok": False, "error": "Usuário ou senha inválidos"})
+            return
+        # Demais endpoints exigem sessão
+        session = get_session(self)
+        if not session:
+            self._json({"ok": False, "error": "Não autenticado"}); return
+        d = self._body()
         if   p == "/api/start":          self._json(start_bot(d["name"]))
         elif p == "/api/stop":           self._json(stop_bot(d["name"]))
-        elif p == "/api/save":           self._json(save_profile(d))
-        elif p == "/api/delete":         self._json(delete_profile(d["name"]))
-        elif p == "/api/update":         self._json(download_update())
+        elif p == "/api/save":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            self._json(save_profile(d))
+        elif p == "/api/delete":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            self._json(delete_profile(d["name"]))
+        elif p == "/api/update":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            self._json(download_update())
         elif p.startswith("/api/bg/start/"):
             parts = [x for x in p.split("/") if x]
             name = parts[-1] if parts else ""
