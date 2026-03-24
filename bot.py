@@ -941,21 +941,29 @@ def buscar_alvo_imunizacao(client, estado, score_min):
         delta = meu_lv - c.get("level", meu_lv)
         return max(0, delta - 5)
 
+    # Prioridade 1: score bom + sem perder XP
     validos = [c for c in candidatos
                if c["score"] >= score_min
-               and xp_perda(c) <= PERDA_XP_MAX]
-    log.info(f"  Com score >= {score_min} e XP perda <= {PERDA_XP_MAX}: {len(validos)}")
+               and xp_perda(c) == 0]
+    log.info(f"  Score >= {score_min} sem perder XP: {len(validos)}")
 
-    # Se não encontrou respeitando XP, relaxa só o score (mantém XP)
+    # Prioridade 2: score bom + aceita perder XP (dentro do limite)
+    if not validos and PERDA_XP_MAX > 0:
+        validos = [c for c in candidatos
+                   if c["score"] >= score_min
+                   and xp_perda(c) <= PERDA_XP_MAX]
+        log.info(f"  Score >= {score_min} com XP <= {PERDA_XP_MAX}: {len(validos)}")
+
+    # Prioridade 3: qualquer score DESDE QUE score >= SCORE_MIN_PIG (não perde gold)
+    # NUNCA relaxa abaixo de SCORE_MIN_PIG — abaixo disso perde gold
     if not validos:
-        validos = [c for c in candidatos if xp_perda(c) <= PERDA_XP_MAX]
-        log.info(f"  Relaxando score (mantendo XP <= {PERDA_XP_MAX}): {len(validos)}")
+        validos = [c for c in candidatos
+                   if c["score"] >= SCORE_MIN_PIG
+                   and xp_perda(c) <= PERDA_XP_MAX]
+        log.info(f"  Score >= {SCORE_MIN_PIG} (mínimo para não perder gold): {len(validos)}")
 
     if not validos:
-        # Relaxa tudo se realmente não tem ninguém
-        score_relaxado = max(score_min - 15, 30)
-        validos = [c for c in candidatos if c["score"] >= score_relaxado]
-        log.info(f"  Score relaxado para {score_relaxado}: {len(validos)} candidatos")
+        log.warning(f"  Nenhum candidato seguro para imunização — não atacando para não perder gold")
 
     for c in validos[:20]:
         uid = c["user_id"]
