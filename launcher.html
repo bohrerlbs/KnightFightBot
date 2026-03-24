@@ -286,7 +286,7 @@ header {
   </div>
   <div class="header-right">
     <span id="user-info" style="font-size:11px;color:var(--muted);margin-right:12px"></span>
-    <button class="btn-secondary" id="btn-users" onclick="openModal('modal-users')" style="display:none;font-size:10px;padding:4px 10px;margin-right:6px">Usuários</button>
+    <button class="btn-secondary" id="btn-users" onclick="openUsersModal()" style="font-size:10px;padding:4px 10px;margin-right:6px">Usuários</button>
     <button class="btn-secondary" id="btn-logout" onclick="logout()" style="font-size:10px;padding:4px 10px;color:var(--red);display:none">Sair</button>
     <span class="version" id="ver">v1.0.0</span>
     <button class="update-badge" id="update-badge" onclick="doUpdate()">
@@ -592,22 +592,20 @@ function loadMe(){
     if(d.ok){
       document.getElementById('user-info').textContent = d.user + (d.role==='admin'?' (admin)':'');
       document.getElementById('btn-logout').style.display='inline-block';
-      if(d.role==='admin'){
-        document.getElementById('btn-users').style.display='inline-block';
-        document.getElementById('btn-users').onclick = function(){ loadUsers(); openModal('modal-users'); };
+      if(d.role!=='admin'){
+        document.getElementById('btn-users').style.display='none';
       }
     } else {
-      // Fallback: mostra como admin local
       document.getElementById('user-info').textContent = 'admin (local)';
-      document.getElementById('btn-users').style.display='inline-block';
-      document.getElementById('btn-users').onclick = function(){ loadUsers(); openModal('modal-users'); };
     }
   }).catch(function(){
-    // Sem sessão mas acesso local — mostra admin
     document.getElementById('user-info').textContent = 'admin (local)';
-    document.getElementById('btn-users').style.display='inline-block';
-    document.getElementById('btn-users').onclick = function(){ loadUsers(); openModal('modal-users'); };
   });
+}
+
+function openUsersModal(){
+  loadUsers();
+  openModal('modal-users');
 }
 
 function loadUsers(){
