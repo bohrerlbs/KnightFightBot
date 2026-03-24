@@ -590,12 +590,20 @@ def avaliar_alvo(perfil, eu=None):
     frc_d  = perfil.get("forca", 0)
     lv_d   = perfil.get("level", 0)
     arm_d  = perfil.get("sk_armadura", 0)
+    agil_d = perfil.get("agilidade", 0)   # agilidade real (pode ser negativa com arma pesada)
     sk1_d  = perfil.get("sk_1mao", 0)
     sk2_d  = perfil.get("sk_2maos", 0)
     sk_d   = max(sk1_d, sk2_d)  # skill principal de ataque do alvo
     meu_sk1 = eu.get("sk_1mao", 0)
     meu_sk2 = eu.get("sk_2maos", 0)
     meu_sk  = max(meu_sk1, meu_sk2)
+    minha_agil = eu.get("agilidade", 0)
+
+    # Detecta build do adversário
+    # Build 2h: sk_2maos alto, sk_armadura baixo → dano alto, defesa baixa
+    # Build 1h: sk_1mao alto, sk_armadura alto → dano menor, defesa maior (agilidade importa)
+    usa_2h   = sk2_d > sk1_d and sk2_d > 0
+    usa_arm  = arm_d > 20  # tem investimento em armadura/escudo
 
     # ── 1. Level delta — mais importante que tudo ─────────────────────────────
     delta_lv = lv_d - meu_lv
@@ -666,13 +674,37 @@ def avaliar_alvo(perfil, eu=None):
         vantagens.append(f"Força {frc_d} << {minha_frc} ✓")
         score += 8
 
-    # ── 5. Armadura do alvo (dificulta causar dano) ───────────────────────────
-    if arm_d > 50:
-        problemas.append(f"Armadura {arm_d} — dano será absorvido")
-        score -= 15
-    elif arm_d > 30:
-        problemas.append(f"Armadura {arm_d} — boa defesa")
-        score -= 8
+    # ── 5. Armadura + Agilidade (defesa real) ────────────────────────────────
+    # Quem usa armadura/escudo tem bônus de defesa pela agilidade
+    # Quem usa 2h sem armadura a agilidade não importa
+    if usa_arm:
+        # Defesa real = armadura + bônus agilidade
+        # Agilidade positiva = mais defesa, negativa = menos defesa
+        defesa_efetiva = arm_d + max(0, agil_d // 5)  # estimativa do bônus
+        if defesa_efetiva > 60:
+            problemas.append(f"Defesa alta: arm={arm_d} agil={agil_d} → defesa efetiva ~{defesa_efetiva}")
+            score -= 18
+        elif defesa_efetiva > 35:
+            problemas.append(f"Boa defesa: arm={arm_d} agil={agil_d}")
+            score -= 10
+        elif arm_d > 0 and agil_d < -5:
+            # Tem armadura mas agilidade negativa (arma pesada) → defesa comprometida
+            vantagens.append(f"Armadura {arm_d} com agil negativa {agil_d} — defesa reduzida ✓")
+            score += 5
+    else:
+        # Build 2h sem armadura → sem bônus de defesa, mas dano alto
+        if usa_2h:
+            vantagens.append(f"Build 2h sem armadura — defesa mínima ✓")
+            score += 8  # mais fácil acertar e causar dano
+
+    # ── 5b. Build 2h: penalidade pelo dano alto ──────────────────────────────
+    if usa_2h and sk2_d > 0:
+        # Arma 2h tem dano base muito maior → mais perigoso
+        if sk2_d > meu_sk * 1.3:
+            problemas.append(f"Build 2h com skill {sk2_d} > minha {meu_sk} — dano alto")
+            score -= 12
+        elif sk2_d > meu_sk:
+            score -= 5
 
     # ── Skill de ataque do alvo (1h ou 2h) ───────────────────────────────────
     if sk_d > 0 and meu_sk > 0:
