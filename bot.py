@@ -752,8 +752,8 @@ def avaliar_alvo(perfil, eu=None):
         from combat_sim import simular_combate
         sim = simular_combate(eu, perfil)
         sim_score = sim["score"]
-        # Blend: 40% fórmula heurística + 60% simulação
-        score = round(score * 0.4 + sim_score * 0.6)
+        # 100% simulação — mais preciso que heurística
+        score = sim_score
         score = max(0, min(100, score))
         vantagens.append(f"Sim: dano_eu={sim['total_eu']} vs dano_adv={sim['total_adv']} | taxa={sim['taxa_eu']}%")
     except Exception as e:

@@ -672,7 +672,7 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         from combat_sim import simular_combate
         sim = simular_combate(eu, adv)
         sim_score = sim["score"]
-        score = round(score * 0.4 + sim_score * 0.6)
+        score = sim_score
         score = max(0, min(100, score))
     except Exception:
         pass
