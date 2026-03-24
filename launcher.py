@@ -588,53 +588,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(json.loads(cfg_p.read_text(encoding="utf-8")))
             else:
                 self._json({"error": f"perfil '{pname}' nao encontrado"})
-        # Admin: gerenciamento de usuários
-        elif p == "/api/users/list":
-            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
-            users = load_users()
-            safe = {u: {"role": d["role"], "profiles": d.get("profiles",[])} for u,d in users.items()}
-            self._json({"ok": True, "users": safe})
-        elif p == "/api/users/save":
-            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
-            users = load_users()
-            uname = d.get("username","").strip()
-            if not uname: self._json({"ok":False,"error":"Nome obrigatório"}); return
-            users[uname] = {
-                "password": _hash_pw(d["password"]) if d.get("password") else users.get(uname,{}).get("password",""),
-                "role": d.get("role","user"),
-                "profiles": d.get("profiles",[])
-            }
-            save_users(users)
-            self._json({"ok": True})
-        elif p == "/api/users/delete":
-            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
-            uname = d.get("username","")
-            if uname == "admin": self._json({"ok":False,"error":"Não pode deletar admin"}); return
-            users = load_users()
-            users.pop(uname, None)
-            save_users(users)
-            self._json({"ok": True})
-        elif p == "/api/me":
-            self._json({"ok":True,"user":session["user"],"role":session["role"]})
-        elif p == "/api/bg/diag":
-            import json as _j
-            diag = {}
-            for d in PROFILES_DIR.iterdir():
-                if d.is_dir():
-                    cfg_p = d / "config.json"
-                    bot_bg = BASE_DIR / "bot_bg.py"
-                    diag[d.name] = {
-                        "profile_dir": str(d),
-                        "profile_exists": d.exists(),
-                        "config_exists": cfg_p.exists(),
-                        "bot_bg_exists": bot_bg.exists(),
-                        "bot_bg_path": str(bot_bg),
-                    }
-            self._json(diag)
-        elif p.startswith("/api/bg/stop/"):
-            self._json(stop_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
-        elif p.startswith("/api/bg/status/"):
-            self._json(status_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
+
         else:
             self.send_response(404); self.end_headers()
 
@@ -709,6 +663,53 @@ class Handler(BaseHTTPRequestHandler):
             t = threading.Thread(target=run, daemon=True)
             t.start(); t.join(timeout=320)
             self._json(result.get("r", {"ok": False, "error": "Timeout"}))
+        # Admin: gerenciamento de usuários
+        elif p == "/api/users/list":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            users = load_users()
+            safe = {u: {"role": v["role"], "profiles": v.get("profiles",[])} for u,v in users.items()}
+            self._json({"ok": True, "users": safe})
+        elif p == "/api/users/save":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            uname = d.get("username","").strip()
+            if not uname: self._json({"ok":False,"error":"Nome obrigatório"}); return
+            users = load_users()
+            users[uname] = {
+                "password": _hash_pw(d["password"]) if d.get("password") else users.get(uname,{}).get("password",""),
+                "role": d.get("role","user"),
+                "profiles": d.get("profiles",[])
+            }
+            save_users(users)
+            self._json({"ok": True})
+        elif p == "/api/users/delete":
+            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            uname = d.get("username","")
+            if uname == "admin": self._json({"ok":False,"error":"Não pode deletar admin"}); return
+            users = load_users()
+            users.pop(uname, None)
+            save_users(users)
+            self._json({"ok": True})
+        elif p == "/api/me":
+            self._json({"ok":True,"user":session["user"],"role":session["role"]})
+        elif p == "/api/bg/diag":
+            import json as _j
+            diag = {}
+            for d in PROFILES_DIR.iterdir():
+                if d.is_dir():
+                    cfg_p = d / "config.json"
+                    bot_bg = BASE_DIR / "bot_bg.py"
+                    diag[d.name] = {
+                        "profile_dir": str(d),
+                        "profile_exists": d.exists(),
+                        "config_exists": cfg_p.exists(),
+                        "bot_bg_exists": bot_bg.exists(),
+                        "bot_bg_path": str(bot_bg),
+                    }
+            self._json(diag)
+        elif p.startswith("/api/bg/stop/"):
+            self._json(stop_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
+        elif p.startswith("/api/bg/status/"):
+            self._json(status_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
         else:
             self.send_response(404); self.end_headers()
 
