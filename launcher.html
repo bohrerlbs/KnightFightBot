@@ -609,15 +609,15 @@ function loadUsers(){
       html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2)">';
       html += '<span style="flex:1;font-size:12px">'+(ud.role==='admin'?'👑 ':'')+u+'</span>';
       html += '<span style="font-size:10px;color:var(--muted)">'+(ud.profiles.length?ud.profiles.join(', '):'todos')+'</span>';
-      html += '<button class="btn btn-del" onclick="editUser(''+u+'')">editar</button>';
-      if(u!=='admin') html += '<button class="btn btn-del" onclick="deleteUser(''+u+'')">x</button>';
+      html += '<button class="btn btn-del" onclick="editUser(this)" data-u="'+u+'">editar</button>';
+      if(u!=='admin') html += '<button class="btn btn-del" onclick="deleteUser(this)" data-u="'+u+'">x</button>';
       html += '</div>';
     });
     document.getElementById('users-list').innerHTML = html || '<div style="color:var(--muted);font-size:12px">Nenhum usuário</div>';
   });
 }
 
-function editUser(name){
+function editUser(el){ var name = typeof el==='string'?el:el.dataset.u;
   fetch('/api/users/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
   .then(r=>r.json()).then(function(d){
     var u = d.users[name] || {};
@@ -657,7 +657,7 @@ function saveUser(){
   });
 }
 
-function deleteUser(name){
+function deleteUser(el){ var name = typeof el==='string'?el:el.dataset.u;
   if(!confirm('Deletar usuário "'+name+'"?')) return;
   fetch('/api/users/delete',{
     method:'POST',
