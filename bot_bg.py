@@ -506,14 +506,17 @@ def avaliar_adversario_bg(adv, eu, combates=None):
     frc_d  = adv.get("forca", 0)
     lv_d   = adv.get("level", 0)
     arm_d  = adv.get("sk_armadura", 0)
+    agil_d = adv.get("agilidade", 0)
     sk1_d  = adv.get("sk_1mao", 0)
     sk2_d  = adv.get("sk_2maos", 0)
-    sk_d   = max(sk1_d, sk2_d)  # skill principal (maior entre 1h e 2h)
+    sk_d   = max(sk1_d, sk2_d)
     ef_d   = adv.get("ef", 0)
-    # Minhas skills
     meu_sk1  = eu.get("sk_1mao", 0)
     meu_sk2  = eu.get("sk_2maos", 0)
     meu_sk   = max(meu_sk1, meu_sk2)
+    # Detecta build
+    usa_2h  = sk2_d > sk1_d and sk2_d > 0
+    usa_arm = arm_d > 20
 
     score = 50
     problemas = []
@@ -590,9 +593,28 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         vantagens.append(f"Força {frc_d} baixa ✓")
         score += 8
 
-    # ── 6. Armadura dele ───────────────────────────────────────
-    if arm_d > 50: score -= 15
-    elif arm_d > 30: score -= 8
+    # ── 6. Armadura + Agilidade (defesa real) ─────────────────
+    if usa_arm:
+        defesa_efetiva = arm_d + max(0, agil_d // 5)
+        if defesa_efetiva > 60:
+            problemas.append(f"Defesa alta: arm={arm_d} agil={agil_d}")
+            score -= 18
+        elif defesa_efetiva > 35:
+            score -= 10
+        elif agil_d < -5:
+            vantagens.append(f"Armadura com agil negativa {agil_d} — defesa reduzida ✓")
+            score += 5
+    else:
+        if usa_2h:
+            vantagens.append(f"Build 2h sem armadura — defesa mínima ✓")
+            score += 8
+
+    # ── 6b. Build 2h: penalidade pelo dano alto ────────────────
+    if usa_2h and sk2_d > meu_sk * 1.3:
+        problemas.append(f"Build 2h skill {sk2_d} — dano alto")
+        score -= 12
+    elif usa_2h and sk2_d > meu_sk:
+        score -= 5
 
     # ── 7. Detecção de build ruim (zumbi mal configurado) ──────
     # Build ruim: AC muito baixo para o level, ou skills dispersas
