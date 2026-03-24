@@ -553,12 +553,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Location", "/login")
             self.send_header("Set-Cookie", "kf_session=; Max-Age=0; Path=/")
             self.end_headers(); return
-        # Verifica sessão
+        # Verifica sessão — localhost sempre passa como admin
+        client_ip = self.client_address[0]
+        is_local  = client_ip in ("127.0.0.1", "::1", "localhost")
         session = get_session(self)
         if not session:
-            self.send_response(302)
-            self.send_header("Location", "/login")
-            self.end_headers(); return
+            if is_local:
+                # Acesso local: admin automático sem login
+                session = {"user": "admin", "role": "admin", "profiles": []}
+            else:
+                self.send_response(302)
+                self.send_header("Location", "/login")
+                self.end_headers(); return
         if p in ("/", "/launcher"):
             self._file("launcher.html", "text/html")
         elif p == "/api/profiles":
@@ -647,10 +653,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json({"ok": False, "error": "Usuário ou senha inválidos"})
             return
-        # Demais endpoints exigem sessão
+        # Demais endpoints exigem sessão — localhost sempre passa como admin
+        client_ip = self.client_address[0]
+        is_local  = client_ip in ("127.0.0.1", "::1", "localhost")
         session = get_session(self)
         if not session:
-            self._json({"ok": False, "error": "Não autenticado"}); return
+            if is_local:
+                session = {"user": "admin", "role": "admin", "profiles": []}
+            else:
+                self._json({"ok": False, "error": "Não autenticado"}); return
         d = self._body()
         if   p == "/api/start":          self._json(start_bot(d["name"]))
         elif p == "/api/stop":           self._json(stop_bot(d["name"]))
