@@ -308,11 +308,11 @@ def melhor_armadura(skill_arm):
 
 def melhor_escudo(skill_arm):
     """Retorna (def_min, def_max, blq_bonus) do melhor escudo."""
-    candidatos = [e for e in _ESCUDOS if e[6] <= skill_arm]
+    candidatos = [e for e in _ESCUDOS if e[5] <= skill_arm]
     if not candidatos:
         return (0, 0, 0)
     best = max(candidatos, key=lambda e: (e[0]+e[1])/2 + e[4])
-    return (best[0], best[1], best[4])
+    return (best[0], best[1], best[4])  # def_min, def_max, blq_bonus
 
 def bonus_forca(dano_medio, forca):
     """Estima bônus de dano pela força."""
