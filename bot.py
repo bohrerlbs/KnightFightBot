@@ -47,10 +47,12 @@ RENOVAR_IMUNIDADE_SEG = 600
 
 HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
-SCORE_MIN_PIG        = 40
-SCORE_MIN_IMUNIZACAO = 60
+SCORE_MIN_PIG        = 60    # score mínimo para pig normal
+SCORE_MIN_PIG_BROKE  = 40    # score mínimo para pig quando gold conta <= 100g
+SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
 SCORE_MIN_GOLD_ALTO  = 75
 GOLD_ALTO_THRESHOLD  = 5000
+GOLD_CONTA_BROKE     = 100   # gold na conta considerado "sem gold"
 
 INTERVALO_RAPIDO_SEG = 120
 INTERVALO_LENTO_SEG  = 3600
@@ -615,13 +617,16 @@ def avaliar_alvo(perfil, eu=None):
     if blq > 0:
         if taxa < 0.35:
             problemas.append(f"Hit rate {taxa*100:.0f}% — bloqueio {blq} muito alto")
-            score -= 35
-        elif taxa < 0.45:
+            score -= 40
+        elif taxa < 0.42:
             problemas.append(f"Hit rate {taxa*100:.0f}% — difícil acertar")
-            score -= 20
-        elif taxa < 0.52:
+            score -= 28
+        elif taxa < 0.48:
             problemas.append(f"Hit rate {taxa*100:.0f}% — abaixo do ideal")
-            score -= 8
+            score -= 15
+        elif taxa < 0.52:
+            problemas.append(f"Hit rate {taxa*100:.0f}% — levemente abaixo")
+            score -= 5
         else:
             vantagens.append(f"Hit rate {taxa*100:.0f}% ✓")
             score += 15
@@ -941,29 +946,25 @@ def buscar_alvo_imunizacao(client, estado, score_min):
         delta = meu_lv - c.get("level", meu_lv)
         return max(0, delta - 5)
 
-    # Prioridade 1: score bom + sem perder XP
-    validos = [c for c in candidatos
-               if c["score"] >= score_min
-               and xp_perda(c) == 0]
-    log.info(f"  Score >= {score_min} sem perder XP: {len(validos)}")
+    # Busca progressiva: score >= 80, aumentando XP aceito de 0 até PERDA_XP_MAX
+    # Checa todos os candidatos em cada nível de XP antes de relaxar
+    validos = []
+    xp_limite_max = max(PERDA_XP_MAX, 0)
 
-    # Prioridade 2: score bom + aceita perder XP (dentro do limite)
-    if not validos and PERDA_XP_MAX > 0:
-        validos = [c for c in candidatos
-                   if c["score"] >= score_min
-                   and xp_perda(c) <= PERDA_XP_MAX]
-        log.info(f"  Score >= {score_min} com XP <= {PERDA_XP_MAX}: {len(validos)}")
-
-    # Prioridade 3: qualquer score DESDE QUE score >= SCORE_MIN_PIG (não perde gold)
-    # NUNCA relaxa abaixo de SCORE_MIN_PIG — abaixo disso perde gold
-    if not validos:
-        validos = [c for c in candidatos
-                   if c["score"] >= SCORE_MIN_PIG
-                   and xp_perda(c) <= PERDA_XP_MAX]
-        log.info(f"  Score >= {SCORE_MIN_PIG} (mínimo para não perder gold): {len(validos)}")
+    for xp_aceito in range(0, xp_limite_max + 1):
+        candidatos_round = [c for c in candidatos
+                            if c["score"] >= score_min
+                            and xp_perda(c) <= xp_aceito]
+        if candidatos_round:
+            validos = candidatos_round
+            if xp_aceito == 0:
+                log.info(f"  Score >= {score_min} sem perder XP: {len(validos)} candidatos")
+            else:
+                log.info(f"  Score >= {score_min} aceitando -{xp_aceito} XP: {len(validos)} candidatos")
+            break
 
     if not validos:
-        log.warning(f"  Nenhum candidato seguro para imunização — não atacando para não perder gold")
+        log.warning(f"  Nenhum candidato com score >= {score_min} disponível — ficando vulnerável")
 
     for c in validos[:20]:
         uid = c["user_id"]
@@ -1785,22 +1786,26 @@ def loop_rapido(client):
 
                 # Verifica perda de XP esperada
                 delta_lv   = MY_STATS["level"] - perfil["level"]
-                xp_perda   = max(0, delta_lv - 5)  # 0 até 5 levels abaixo, +1 por cada level extra
+                xp_perda   = max(0, delta_lv - 5)
                 gold_esp   = pig.get("gold_esperado", 0)
+                gold_conta = estado.get("gold_atual", 0)
 
                 if xp_perda > 0:
-                    # Verifica se vale a pena perder XP
                     if gold_esp >= GOLD_IGNORAR_XP:
                         log.info(f"    XP -{xp_perda} ignorado (gold_esp={gold_esp}g >= {GOLD_IGNORAR_XP}g)")
                     elif xp_perda > PERDA_XP_MAX:
                         log.info(f"    Pulando: perderia {xp_perda} XP (max={PERDA_XP_MAX}, gold_esp={gold_esp}g)"); continue
 
+                # Score mínimo para pig
+                # Se gold na conta <= 100g, aceita score >= 40 (precisa de qualquer ouro)
+                # Caso normal: score >= 60
+                score_pig_min = SCORE_MIN_PIG_BROKE if gold_conta <= GOLD_CONTA_BROKE else SCORE_MIN_PIG
+                if av["score"] < score_pig_min:
+                    log.info(f"    Score {av['score']} < {score_pig_min} (gold_conta={gold_conta}g) — pulando"); continue
+
                 # Verifica gold mínimo esperado
                 if gold_esp < GOLD_MIN_PIG and pig.get("categoria") != "PIG_CONFIRMADO":
                     log.info(f"    Gold esperado {gold_esp}g < mínimo {GOLD_MIN_PIG}g — pulando"); continue
-
-                if av["score"] < SCORE_MIN_PIG:
-                    log.info(f"    Score insuficiente ({av['score']} < {SCORE_MIN_PIG})"); continue
 
                 log.info(f"    ✓ ATACANDO {pig['nome']}! (gold_esp={gold_esp}g, xp_perda={xp_perda})")
                 executar_ataque(client, uid)
@@ -1968,6 +1973,14 @@ if __name__ == "__main__":
         globals()["PAUSA_CACHE_SEG"] = float(cfg["pausa_cache"])
     if cfg.get("hora_cache") is not None:
         globals()["HORA_CACHE_PERFIS"] = int(cfg["hora_cache"])
+    if cfg.get("score_min_imunizacao") is not None:
+        globals()["SCORE_MIN_IMUNIZACAO"] = int(cfg["score_min_imunizacao"])
+    if cfg.get("score_min_pig") is not None:
+        globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
+    if cfg.get("score_min_pig_broke") is not None:
+        globals()["SCORE_MIN_PIG_BROKE"]  = int(cfg["score_min_pig_broke"])
+    if cfg.get("gold_conta_broke") is not None:
+        globals()["GOLD_CONTA_BROKE"]     = int(cfg["gold_conta_broke"])
     if cfg.get("gold_min_pig") is not None:
         globals()["GOLD_MIN_PIG"]    = int(cfg["gold_min_pig"])
     if cfg.get("perda_xp_max") is not None:
