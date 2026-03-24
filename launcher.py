@@ -593,7 +593,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers()
 
     def do_POST(self):
-        p = self.path
+        p = self.path.split("?")[0]
         # Login é público
         if p == "/api/login":
             d = self._body()
