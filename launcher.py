@@ -361,7 +361,7 @@ def download_update():
             try: p.wait(timeout=5)
             except: p.kill()
     updated, errors = [], []
-    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html", "modelo_combate.json", "export_modelo.py"]:
+    for fname in ["bot.py", "dashboard.html", "launcher.html", "bot_bg.py", "dashboard_bg.html", "modelo_combate.json", "modelo_combate_bg.json", "export_modelo.py"]:
         try:
             bak = BASE_DIR / (fname + ".bak")
             src = BASE_DIR / fname
