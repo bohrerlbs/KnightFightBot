@@ -553,13 +553,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Location", "/login")
             self.send_header("Set-Cookie", "kf_session=; Max-Age=0; Path=/")
             self.end_headers(); return
-        # Verifica sessão — localhost sempre passa como admin
+        # Verifica sessão
+        # Se vier pelo Cloudflare, CF-Connecting-IP tem o IP real do cliente
+        cf_ip     = self.headers.get("CF-Connecting-IP", "")
         client_ip = self.client_address[0]
-        is_local  = client_ip in ("127.0.0.1", "::1", "localhost")
+        is_local  = not cf_ip and client_ip in ("127.0.0.1", "::1", "localhost")
         session = get_session(self)
         if not session:
             if is_local:
-                # Acesso local: admin automático sem login
                 session = {"user": "admin", "role": "admin", "profiles": []}
             else:
                 self.send_response(302)
@@ -653,9 +654,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json({"ok": False, "error": "Usuário ou senha inválidos"})
             return
-        # Demais endpoints exigem sessão — localhost sempre passa como admin
+        # Demais endpoints exigem sessão
+        cf_ip     = self.headers.get("CF-Connecting-IP", "")
         client_ip = self.client_address[0]
-        is_local  = client_ip in ("127.0.0.1", "::1", "localhost")
+        is_local  = not cf_ip and client_ip in ("127.0.0.1", "::1", "localhost")
         session = get_session(self)
         if not session:
             if is_local:
