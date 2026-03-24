@@ -439,15 +439,19 @@ function render(d){
     });
   } else {
     document.getElementById('t-missao').textContent='—';
-    document.getElementById('t-missao-sub').textContent=(missao.minutos_hoje||0)+'/'+(missao.limite||60)+'min hoje';
+    var limiteMin = missao.limite || (estado.is_premium ? 120 : 60);
+    document.getElementById('t-missao-sub').textContent=(missao.minutos_hoje||0)+'/'+limiteMin+'min hoje'+(estado.is_premium?' (Premium)':'');
   }
 
   var ult=estado.ultimo_ataque;
+  var cdSeg = (estado.cooldown_seg || 900);
+  var cdMin = Math.round(cdSeg/60);
+  document.getElementById('t-ataque-sub').textContent='CD de '+cdMin+'min'+(estado.is_premium?' (Premium)':'');
   if(ult){
-    var cdFim=new Date(new Date(ult).getTime()+900000).toISOString();
+    var cdFim=new Date(new Date(ult).getTime()+cdSeg*1000).toISOString();
     startTimer('a',cdFim,'t-ataque',(el,d)=>{
       el.className='tval '+(d<=0?'grn':d<180?'warn':'grn');
-      document.getElementById('t-ataque-sub').textContent=d<=0?'✓ Livre para atacar!':'CD restante';
+      document.getElementById('t-ataque-sub').textContent=d<=0?'✓ Livre para atacar!':'CD de '+cdMin+'min'+(estado.is_premium?' (Premium)':'');
     });
   } else {
     document.getElementById('t-ataque').textContent='—';

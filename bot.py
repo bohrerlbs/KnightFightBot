@@ -1740,6 +1740,8 @@ def loop_rapido(client):
             log.info(f"\n⚡ [RÁPIDO] Imunidade: {fmt_t(imun)}")
 
             rv = verificar_raubzug(client)
+            estado["cooldown_seg"] = COOLDOWN_ATAQUE_SEG  # para dashboard saber se é premium
+            estado["is_premium"]  = IS_PREMIUM
             atualizar_ciclo_file("estado", estado)
 
             if not rv["livre"]:
