@@ -583,7 +583,7 @@ function saveCfg(){
 }
 
 function logout(){
-  fetch('/logout').then(()=>{ window.location.href='/login'; });
+  window.location.href = '/logout';
 }
 
 function loadMe(){
@@ -1062,8 +1062,8 @@ function saveProfile(){
 // Modelo de aprendizado
 // Check update
 var latestVersion = null;
-fetch('/api/version')
-  .then(r=>r.json())
+fetch('/api/version', {credentials:'include'})
+  .then(r=>{ if(r.status===302||r.redirected){ window.location.href='/login'; throw 'redir'; } return r.json(); })
   .then(d=>{
     document.getElementById('ver').textContent = `v${d.current}`;
     console.log('Version check:', d);
