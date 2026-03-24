@@ -664,6 +664,19 @@ def avaliar_adversario_bg(adv, eu, combates=None):
             log.debug(f"  Aprendizado: {len(similares)} combates similares → WR {wr_similar*100:.0f}% → ajuste")
 
     score = max(0, min(100, score))
+
+    # ── Simulação de combate ──────────────────────────────────────────────────
+    try:
+        import sys as _sys, os as _os
+        _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        from combat_sim import simular_combate
+        sim = simular_combate(eu, adv)
+        sim_score = sim["score"]
+        score = round(score * 0.4 + sim_score * 0.6)
+        score = max(0, min(100, score))
+    except Exception:
+        pass
+
     rec = "ATACAR" if score >= SCORE_MIN_ATACAR else "EVITAR"
 
     return {

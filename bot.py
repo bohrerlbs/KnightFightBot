@@ -746,6 +746,19 @@ def avaliar_alvo(perfil, eu=None):
             score = round(score * 0.8 + wr_lv * 0.2)
 
     score = max(0, min(100, score))
+
+    # ── Simulação de combate com tabelas reais ────────────────────────────────
+    try:
+        from combat_sim import simular_combate
+        sim = simular_combate(eu, perfil)
+        sim_score = sim["score"]
+        # Blend: 40% fórmula heurística + 60% simulação
+        score = round(score * 0.4 + sim_score * 0.6)
+        score = max(0, min(100, score))
+        vantagens.append(f"Sim: dano_eu={sim['total_eu']} vs dano_adv={sim['total_adv']} | taxa={sim['taxa_eu']}%")
+    except Exception as e:
+        pass  # Se falhar usa só heurística
+
     rec = "ATACAR" if score >= 60 else ("CUIDADO" if score >= 40 else "EVITAR")
     return {"recomendacao": rec, "score": score,
             "vantagens": vantagens, "problemas": problemas}
