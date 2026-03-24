@@ -598,7 +598,7 @@ function renderProfiles(profiles){
   profiles.forEach(function(p){
     var running   = p._running   || false;
     var bgRunning = p._bg_running || false;
-    var bgPort    = (p.port || 8765) + 5;
+    var bgPort    = (p.port || 8765) + 1;
     var name      = p._name || '';
     var logs = (p._log_tail || []).slice(-3).map(function(l){
       var cls = logClass(l);

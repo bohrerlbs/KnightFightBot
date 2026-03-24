@@ -81,9 +81,9 @@ def start_bg_bot(name, modo="free"):
         cfg = _json.loads(cfg_normal.read_text(encoding="utf-8"))
     else:
         cfg = {}
-    # Porta BG = porta normal + 5 (evita conflito)
+    # Porta BG = porta normal + 1
     porta_normal = cfg.get("port", 8765)
-    cfg["port"] = porta_normal + 5
+    cfg["port"] = porta_normal + 1
     cfg["modo"] = modo
     cfg["perfil"] = name
     # Salva config_bg.json na pasta do perfil
@@ -569,7 +569,7 @@ class Handler(BaseHTTPRequestHandler):
                 import json as _j2
                 cfg_p = BASE_DIR / "profiles" / name.upper() / "config.json"
                 _cfg = _j2.loads(cfg_p.read_text(encoding="utf-8")) if cfg_p.exists() else {}
-                bg_port = _cfg.get("port", 8765) + 5
+                bg_port = _cfg.get("port", 8765) + 1
             except:
                 bg_port = 8770
             self._json({"ok": True, "pid": -1, "port": bg_port, "msg": "Iniciando..."})
