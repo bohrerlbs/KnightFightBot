@@ -838,6 +838,23 @@ def loop_bg(client, eu, modo):
         restantes = max_batalhas - feitas
         log.info(f"\n⚔ [BG] Batalha {feitas+1}/{max_batalhas} ({restantes} restantes)")
 
+        # Relê sessão do servidor para pegar combates feitos manualmente
+        try:
+            soup_sess = client.get_full("/battleground/currentbattle/")
+            sessao_atual = parsear_sessao_bg(soup_sess)
+            if sessao_atual:
+                estado["sessao_bg"] = sessao_atual
+                salvar_estado(estado)
+                restantes_hoje = sessao_atual.get("restantes_hoje", 100)
+                if restantes_hoje <= 0:
+                    log.info("Limite diário de 100 batalhas atingido — aguardando...")
+                    atualizar_ciclo("status", "limite_diario")
+                    time.sleep(3600)
+                    continue
+                log.info(f"  Sessão: hoje={sessao_atual.get('batalhas_dia',0)}/100 | restantes={restantes_hoje}")
+        except Exception as e:
+            log.debug(f"  Não foi possível reler sessão: {e}")
+
         # Tenta encontrar e atacar um alvo
         combates = carregar_combates()
         alvo_encontrado = False
