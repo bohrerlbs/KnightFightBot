@@ -47,9 +47,9 @@ RENOVAR_IMUNIDADE_SEG = 600
 
 HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
-SCORE_MIN_PIG        = 60    # score mínimo para pig normal
-SCORE_MIN_PIG_BROKE  = 40    # score mínimo para pig quando gold conta <= 100g
-SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
+SCORE_MIN_PIG        = 70    # score mínimo para pig normal
+SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
+SCORE_MIN_IMUNIZACAO = 90    # score mínimo para imunizar
 SCORE_MIN_GOLD_ALTO  = 75
 GOLD_ALTO_THRESHOLD  = 5000
 GOLD_CONTA_BROKE     = 100   # gold na conta considerado "sem gold"
