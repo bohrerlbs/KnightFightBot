@@ -1575,14 +1575,22 @@ def parsear_status(soup):
 
     def extrair_attr(nomes):
         """
-        Tooltips do status próprio: "Strength: 51 + 2" ou "Parry: 71"
-        Tooltips do perfil alheio: "Arte de combate: (172)"
-        Pega sempre o PRIMEIRO número após o separador.
+        Tooltips do status próprio: "Strength: 52 + 2" ou "Dexterity: 5 - 11" ou "Parry: 71"
+        Calcula base +/- modificador para obter o valor final com itens.
+        Tooltips do perfil alheio: "Arte de combate: (172)" — só tem o valor.
         """
         for tag in soup.find_all(attrs={"data-tooltip": True}):
             tip = tag["data-tooltip"]
             for n in nomes:
                 if n.lower() in tip.lower():
+                    # Tenta padrão "Label: BASE + MOD" ou "Label: BASE - MOD"
+                    m = re.search(r"[:( ]\s*(\d+)\s*([+-])\s*(\d+)", tip)
+                    if m:
+                        base = int(m.group(1))
+                        sinal = 1 if m.group(2) == "+" else -1
+                        mod  = int(m.group(3))
+                        return base + sinal * mod
+                    # Fallback: só o número base (sem modificador)
                     m = re.search(r"[:( ]\s*(\d+)", tip)
                     if m: return int(m.group(1))
         return 0
