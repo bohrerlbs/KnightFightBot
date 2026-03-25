@@ -158,6 +158,7 @@ def registrar_combate_srv(perfil, resultado, gold_ganho, xp_ganho,
         "adv_s1":   perfil.get("sk_1mao", 0),
         "adv_s2":   perfil.get("sk_2maos", 0),
         "score_previsto": perfil.get("_score_cache", 0),
+        "score_sim": perfil.get("_score_sim", 0),
     }
     combates.append(registro)
     # Mantém apenas os últimos 2000 combates
@@ -754,6 +755,7 @@ def avaliar_alvo(perfil, eu=None):
         sim_score = sim["score"]
         # 100% simulação — mais preciso que heurística
         score = sim_score
+        perfil["_score_sim"] = sim_score  # salva para registro
         score = max(0, min(100, score))
         vantagens.append(f"Sim: dano_eu={sim['total_eu']} vs dano_adv={sim['total_adv']} | taxa={sim['taxa_eu']}%")
     except Exception as e:
@@ -1900,6 +1902,9 @@ def iniciar_servidor(porta=8765):
                 self._serve_dados()
             elif self.path == "/log":
                 self._serve_file(LOG_FILE, "text/plain; charset=utf-8")
+            elif self.path == "/historico":
+                combates = carregar_combates_srv()
+                self._serve_json(combates[-20:])  # últimos 20
             elif self.path == "/cache":
                 self._serve_file(PERFIS_CACHE, "application/json; charset=utf-8")
             elif self.path in ("/", "/dashboard"):

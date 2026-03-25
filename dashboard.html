@@ -126,6 +126,7 @@ svg.ring{width:13px;height:13px}
   <div class="tab active" onclick="showTab('geral')">Geral</div>
   <div class="tab" onclick="showTab('pigs')">Pigs <span id="pig-badge" style="color:var(--gl)"></span></div>
   <div class="tab" onclick="showTab('cache')">Ranking cache <span id="cache-badge" style="color:var(--mt)"></span></div>
+  <div class="tab" onclick="showTab('historico'); loadHistorico()">Histórico</div>
 </div>
 
 <!-- ══ ABA GERAL ══ -->
@@ -261,6 +262,33 @@ svg.ring{width:13px;height:13px}
   </div>
 </div>
 
+<!-- ══ ABA HISTÓRICO ══ -->
+<div class="tc" id="tc-historico">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="ct" style="margin-bottom:0">Últimos 20 Combates</div>
+      <button onclick="loadHistorico()" style="font-size:10px;padding:4px 8px;background:rgba(200,148,58,0.15);border:1px solid var(--gold);color:var(--gold);border-radius:3px;cursor:pointer">↺ Atualizar</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl" id="hist-table">
+        <thead><tr>
+          <th>Hora</th>
+          <th>Adversário</th>
+          <th class="c">Lv</th>
+          <th class="c">Resultado</th>
+          <th class="r">Gold</th>
+          <th class="r">XP</th>
+          <th class="c">Score prev.</th>
+          <th class="c">Score sim.</th>
+          <th class="r">Dano caus.</th>
+          <th class="r">Dano rec.</th>
+        </tr></thead>
+        <tbody id="hist-tbody"><tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Clique em Histórico para carregar...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <script>
 var REFRESH=30, rfCount=REFRESH, rfInt=null;
 var timers={};
@@ -270,11 +298,50 @@ var cacheSortKey='score', cacheSortDir=-1;
 
 function showTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{
-    t.classList.toggle('active',['geral','pigs','cache'][i]===id);
+    t.classList.toggle('active',['geral','pigs','cache','historico'][i]===id);
   });
   document.querySelectorAll('.tc').forEach(c=>{
     c.classList.toggle('active',c.id==='tc-'+id);
   });
+}
+
+function loadHistorico(){
+  var port = window.location.port || '8765';
+  fetch('http://localhost:'+port+'/historico')
+    .then(r=>r.json())
+    .then(function(combates){
+      if(!combates.length){
+        document.getElementById('hist-tbody').innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
+        return;
+      }
+      // Mais recentes primeiro
+      var rows = combates.slice().reverse().map(function(c){
+        var ts = c.ts ? new Date(c.ts).toLocaleTimeString('pt-BR') : '—';
+        var res = c.resultado==='vitoria'
+          ? '<span style="color:var(--green2);font-weight:bold">✓ Vitória</span>'
+          : '<span style="color:#e08080;font-weight:bold">✗ Derrota</span>';
+        var gold = c.gold>0 ? '<span style="color:var(--gold)">+'+c.gold+'g</span>'
+                 : c.gold<0 ? '<span style="color:#e08080">'+c.gold+'g</span>' : '—';
+        var sc_prev = c.score_previsto>0 ? '<span class="'+scoreClass(c.score_previsto)+'">'+c.score_previsto+'</span>' : '—';
+        var sc_sim  = c.score_sim>0 ? '<span class="'+scoreClass(c.score_sim)+'">'+c.score_sim+'</span>' : '—';
+        return '<tr>'+
+          '<td style="font-size:11px;color:var(--muted)">'+ts+'</td>'+
+          '<td>'+( c.adv_nome||'?')+'</td>'+
+          '<td class="c">'+(c.adv_lv||'?')+'</td>'+
+          '<td class="c">'+res+'</td>'+
+          '<td class="r">'+gold+'</td>'+
+          '<td class="r">'+(c.xp||0)+'</td>'+
+          '<td class="c">'+sc_prev+'</td>'+
+          '<td class="c">'+sc_sim+'</td>'+
+          '<td class="r">'+(c.dano_causado||'—')+'</td>'+
+          '<td class="r">'+(c.dano_recebido||'—')+'</td>'+
+        '</tr>';
+      });
+      document.getElementById('hist-tbody').innerHTML = rows.join('');
+    })
+    .catch(function(){ 
+      document.getElementById('hist-tbody').innerHTML='<tr><td colspan="10" style="text-align:center;color:#e08080;padding:20px">Erro ao carregar</td></tr>';
+    });
 }
 
 function fmt(n){return Number(n||0).toLocaleString('pt-BR');}

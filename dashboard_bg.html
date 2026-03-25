@@ -142,6 +142,29 @@ header{display:flex;justify-content:space-between;align-items:center;padding-bot
 
 </div>
 
+<!-- Histórico de combates -->
+<div class="card" style="margin-top:10px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div class="ct" style="margin-bottom:0">Histórico de Combates (últimos 20)</div>
+    <button onclick="loadHistoricoBG()" style="font-size:10px;padding:4px 8px;background:rgba(200,148,58,0.15);border:1px solid var(--gold);color:var(--gold);border-radius:3px;cursor:pointer">↺ Atualizar</button>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="tbl" id="hist-bg-table">
+      <thead><tr>
+        <th>Hora</th>
+        <th>Adversário</th>
+        <th class="c">Tipo</th>
+        <th class="c">EF</th>
+        <th class="c">Resultado</th>
+        <th class="c">Score</th>
+        <th class="r">Dano caus.</th>
+        <th class="r">Dano rec.</th>
+      </tr></thead>
+      <tbody id="hist-bg-tbody"><tr><td colspan="8" style="text-align:center;color:var(--mt);padding:20px">Clique em Atualizar para carregar...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Dano e insights -->
 <div class="grid g2" style="margin-bottom:10px">
   <div class="card">
