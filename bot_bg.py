@@ -910,11 +910,26 @@ def loop_bg(client, eu, modo):
     log.info(f"🏟 Modo: {config_modo['nome']} | Cooldown: {fmt_t(cooldown)} | Max: {max_batalhas}")
 
     estado = carregar_estado()
-    estado.setdefault("batalhas_feitas", 0)
-    estado.setdefault("vitorias", 0)
-    estado.setdefault("derrotas", 0)
-    estado.setdefault("gold_total", 0)
-    estado.setdefault("xp_total", 0)
+
+    # Reset batalhas_feitas se sessão BG mudou (nova sessão no servidor)
+    # Evita que estado antigo bloqueie o bot ao reiniciar
+    sessao_atual_id = eu.get("sessao_inicio", "")
+    sessao_salva_id = estado.get("sessao_bg_id", "")
+    if sessao_atual_id != sessao_salva_id:
+        log.info(f"Nova sessão BG detectada — resetando contador de batalhas")
+        estado["batalhas_feitas"] = 0
+        estado["vitorias"]    = 0
+        estado["derrotas"]    = 0
+        estado["gold_total"]  = 0
+        estado["xp_total"]    = 0
+        estado["sessao_bg_id"] = sessao_atual_id
+    else:
+        estado.setdefault("batalhas_feitas", 0)
+        estado.setdefault("vitorias", 0)
+        estado.setdefault("derrotas", 0)
+        estado.setdefault("gold_total", 0)
+        estado.setdefault("xp_total", 0)
+
     estado["modo"] = modo
     estado["eu"] = eu
     salvar_estado(estado)
@@ -1286,11 +1301,13 @@ if __name__ == "__main__":
         # Salva sessao no estado para verificação do limite diário
         estado = carregar_estado()
         estado["sessao_bg"] = sessao
+        # Usa batalhas do DIA como contador (reseta todo dia às 00h)
+        # Evita que estado acumulado bloqueie o bot ao reiniciar
+        estado["batalhas_feitas"] = sessao.get("batalhas_dia", 0)
+        estado["sessao_bg_id"] = sessao.get("inicio", "")
         salvar_estado(estado)
-        estado = carregar_estado()
-        if sessao.get("batalhas_feitas"):
-            estado["batalhas_feitas"] = sessao["batalhas_feitas"]
-            salvar_estado(estado)
+        # Propaga sessao_inicio para eu (usado pelo loop_bg para detectar nova sessão)
+        eu["sessao_inicio"] = sessao.get("inicio", "")
 
     except Exception as e:
         log.error(f"Erro ao coletar status: {e}")
