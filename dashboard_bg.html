@@ -376,6 +376,66 @@ function fetchAll(){
 
 fetchAll();
 setInterval(fetchAll, 15000);
+
+function renderHistorico(combates){
+  var tbody = document.getElementById('hist-tbody');
+  var countEl = document.getElementById('hist-count'); if(countEl) countEl.textContent = combates.length;
+  if(!tbody) return;
+  if(!combates || !combates.length){
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
+    return;
+  }
+  var rows = combates.slice().reverse().slice(0,50).map(function(c){
+    var res = c.resultado==='vitoria'
+      ? '<span class="sc-ok">✓ Vitória</span>'
+      : '<span class="sc-bad">✗ Derrota</span>';
+    var sc_prev = c.score_previsto || c._score || 0;
+    var sc_sim  = c.score_sim || 0;
+    var hora = c.timestamp ? new Date(c.timestamp).toLocaleTimeString('pt-BR') : '—';
+    return '<tr>'+
+      '<td>'+(c.adv_nome||'?')+'</td>'+
+      '<td class="c">'+(c.adv_tipo||'?')+'</td>'+
+      '<td class="c">'+(c.adv_ef||'?')+'</td>'+
+      '<td class="c">'+(c.adv_lv||'?')+'</td>'+
+      '<td class="c">'+(c.adv_ac||'?')+'</td>'+
+      '<td class="c">'+(c.adv_blq||'?')+'</td>'+
+      '<td class="c"><span class="'+scoreClass(sc_prev)+'">'+sc_prev+'</span></td>'+
+      '<td class="c">'+(sc_sim ? '<span class="'+scoreClass(sc_sim)+'">'+sc_sim+'</span>' : '—')+'</td>'+
+      '<td class="c">'+res+'</td>'+
+      '<td class="ri g">'+(c.gold>0 ? fmt(c.gold)+'g' : '—')+'</td>'+
+      '<td class="ri bl">'+(c.xp>0 ? fmt(c.xp) : '—')+'</td>'+
+      '<td class="c mt">'+hora+'</td>'+
+    '</tr>';
+  });
+  tbody.innerHTML = rows.join('');
+}
 </script>
+
+<!-- Histórico de Combates -->
+<div class="card" style="margin-top:10px">
+  <div class="ct">Histórico de combates (<span id="hist-count">0</span>)</div>
+  <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr>
+        <th>Adversário</th>
+        <th class="c">Tipo</th>
+        <th class="c">EF</th>
+        <th class="c">Lv</th>
+        <th class="c">AC</th>
+        <th class="c">Blq</th>
+        <th class="c">Score</th>
+        <th class="c">Score Sim</th>
+        <th class="c">Resultado</th>
+        <th class="ri">Gold</th>
+        <th class="ri">XP</th>
+        <th class="c">Horário</th>
+      </tr></thead>
+      <tbody id="hist-tbody">
+        <tr><td colspan="12" style="text-align:center;color:var(--mt);padding:20px">Aguardando combates...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 </body>
-</html>!
+</html>
