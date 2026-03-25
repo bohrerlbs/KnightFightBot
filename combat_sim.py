@@ -417,18 +417,20 @@ def simular_combate(eu, adv):
     taxa_eu  = eu_ac  / (eu_ac  + adv_blq) if (eu_ac + adv_blq) > 0 else 0.5
     taxa_adv = adv_ac / (adv_ac + eu_blq)  if (adv_ac + eu_blq) > 0 else 0.5
 
-    # ── Rounds ────────────────────────────────────────────────────────────────
+    # ── Rounds — cada um tem o seu número baseado na própria resistência ────────
+    # Ex: eu res=45 → 15 ataques, adv res=10 → 4 ataques (independentes)
     rounds_eu  = res_to_rounds(eu_res)
     rounds_adv = res_to_rounds(adv_res)
-    rounds     = max(rounds_eu, rounds_adv)
 
-    # ── Dano líquido por round ────────────────────────────────────────────────
-    dano_liq_eu  = max(0, eu_dano_total  * taxa_eu  - adv_def_total)
-    dano_liq_adv = max(0, adv_dano_total * taxa_adv - eu_def_total)
+    # ── Dano líquido por ataque ───────────────────────────────────────────────
+    # Taxa de acerto já é a probabilidade de acertar por ataque
+    # Dano liquido = (dano_bruto - defesa_adv) × taxa_acerto
+    dano_liq_eu  = max(0, eu_dano_total  - adv_def_total) * taxa_eu
+    dano_liq_adv = max(0, adv_dano_total - eu_def_total)  * taxa_adv
 
-    # ── Dano total no combate ─────────────────────────────────────────────────
-    total_eu  = dano_liq_eu  * rounds
-    total_adv = dano_liq_adv * rounds
+    # ── Dano total no combate — cada um usa seus próprios rounds ──────────────
+    total_eu  = dano_liq_eu  * rounds_eu
+    total_adv = dano_liq_adv * rounds_adv
 
     # ── Score de vitória (0-100) ──────────────────────────────────────────────
     if total_eu + total_adv > 0:
