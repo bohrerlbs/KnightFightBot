@@ -158,7 +158,7 @@ def registrar_combate_srv(perfil, resultado, gold_ganho, xp_ganho,
         "adv_s1":   perfil.get("sk_1mao", 0),
         "adv_s2":   perfil.get("sk_2maos", 0),
         "score_previsto": perfil.get("_score_cache", 0),
-        "score_sim": perfil.get("_score_sim", 0),
+        "score_sim": perfil.get("_score_sim", perfil.get("_score_cache", 0)),
     }
     combates.append(registro)
     # Mantém apenas os últimos 2000 combates
@@ -755,7 +755,8 @@ def avaliar_alvo(perfil, eu=None):
         sim_score = sim["score"]
         # 100% simulação — mais preciso que heurística
         score = sim_score
-        perfil["_score_sim"] = sim_score  # salva para registro
+        perfil["_score_sim"]   = sim_score  # salva para registro
+        perfil["_score_cache"] = sim_score  # sync cache com simulador
         score = max(0, min(100, score))
         vantagens.append(f"Sim: dano_eu={sim['total_eu']} vs dano_adv={sim['total_adv']} | taxa={sim['taxa_eu']}%")
     except Exception as e:

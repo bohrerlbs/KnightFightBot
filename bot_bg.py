@@ -955,6 +955,7 @@ def loop_bg(client, eu, modo):
                 "gold":      gold,
                 "xp":        xp,
                 "score":     melhor["_score"],
+                "score_sim": melhor.get("_score_sim", melhor["_score"]),
                 "tipo":      melhor.get("tipo"),
                 "timestamp": agora().isoformat(),
             })

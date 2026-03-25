@@ -178,28 +178,6 @@ header{display:flex;justify-content:space-between;align-items:center;padding-bot
   </div>
 </div>
 
-<!-- Histórico de combates -->
-<div class="card" style="margin-bottom:10px">
-  <div class="ct">Histórico de combates <span style="color:var(--mt)" id="hist-count"></span></div>
-  <div style="overflow-x:auto">
-    <table class="tbl" id="hist-table">
-      <thead><tr>
-        <th>Adversário</th>
-        <th class="c">Tipo</th>
-        <th class="c">EF</th>
-        <th class="c">Lv</th>
-        <th class="c">AC</th>
-        <th class="c">Blq</th>
-        <th class="c">Score</th>
-        <th class="c">Resultado</th>
-        <th class="ri">Gold</th>
-        <th class="ri">XP</th>
-        <th class="c">Horário</th>
-      </tr></thead>
-      <tbody id="hist-tbody"><tr><td colspan="11" style="text-align:center;color:var(--mt);padding:20px">Aguardando dados...</td></tr></tbody>
-    </table>
-  </div>
-</div>
 
 <!-- Log -->
 <div class="card">
@@ -309,6 +287,7 @@ function render(d){
       '<div class="row"><span class="rl">Adversário</span><span class="rv">' + ult.nome + tipoBadge + '</span></div>' +
       '<div class="row"><span class="rl">EF</span><span class="rv gold">' + ult.ef + '</span></div>' +
       '<div class="row"><span class="rl">Score previsto</span><span class="rv ' + scoreClass(ult.score) + '">' + ult.score + '</span></div>' +
+      (ult.score_sim ? '<div class="row"><span class="rl">Score simulador</span><span class="rv ' + scoreClass(ult.score_sim) + '">' + ult.score_sim + '</span></div>' : '') +
       '<div class="row"><span class="rl">Resultado</span>' + resBadge + '</div>' +
       '<div class="row"><span class="rl">Gold</span><span class="rv g">' + fmt(ult.gold) + 'g</span></div>' +
       '<div class="row"><span class="rl">XP</span><span class="rv bl">' + fmt(ult.xp) + '</span></div>' +
@@ -588,25 +567,6 @@ header{display:flex;justify-content:space-between;align-items:center;padding-bot
 </div>
 
 <!-- Histórico de combates -->
-<div class="card" style="margin-top:10px">
-  <div class="ct">Histórico de Combates (últimos 20)</div>
-  <div style="overflow-x:auto">
-    <table class="tbl" id="hist-bg-table">
-      <thead><tr>
-        <th>Hora</th>
-        <th>Adversário</th>
-        <th class="c">Tipo</th>
-        <th class="c">EF</th>
-        <th class="c">Resultado</th>
-        <th class="c">Score</th>
-        <th class="r">Dano caus.</th>
-        <th class="r">Dano rec.</th>
-      </tr></thead>
-      <tbody id="hist-bg-tbody"><tr><td colspan="8" style="text-align:center;color:var(--mt);padding:20px">Clique em Atualizar para carregar...</td></tr></tbody>
-    </table>
-  </div>
-</div>
-
 <!-- Dano e insights -->
 <div class="grid g2" style="margin-bottom:10px">
   <div class="card">
@@ -754,6 +714,7 @@ function render(d){
       '<div class="row"><span class="rl">Adversário</span><span class="rv">' + ult.nome + tipoBadge + '</span></div>' +
       '<div class="row"><span class="rl">EF</span><span class="rv gold">' + ult.ef + '</span></div>' +
       '<div class="row"><span class="rl">Score previsto</span><span class="rv ' + scoreClass(ult.score) + '">' + ult.score + '</span></div>' +
+      (ult.score_sim ? '<div class="row"><span class="rl">Score simulador</span><span class="rv ' + scoreClass(ult.score_sim) + '">' + ult.score_sim + '</span></div>' : '') +
       '<div class="row"><span class="rl">Resultado</span>' + resBadge + '</div>' +
       '<div class="row"><span class="rl">Gold</span><span class="rv g">' + fmt(ult.gold) + 'g</span></div>' +
       '<div class="row"><span class="rl">XP</span><span class="rv bl">' + fmt(ult.xp) + '</span></div>' +
