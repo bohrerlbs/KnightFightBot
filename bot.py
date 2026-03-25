@@ -49,7 +49,7 @@ HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
-SCORE_MIN_IMUNIZACAO = 90    # score mínimo para imunizar
+SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
 SCORE_MIN_GOLD_ALTO  = 75
 GOLD_ALTO_THRESHOLD  = 5000
 GOLD_CONTA_BROKE     = 100   # gold na conta considerado "sem gold"
@@ -1011,6 +1011,17 @@ def buscar_alvo_imunizacao(client, estado, score_min):
                 log.info(f"  Score >= {score_min} aceitando -{xp_aceito} XP: {len(validos)} candidatos")
             break
 
+    if not validos and score_min > 70:
+        log.warning(f"  Nenhum candidato com score >= {score_min} — tentando com 70%...")
+        for xp_aceito in range(0, xp_limite_max + 1):
+            candidatos_round = [c for c in candidatos
+                                if c["score"] >= 70
+                                and xp_perda(c) <= xp_aceito]
+            if candidatos_round:
+                validos = candidatos_round
+                log.info(f"  Fallback 70%: {len(validos)} candidatos com -{xp_aceito} XP")
+                break
+
     if not validos:
         log.warning(f"  Nenhum candidato com score >= {score_min} disponível — ficando vulnerável")
 
@@ -1534,6 +1545,25 @@ def parsear_status(soup):
     sk_1mao     = extrair_attr(["One-handed attack:"])
     sk_2maos    = extrair_attr(["Two-handed attack:"])
 
+    # Detecta imunidade ativa no status
+    imunidade_seg_restante = 0
+    for script in soup.find_all("script"):
+        st = script.string or ""
+        # KF usa Secondscounter para imunidade também
+        m_imun = re.search(r"imunit[^=]*=\s*(\d+)", st, re.IGNORECASE)
+        if m_imun:
+            imunidade_seg_restante = int(m_imun.group(1))
+            break
+    # Fallback: texto "imunizado por X minutos"
+    if not imunidade_seg_restante:
+        m_txt = re.search(r"imunizado[^\d]*(\d+)\s*minutos?", txt, re.IGNORECASE)
+        if m_txt:
+            imunidade_seg_restante = int(m_txt.group(1)) * 60
+        else:
+            m_txt2 = re.search(r"immunized[^\d]*(\d+)\s*minute", txt, re.IGNORECASE)
+            if m_txt2:
+                imunidade_seg_restante = int(m_txt2.group(1)) * 60
+
     s = {
         "timestamp": agora().isoformat(),
         "level": level,
@@ -1549,6 +1579,7 @@ def parsear_status(soup):
         "forca": forca, "resistencia": resistencia,
         "agilidade": agilidade, "arte_combate": arte_comb, "bloqueio": bloqueio,
         "sk_armadura": sk_armadura, "sk_1mao": sk_1mao, "sk_2maos": sk_2maos,
+        "imunidade_seg": imunidade_seg_restante,
     }
 
     # Atualiza MY_STATS globalmente — garante level_min_xp() correto após upagem
@@ -1791,15 +1822,27 @@ def loop_rapido(client):
             estado["is_premium"]  = IS_PREMIUM
             atualizar_ciclo_file("estado", estado)
 
-            if not rv["livre"]:
+            if not rv["livre"] and rv["segundos_cd"] > 0:
                 log.info(f"  Em CD: {fmt_t(rv['segundos_cd'])} restantes")
-                # Atualiza missão no dashboard com o CD real
                 atualizar_ciclo_file("missao", {
                     "status": "em_cd",
                     "termina_em": (agora() + timedelta(seconds=rv["segundos_cd"])).isoformat(),
                     "segundos": rv["segundos_cd"],
                 })
-                time.sleep(min(rv["segundos_cd"], INTERVALO_RAPIDO_SEG))
+                # Mesmo em CD, verifica se precisa imunizar
+                imun_cd = imunidade_restante(carregar_estado())
+                if imun_cd < RENOVAR_IMUNIDADE_SEG:
+                    log.warning(f"⚠ Em CD mas imunidade expirando ({fmt_t(imun_cd)}) — tentando imunizar...")
+                    cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
+                    if cache_ok:
+                        gold_cd = carregar_estado().get("gold_atual", 0)
+                        score_min_cd = SCORE_MIN_IMUNIZACAO
+                        alvo_cd = buscar_alvo_imunizacao(client, carregar_estado(), score_min_cd)
+                        if alvo_cd:
+                            executar_ataque(client, alvo_cd["user_id"])
+                            log.info(f"Imunizado (durante CD) com {alvo_cd['nome']}")
+                if rv["segundos_cd"] > 0:
+                    time.sleep(min(rv["segundos_cd"], INTERVALO_RAPIDO_SEG))
                 continue
 
             # LIVRE — decide ação
@@ -1812,6 +1855,14 @@ def loop_rapido(client):
                 # Atualiza estado com HP fresco
                 estado_hp = carregar_estado()
                 estado_hp.update(status_fresco)
+                # Sincroniza imunidade com o servidor
+                imun_seg = status_fresco.get("imunidade_seg", 0)
+                if imun_seg > 0:
+                    from datetime import timedelta
+                    novo_ate = (agora() + timedelta(seconds=imun_seg)).isoformat()
+                    if estado_hp.get("imunidade_ate") != novo_ate:
+                        estado_hp["imunidade_ate"] = novo_ate
+                        log.info(f"  Imunidade sincronizada do servidor: {imun_seg//60}min restantes")
                 salvar_estado(estado_hp)
                 atualizar_ciclo_file("status", status_fresco)
 
@@ -1831,7 +1882,7 @@ def loop_rapido(client):
 
             pig_list = carregar_pig_list()
             gold_atual = estado.get("gold_atual", 0)
-            score_min_imun = SCORE_MIN_GOLD_ALTO if gold_atual > GOLD_ALTO_THRESHOLD else SCORE_MIN_IMUNIZACAO
+            score_min_imun = SCORE_MIN_IMUNIZACAO  # sempre usa 90% para imunizar
             precisa_imunizar = imun < RENOVAR_IMUNIDADE_SEG
             ataque_feito = False
 
@@ -1897,7 +1948,7 @@ def loop_rapido(client):
             # Precisa imunizar e não atacou pig?
             if not ataque_feito and precisa_imunizar:
                 # Verifica se cache já foi populado
-                cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 10
+                cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
                 if not cache_ok:
                     log.info("Cache ainda sendo populado — aguardando para imunizar...")
                 else:
