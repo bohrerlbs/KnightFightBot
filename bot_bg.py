@@ -210,8 +210,16 @@ def parsear_status_bg(soup):
             tt = tag.get("data-tooltip", "")
             for eng, key in attr_map.items():
                 if tt.startswith(eng + ":"):
-                    m = re.search(r"(\d+)", tt)
-                    if m: status[key] = int(m.group(1))
+                    # "Stamina: 52 - 5" ou "Strength: 52 + 2" → calcula final
+                    m = re.search(r":\s*(\d+)\s*([+-])\s*(\d+)", tt)
+                    if m:
+                        base  = int(m.group(1))
+                        sinal = 1 if m.group(2) == "+" else -1
+                        mod   = int(m.group(3))
+                        status[key] = base + sinal * mod
+                    else:
+                        m = re.search(r"(\d+)", tt)
+                        if m: status[key] = int(m.group(1))
 
         # HP
         hp_tag = soup.find("div", class_="charlife")
