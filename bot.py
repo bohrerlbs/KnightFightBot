@@ -445,13 +445,22 @@ def coletar_perfis_cache(client):
         try:
             soup = client.get_url(f"{BASE_URL}/player/{uid}/")
             perfil = parsear_perfil(soup, uid)
-            perfis[uid] = {
+            p = {
                 **perfil,
                 "nome": j["nome"],
                 "level": perfil["level"] or j["level"],
                 "win_rate_ranking": round(j["vitorias"] / j["combates"] * 100, 1) if j.get("combates", 0) > 0 else 50,
                 "coletado_em": agora().isoformat(),
             }
+            # Calcula score com simulador já na coleta
+            try:
+                av = avaliar_alvo(p)
+                p["_score"] = av["score"]
+                p["_rec"]   = av["recomendacao"]
+            except Exception:
+                p["_score"] = 0
+                p["_rec"]   = "EVITAR"
+            perfis[uid] = p
             atualizados += 1
             if atualizados % 50 == 0:
                 log.info(f"  Cache: {atualizados}/{total} perfis coletados...")
@@ -1637,34 +1646,10 @@ def recalcular_scores_cache():
         score_antigo = perfil.get("_score", None)
         rec_antiga   = perfil.get("_rec", None)
 
-        # Calcula novo score com stats atuais
+        # 100% simulador — igual ao avaliar_alvo
         av = avaliar_alvo(perfil)
         score_novo = av["score"]
         rec_nova   = av["recomendacao"]
-
-        # Aplica blend com modelo se tiver dados suficientes
-        if peso_modelo > 0 and modelo and modelo.get("total_combates", 0) >= 20:
-            minha_ac  = MY_STATS.get("arte_combate", 0)
-            meu_blq   = MY_STATS.get("bloqueio", 0)
-            adv_blq   = perfil.get("bloqueio", 0)
-            adv_ac    = perfil.get("arte_combate", 0)
-            delta_lv  = perfil.get("level", 0) - MY_STATS.get("level", 0)
-
-            # WR por hit rate
-            if minha_ac > 0 and adv_blq > 0:
-                taxa = round(minha_ac / (minha_ac + adv_blq) * 10) / 10
-                wr_hr = modelo.get("wr_por_hit_rate", {}).get(f"{taxa:.1f}")
-                if wr_hr is not None:
-                    score_novo = round(score_novo * (1 - peso_modelo) + wr_hr * peso_modelo)
-
-            # WR por delta level
-            dl_key = str(max(-5, min(10, delta_lv)))
-            wr_lv = modelo.get("wr_por_delta_level", {}).get(dl_key)
-            if wr_lv is not None:
-                score_novo = round(score_novo * 0.85 + wr_lv * 0.15)
-
-            score_novo = max(0, min(100, score_novo))
-            rec_nova = "ATACAR" if score_novo >= 60 else ("CUIDADO" if score_novo >= 40 else "EVITAR")
 
         # Atualiza no cache
         perfil["_score"] = score_novo
