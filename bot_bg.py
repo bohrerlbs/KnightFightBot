@@ -905,6 +905,19 @@ def loop_bg(client, eu, modo):
                 ef_busca = round(ef_busca - 0.5, 1)
                 time.sleep(1)
 
+        # Se não achou ninguém com score>=70, busca na minha EF e ataca o melhor disponível
+        if not melhor:
+            log.info(f"  Nenhum alvo com score>={SCORE_MIN_ATACAR} encontrado — buscando melhor disponível na minha EF...")
+            adversarios_fallback = buscar_adversarios(client, eu, 2.0, 0)
+            if adversarios_fallback:
+                for adv in adversarios_fallback:
+                    av = avaliar_adversario_bg(adv, eu, combates)
+                    adv["_score"] = av["score"]
+                    adv["_rec"]   = av["recomendacao"]
+                candidatos = sorted(adversarios_fallback, key=lambda a: (a.get("ef",0), a["_score"]), reverse=True)
+                melhor = candidatos[0]
+                log.info(f"  [FALLBACK] Melhor disponível: {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+
         # Executa ataque se achou alvo
         if melhor:
             atualizar_ciclo("alvo_atual", {
