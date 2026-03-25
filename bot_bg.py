@@ -872,90 +872,80 @@ def loop_bg(client, eu, modo):
         combates = carregar_combates()
         alvo_encontrado = False
 
-        ef_minha    = eu.get("ef", 2.0)
-        ef_baixo    = 0  # quanto baixamos o EF mínimo para encontrar alguém
-        ef_baixo_max = int(ef_minha)  # no máximo baixa até EF 0
+        ef_minha = eu.get("ef", 2.0)
 
-        for tentativa in range(MAX_REBUSCAS + ef_baixo_max * 2):
-            if tentativa < MAX_REBUSCAS:
-                # Tentativas normais: busca do meu EF até +2
-                ef_range = EF_RANGE_ACIMA
-                ef_offset = 0
-            else:
-                # Fallback: baixa EF mínimo em 1 a cada 2 tentativas
-                ef_baixo = min((tentativa - MAX_REBUSCAS) // 2 + 1, ef_baixo_max)
-                ef_range  = EF_RANGE_ACIMA
-                ef_offset = -ef_baixo
-                log.info(f"  Fallback EF: buscando EF {ef_minha - ef_baixo:.1f} a {ef_minha + EF_RANGE_ACIMA - ef_baixo:.1f}")
+        # Estratégia de busca: começa em minha_EF+5, baixa 0.5 até minha_EF-2
+        # Entre candidatos com score>=70, sempre escolhe maior EF
+        ef_topo  = ef_minha + 5.0
+        ef_fundo = max(0.5, ef_minha - 2.0)
+        ef_busca = ef_topo
+        melhor   = None
 
-            adversarios = buscar_adversarios(client, eu, ef_range, ef_offset)
+        while ef_busca >= ef_fundo and not melhor:
+            ef_offset = ef_busca - ef_minha
+            adversarios = buscar_adversarios(client, eu, 0.5, ef_offset)
 
-            if not adversarios:
-                log.warning(f"  Nenhum adversário encontrado (tentativa {tentativa+1})")
-                time.sleep(5)
-                continue
+            if adversarios:
+                for adv in adversarios:
+                    av = avaliar_adversario_bg(adv, eu, combates)
+                    adv["_score"]     = av["score"]
+                    adv["_rec"]       = av["recomendacao"]
+                    adv["_pontuacao"] = adv.get("ef", 0) * (av["score"] / 100)
 
-            melhor, todos = escolher_melhor_alvo(adversarios, eu, combates)
-
-            if melhor:
-                if ef_offset < 0:
-                    log.info(f"  [FALLBACK EF-{ef_baixo}] Melhor alvo: {melhor['nome']} Lv{melhor.get('level','?')} "
-                             f"EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+                candidatos_ok = [a for a in adversarios if a["_score"] >= SCORE_MIN_ATACAR]
+                if candidatos_ok:
+                    melhor = max(candidatos_ok, key=lambda a: (a.get("ef", 0), a["_score"]))
+                    log.info(f"  ✓ EF{ef_busca:.1f}: {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
                 else:
-                    log.info(f"  ✓ Melhor alvo: {melhor['nome']} Lv{melhor.get('level','?')} "
-                             f"EF{melhor.get('ef',0)} Score:{melhor['_score']} "
-                             f"Pontuação:{melhor['_pontuacao']:.2f}")
-
-                # Atualiza ciclo com alvo escolhido
-                atualizar_ciclo("alvo_atual", {
-                    "nome": melhor.get("nome"),
-                    "ef": melhor.get("ef"),
-                    "score": melhor["_score"],
-                    "tipo": melhor.get("tipo"),
-                })
-
-                # Executa ataque
-                soup_result = atacar(client, melhor)
-                resultado, gold, xp, dano_caus, dano_rec = parsear_resultado_combate(soup_result)
-
-                log.info(f"  Resultado: {resultado.upper()} | Gold: {gold} | XP: {xp} | "
-                         f"Dano: {dano_caus} causado / {dano_rec} recebido")
-
-                # Registra para aprendizado
-                registrar_combate(eu, melhor, resultado, gold, xp, dano_caus, dano_rec)
-
-                # Atualiza estado
-                estado["batalhas_feitas"] = feitas + 1
-                if resultado == "vitoria":
-                    estado["vitorias"] = estado.get("vitorias", 0) + 1
-                    estado["gold_total"] = estado.get("gold_total", 0) + gold
-                    estado["xp_total"]   = estado.get("xp_total", 0) + xp
-                else:
-                    estado["derrotas"] = estado.get("derrotas", 0) + 1
-                estado["ultimo_ataque"] = agora().isoformat()
-                salvar_estado(estado)
-
-                # Atualiza ciclo
-                insights = calcular_insights(carregar_combates())
-                atualizar_ciclo("estado", estado)
-                atualizar_ciclo("insights", insights)
-                atualizar_ciclo("ultimo_combate", {
-                    "nome": melhor.get("nome"),
-                    "ef": melhor.get("ef"),
-                    "resultado": resultado,
-                    "gold": gold,
-                    "xp": xp,
-                    "score": melhor["_score"],
-                    "tipo": melhor.get("tipo"),
-                    "timestamp": agora().isoformat(),
-                })
-
-                alvo_encontrado = True
-                break
+                    log.info(f"  EF{ef_busca:.1f}: {len(adversarios)} adversários, nenhum com score>={SCORE_MIN_ATACAR}")
             else:
-                log.info(f"  Nenhum alvo viável (tentativa {tentativa+1}/{MAX_REBUSCAS})")
-                if tentativa < MAX_REBUSCAS - 1:
-                    time.sleep(3)
+                log.info(f"  EF{ef_busca:.1f}: nenhum adversário")
+
+            if not melhor:
+                ef_busca = round(ef_busca - 0.5, 1)
+                time.sleep(1)
+
+        # Executa ataque se achou alvo
+        if melhor:
+            atualizar_ciclo("alvo_atual", {
+                "nome": melhor.get("nome"),
+                "ef":   melhor.get("ef"),
+                "score": melhor["_score"],
+                "tipo": melhor.get("tipo"),
+            })
+
+            soup_result = atacar(client, melhor)
+            resultado, gold, xp, dano_caus, dano_rec = parsear_resultado_combate(soup_result)
+
+            log.info(f"  Resultado: {resultado.upper()} | Gold: {gold} | XP: {xp} | "
+                     f"Dano: {dano_caus} causado / {dano_rec} recebido")
+
+            registrar_combate(eu, melhor, resultado, gold, xp, dano_caus, dano_rec)
+
+            estado["batalhas_feitas"] = feitas + 1
+            if resultado == "vitoria":
+                estado["vitorias"]   = estado.get("vitorias", 0) + 1
+                estado["gold_total"] = estado.get("gold_total", 0) + gold
+                estado["xp_total"]   = estado.get("xp_total", 0) + xp
+            else:
+                estado["derrotas"] = estado.get("derrotas", 0) + 1
+            estado["ultimo_ataque"] = agora().isoformat()
+            salvar_estado(estado)
+
+            insights = calcular_insights(carregar_combates())
+            atualizar_ciclo("estado", estado)
+            atualizar_ciclo("insights", insights)
+            atualizar_ciclo("ultimo_combate", {
+                "nome":      melhor.get("nome"),
+                "ef":        melhor.get("ef"),
+                "resultado": resultado,
+                "gold":      gold,
+                "xp":        xp,
+                "score":     melhor["_score"],
+                "tipo":      melhor.get("tipo"),
+                "timestamp": agora().isoformat(),
+            })
+            alvo_encontrado = True
 
         if not alvo_encontrado:
             # Verifica se é CD ou realmente sem alvos
