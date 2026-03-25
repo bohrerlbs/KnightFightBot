@@ -1946,6 +1946,63 @@ def loop_lento(client):
         time.sleep(INTERVALO_LENTO_SEG)
 
 
+def parsear_taverna(client):
+    """
+    Lê os jobs disponíveis na taverna.
+    Retorna lista de {descricao, horas, gold, url}
+    """
+    try:
+        soup = client.get("/job/")
+        jobs = []
+        for row in soup.find_all("tr"):
+            link = row.find("a", href=lambda h: h and "/job/startjob/" in h)
+            if not link:
+                continue
+            url = link["href"]
+            # Pega horas e gold da linha
+            tds = row.find_all("td")
+            horas = gold = 0
+            for td in tds:
+                txt = td.get_text(strip=True)
+                if txt.isdigit():
+                    v = int(txt)
+                    if v in (1,2,3,4,5,6,7,8,9,10,11,12):
+                        horas = v
+                    elif v > 100:
+                        gold = v
+            if horas and gold:
+                jobs.append({"horas": horas, "gold": gold, "url": url})
+        return jobs
+    except Exception as e:
+        log.warning(f"Erro parsear_taverna: {e}")
+        return []
+
+
+def aceitar_job_taverna(client, horas_max=3):
+    """
+    Aceita o job de menor duração (até horas_max) com melhor gold/hora.
+    Retorna (ok, horas, gold, msg)
+    """
+    jobs = parsear_taverna(client)
+    if not jobs:
+        return False, 0, 0, "sem jobs disponíveis"
+
+    # Filtra jobs dentro do limite de horas e ordena por gold/hora desc
+    candidatos = [j for j in jobs if j["horas"] <= horas_max]
+    if not candidatos:
+        candidatos = jobs  # aceita qualquer um se nenhum dentro do limite
+
+    melhor = max(candidatos, key=lambda j: j["gold"] / j["horas"])
+
+    try:
+        client.get_url(melhor["url"])
+        log.info(f"🍺 Taverna: job de {melhor['horas']}h aceito (+{melhor['gold']}g)")
+        return True, melhor["horas"], melhor["gold"], "ok"
+    except Exception as e:
+        log.warning(f"Erro aceitar job: {e}")
+        return False, 0, 0, str(e)
+
+
 def loop_rapido(client):
     """
     A cada 2min: verifica CD → ataca pig / imuniza / faz missão.
@@ -1956,6 +2013,15 @@ def loop_rapido(client):
             estado = carregar_estado()
             imun = imunidade_restante(estado)
             log.info(f"\n⚡ [RÁPIDO] Imunidade: {fmt_t(imun)}")
+
+            # Atualiza gold real da conta a cada ciclo
+            try:
+                gold_fresh, gems_fresh = parsear_gold_gems(client)
+                if gold_fresh > 0 or estado.get("gold_atual", 0) > 0:
+                    estado["gold_atual"] = gold_fresh
+                    salvar_estado(estado)
+            except Exception:
+                pass
 
             rv = verificar_raubzug(client)
             estado["cooldown_seg"] = COOLDOWN_ATAQUE_SEG  # para dashboard saber se é premium
@@ -2077,11 +2143,18 @@ def loop_rapido(client):
                 # Score mínimo para pig
                 # Se gold na conta <= 100g, aceita score >= 40 (precisa de qualquer ouro)
                 # Caso normal: score >= 60
-                # Sem gold: não tem como fazer missão nem pesquisar — para o bot
+                # Sem gold: tenta taverna automaticamente
                 if gold_conta == 0:
-                    log.error("⚠ GOLD ZERADO — bot pausado. Faça missão ou taverna manualmente e reinicie.")
-                    atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "gold_zerado"})
-                    time.sleep(3600)
+                    log.error("⚠ GOLD ZERADO — tentando aceitar job na taverna...")
+                    atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "gold_zerado_taverna"})
+                    ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=3)
+                    if ok_tab:
+                        log.info(f"✓ Taverna: aguardando {horas_tab}h para receber {gold_tab}g")
+                        time.sleep(horas_tab * 3600)
+                        log.info("✓ Job da taverna concluído — retomando bot")
+                    else:
+                        log.error(f"✗ Taverna falhou: {msg_tab} — dormindo 1h")
+                        time.sleep(3600)
                     continue
 
                 score_pig_min = SCORE_MIN_PIG_BROKE if gold_conta <= GOLD_CONTA_BROKE else SCORE_MIN_PIG
