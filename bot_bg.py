@@ -32,7 +32,7 @@ MODO_BG = "free"
 # Estratégia de busca
 EF_RANGE_ACIMA   = 2.0   # busca EF nossa até +2.0
 EF_RANGE_FALLBACK = 1.0  # se não achar bom, tenta com +1.0
-SCORE_MIN_ATACAR = 45    # score mínimo para atacar
+SCORE_MIN_ATACAR = 70    # score mínimo para atacar (simulador preciso)
 MAX_REBUSCAS     = 3     # tentativas de busca antes de desistir do ciclo
 
 # ── Arquivos de estado ──────────────────────────────────────────
