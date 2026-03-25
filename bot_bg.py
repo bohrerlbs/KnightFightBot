@@ -454,8 +454,9 @@ def registrar_combate(eu, adversario, resultado, gold, xp, dano_causado, dano_re
         "adv_arm": adversario.get("sk_armadura", 0),
         "adv_s1": adversario.get("sk_1mao", 0),
         "adv_s2": adversario.get("sk_2maos", 0),
-        # Score previsto
+        # Score previsto e simulador
         "score_previsto": adversario.get("_score", 0),
+        "score_sim":      adversario.get("_score_sim", adversario.get("_score", 0)),
     }
     combates.append(registro)
     salvar_combates(combates)
@@ -674,6 +675,7 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         sim_score = sim["score"]
         score = sim_score
         score = max(0, min(100, score))
+        adv["_score_sim"] = sim_score  # salva para registro
     except Exception:
         pass
 

@@ -154,6 +154,7 @@ header{display:flex;justify-content:space-between;align-items:center;padding-bot
         <th class="c">EF</th>
         <th class="c">Resultado</th>
         <th class="c">Score</th>
+        <th class="c">Score Sim</th>
         <th class="r">Dano caus.</th>
         <th class="r">Dano rec.</th>
       </tr></thead>
@@ -346,6 +347,7 @@ function renderHistorico(combates){
       '<td class="c">' + c.adv_ac + '</td>' +
       '<td class="c">' + c.adv_blq + '</td>' +
       '<td class="c"><span class="' + scoreClass(c.score_previsto) + '">' + c.score_previsto + '</span></td>' +
+      '<td class="c">' + (c.score_sim ? '<span class="' + scoreClass(c.score_sim) + '">' + c.score_sim + '</span>' : '—') + '</td>' +
       '<td class="c">' + res + '</td>' +
       '<td class="ri g">' + (c.gold > 0 ? fmt(c.gold)+'g' : '—') + '</td>' +
       '<td class="ri bl">' + (c.xp > 0 ? fmt(c.xp) : '—') + '</td>' +
@@ -773,6 +775,7 @@ function renderHistorico(combates){
       '<td class="c">' + c.adv_ac + '</td>' +
       '<td class="c">' + c.adv_blq + '</td>' +
       '<td class="c"><span class="' + scoreClass(c.score_previsto) + '">' + c.score_previsto + '</span></td>' +
+      '<td class="c">' + (c.score_sim ? '<span class="' + scoreClass(c.score_sim) + '">' + c.score_sim + '</span>' : '—') + '</td>' +
       '<td class="c">' + res + '</td>' +
       '<td class="ri g">' + (c.gold > 0 ? fmt(c.gold)+'g' : '—') + '</td>' +
       '<td class="ri bl">' + (c.xp > 0 ? fmt(c.xp) : '—') + '</td>' +
