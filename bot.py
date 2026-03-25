@@ -1931,6 +1931,11 @@ def iniciar_servidor(porta=8765):
                 resp["status"] = resp["ciclo"].get("status", {})
                 resp["missao"] = resp["ciclo"].get("missao", {})
                 resp["pig_list"] = resp["ciclo"].get("pig_list", resp.get("pig_list", {}))
+            # Inclui últimos 20 combates no payload
+            try:
+                combates = carregar_combates_srv()
+                resp["historico"] = combates[-20:]
+            except: pass
             body = json.dumps(resp, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")

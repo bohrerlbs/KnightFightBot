@@ -996,6 +996,10 @@ def iniciar_servidor_bg(porta):
         def do_GET(self):
             if self.path in ("/dados", "/dados/"):
                 ciclo = carregar_json(CICLO_FILE, {})
+                try:
+                    combates = carregar_combates()
+                    ciclo["historico"] = combates[-20:]
+                except: pass
                 data = _json.dumps(ciclo, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
