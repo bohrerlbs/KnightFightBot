@@ -882,49 +882,88 @@ def loop_bg(client, eu, modo):
         # Em cada passo busca UMA janela de 0.5 exata
         # Se achar score>=70 ataca o de maior EF entre eles
         # Se chegar em minha_EF sem achar ninguém com 70%, ataca o melhor % disponível
-        ef_topo  = round(ef_minha + 5.0, 1)
-        ef_busca = ef_topo
-        melhor   = None
-        todos_avaliados = []  # guarda todos para fallback
+        # Busca: começa em minha_EF+5, desce 0.5 por vez até minha_EF
+        # Cada nível tenta 3x antes de descer
+        # Ao chegar na minha_EF: tenta 70%, depois 60%, depois 50%, depois maior %
+        ef_topo      = round(ef_minha + 5.0, 1)
+        ef_busca     = ef_topo
+        melhor       = None
+        TENTATIVAS_POR_EF = 3
 
+        def avaliar_lista(adv_list):
+            for adv in adv_list:
+                av = avaliar_adversario_bg(adv, eu, combates)
+                adv["_score"] = av["score"]
+                adv["_rec"]   = av["recomendacao"]
+            return adv_list
+
+        def melhor_com_score(adv_list, score_min):
+            ok = [a for a in adv_list if a["_score"] >= score_min]
+            if ok:
+                return max(ok, key=lambda a: (a.get("ef", 0), a["_score"]))
+            return None
+
+        # Fase 1: percorre EF+5 até EF, 3 tentativas por nível, procura 70%
         while ef_busca >= ef_minha and not melhor:
             ef_offset = round(ef_busca - ef_minha, 1)
-            adversarios = buscar_adversarios(client, eu, 0.5, ef_offset)
+            encontrou_alguem = False
 
-            if adversarios:
-                for adv in adversarios:
-                    av = avaliar_adversario_bg(adv, eu, combates)
-                    adv["_score"]     = av["score"]
-                    adv["_rec"]       = av["recomendacao"]
-                    todos_avaliados.append(adv)
-
-                candidatos_ok = [a for a in adversarios if a["_score"] >= SCORE_MIN_ATACAR]
-                if candidatos_ok:
-                    melhor = max(candidatos_ok, key=lambda a: (a.get("ef", 0), a["_score"]))
-                    log.info(f"  ✓ EF{ef_busca:.1f}: {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+            for tentativa in range(1, TENTATIVAS_POR_EF + 1):
+                adversarios = buscar_adversarios(client, eu, 0.5, ef_offset)
+                if adversarios:
+                    avaliar_lista(adversarios)
+                    encontrou_alguem = True
+                    candidato = melhor_com_score(adversarios, SCORE_MIN_ATACAR)
+                    if candidato:
+                        melhor = candidato
+                        log.info(f"  ✓ EF{ef_busca:.1f} (t{tentativa}): {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+                        break
+                    else:
+                        log.info(f"  EF{ef_busca:.1f} t{tentativa}/{TENTATIVAS_POR_EF}: {len(adversarios)} encontrados, nenhum >={SCORE_MIN_ATACAR}%")
                 else:
-                    log.info(f"  EF{ef_busca:.1f}: {len(adversarios)} encontrados, nenhum com score>={SCORE_MIN_ATACAR}")
-            else:
-                log.info(f"  EF{ef_busca:.1f}: nenhum adversário")
+                    log.info(f"  EF{ef_busca:.1f} t{tentativa}/{TENTATIVAS_POR_EF}: nenhum adversário")
+
+                if not melhor and tentativa < TENTATIVAS_POR_EF:
+                    time.sleep(2)
 
             if not melhor:
                 ef_busca = round(ef_busca - 0.5, 1)
                 time.sleep(1)
 
-        # Fallback: nenhum com score>=70 → ataca o de maior % entre todos avaliados
-        if not melhor and todos_avaliados:
-            melhor = max(todos_avaliados, key=lambda a: (a["_score"], a.get("ef", 0)))
-            log.info(f"  [FALLBACK] Sem score>={SCORE_MIN_ATACAR} — melhor disponível: {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
-        elif not melhor:
-            # Não achou ninguém nem no fallback — faz busca ampla de emergência
-            log.info(f"  Sem adversários encontrados — busca ampla emergencial...")
-            adversarios_emerg = buscar_adversarios(client, eu, 2.0, 0)
-            if adversarios_emerg:
-                for adv in adversarios_emerg:
-                    av = avaliar_adversario_bg(adv, eu, combates)
-                    adv["_score"] = av["score"]
-                melhor = max(adversarios_emerg, key=lambda a: a["_score"])
-                log.info(f"  [EMERGÊNCIA] {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+        # Fase 2: chegou na minha_EF sem achar 70% — tenta 60%, 50%, depois maior %
+        if not melhor:
+            log.info(f"  Sem 70%+ em nenhuma EF — buscando na minha EF com critério menor...")
+            ef_offset_base = 0.0  # minha EF exata
+
+            for score_fallback in [60, 50]:
+                for tentativa in range(1, TENTATIVAS_POR_EF + 1):
+                    adversarios = buscar_adversarios(client, eu, 0.5, ef_offset_base)
+                    if adversarios:
+                        avaliar_lista(adversarios)
+                        candidato = melhor_com_score(adversarios, score_fallback)
+                        if candidato:
+                            melhor = candidato
+                            log.info(f"  [FALLBACK {score_fallback}%] t{tentativa}: {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+                            break
+                        else:
+                            log.info(f"  Fallback {score_fallback}% t{tentativa}/{TENTATIVAS_POR_EF}: nenhum >={score_fallback}%")
+                    else:
+                        log.info(f"  Fallback {score_fallback}% t{tentativa}/{TENTATIVAS_POR_EF}: nenhum adversário")
+                    if not melhor and tentativa < TENTATIVAS_POR_EF:
+                        time.sleep(2)
+                if melhor:
+                    break
+
+            # Último recurso: ataca o de maior % disponível
+            if not melhor:
+                for tentativa in range(1, TENTATIVAS_POR_EF + 1):
+                    adversarios = buscar_adversarios(client, eu, 0.5, ef_offset_base)
+                    if adversarios:
+                        avaliar_lista(adversarios)
+                        melhor = max(adversarios, key=lambda a: (a["_score"], a.get("ef", 0)))
+                        log.info(f"  [MAIOR %] t{tentativa}: {melhor['nome']} EF{melhor.get('ef',0)} Score:{melhor['_score']}")
+                        break
+                    time.sleep(2)
 
         # Executa ataque se achou alvo
         if melhor:
