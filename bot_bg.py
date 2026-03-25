@@ -159,6 +159,30 @@ class ClienteBG:
 # ═══════════════════════════════════════════════════════════════
 # PARSERS
 # ═══════════════════════════════════════════════════════════════
+def _clan_id_de_perfil_bg(soup):
+    """Extrai clan_id do perfil adversário no BG."""
+    for tag in soup.find_all("a", href=True):
+        m = re.search(r"/clan/(\d+)/", tag["href"])
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def get_my_clan_id_bg(client):
+    """Lê meu clan_id."""
+    try:
+        soup = client.get("/clan/")
+        for tag in soup.find_all("a", href=True):
+            m = re.search(r"/clan/(\d+)/", tag["href"])
+            if m:
+                cid = int(m.group(1))
+                if cid > 0:
+                    return cid
+    except Exception:
+        pass
+    return None
+
+
 def parsear_status_bg(soup):
     """Extrai stats do personagem na página do BG."""
     status = {}
@@ -1029,6 +1053,19 @@ def loop_bg(client, eu, modo):
                     time.sleep(2)
 
         # Executa ataque se achou alvo
+        if melhor:
+            # Verifica guild do adversário antes de atacar
+            meu_clan = eu.get("meu_clan_id")
+            if meu_clan:
+                try:
+                    soup_adv = client.get_url(f"{BASE_URL}/player/{melhor.get('user_id', '')}/")
+                    clan_adv = _clan_id_de_perfil_bg(soup_adv)
+                    if clan_adv == meu_clan:
+                        log.warning(f"  {melhor['nome']} é da mesma guild — pulando!")
+                        melhor = None
+                except Exception:
+                    pass
+
         if melhor:
             atualizar_ciclo("alvo_atual", {
                 "nome": melhor.get("nome"),

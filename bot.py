@@ -533,6 +533,15 @@ def candidatos_imunizacao_do_cache(estado):
 # ═══════════════════════════════════════════
 # PERFIL + AVALIAÇÃO
 # ═══════════════════════════════════════════
+def _clan_id_de_perfil(soup):
+    """Extrai clan_id do perfil. Retorna None se sem clan."""
+    for tag in soup.find_all("a", href=True):
+        m = re.search(r"/clan/(\d+)/", tag["href"])
+        if m:
+            return int(m.group(1))
+    return None
+
+
 def parsear_perfil(soup, user_id):
     def extrair(nomes):
         """
@@ -579,6 +588,7 @@ def parsear_perfil(soup, user_id):
         "sk_1mao":      extrair(["one-handed attack:", "skill uma mão:"]),
         "sk_2maos":     extrair(["two-handed attack:", "skill duas mãos:"]),
         "hp": hp, "disponivel": disponivel,
+        "clan_id": _clan_id_de_perfil(soup),
     }
 
 def avaliar_alvo(perfil, eu=None):
@@ -944,6 +954,45 @@ def parsear_confirmacao_ataque(soup):
                 attrs[attr_map[label]] = int(m.group(1))
 
     return csrf, gegnerid, attrs, disponivel
+
+
+def verificar_alvo_antes_de_atacar(client, user_id, score_min, meu_clan_id=None):
+    """
+    Antes de atacar: visita perfil do alvo para:
+    1. Confirmar que ainda está disponível
+    2. Checar se é da mesma guild
+    3. Recalcular score com stats atuais
+    Retorna (ok, score_atual, motivo)
+    """
+    try:
+        soup = client.get_url(f"{BASE_URL}/player/{user_id}/")
+        perfil = parsear_perfil(soup, user_id)
+
+        # Check guild
+        if meu_clan_id and perfil.get("clan_id") == meu_clan_id:
+            return False, 0, "mesma_guild"
+
+        if not perfil.get("disponivel"):
+            return False, 0, "indisponivel"
+
+        # Recalcula score com stats frescos
+        av = avaliar_alvo(perfil)
+        score_atual = av["score"]
+
+        if score_atual < score_min:
+            return False, score_atual, f"score_baixo({score_atual}<{score_min})"
+
+        # Atualiza cache com stats frescos
+        cache = carregar_perfis_cache()
+        if user_id in cache.get("perfis", {}):
+            cache["perfis"][user_id].update(perfil)
+            cache["perfis"][user_id]["_score"] = score_atual
+            salvar_perfis_cache(cache)
+
+        return True, score_atual, "ok"
+    except Exception as e:
+        log.debug(f"verificar_alvo {user_id}: {e}")
+        return True, score_min, "erro_verificacao"  # em caso de erro, tenta atacar mesmo assim
 
 
 def executar_ataque(client, user_id, dry_run=False):
@@ -1561,6 +1610,21 @@ def parsear_gold_gems(client):
         return 0, 0
 
 
+def get_my_clan_id(client):
+    """Lê meu clan_id da página de clan."""
+    try:
+        soup = client.get("/clan/")
+        for tag in soup.find_all("a", href=True):
+            m = re.search(r"/clan/(\d+)/", tag["href"])
+            if m:
+                cid = int(m.group(1))
+                if cid > 0:
+                    return cid
+    except Exception:
+        pass
+    return None
+
+
 def parsear_status(soup):
     """
     Extrai tudo do personagem: level, XP, HP, gold, combates,
@@ -1821,6 +1885,13 @@ def loop_lento(client):
                 atualizar_ciclo_file("status", status)
                 log.info(f"Status: Lv{status['level']} | {status['vitorias']}V/{status['derrotas']}D | {status['preciosidades']} prec")
 
+                # Atualiza clan_id periodicamente
+                clan_id_atual = get_my_clan_id(client)
+                if clan_id_atual != estado.get("meu_clan_id"):
+                    log.info(f"Guild atualizada: {estado.get('meu_clan_id')} → {clan_id_atual}")
+                    estado["meu_clan_id"] = clan_id_atual
+                    salvar_estado(estado)
+
                 # ── Detecta mudança de atributos e recalcula scores ──────────
                 stats_chave = ("level", "arte_combate", "bloqueio", "forca", "resistencia")
                 stats_antes = {k: estado.get(f"_last_{k}", 0) for k in stats_chave}
@@ -1980,6 +2051,14 @@ def loop_rapido(client):
                 if not perfil["disponivel"]:
                     log.info(f"    Indisponível (#{pig['tentativas']})"); continue
 
+                # Verifica mesma guild
+                meu_clan = estado.get("meu_clan_id")
+                if meu_clan and perfil.get("clan_id") == meu_clan:
+                    log.info(f"    Pulando: {perfil['nome']} é da mesma guild ({meu_clan})")
+                    pig_list.pop(uid, None)
+                    salvar_pig_list(pig_list)
+                    continue
+
                 av = avaliar_alvo(perfil)
                 log.info(f"    Score: {av['score']} → {av['recomendacao']}")
 
@@ -1998,6 +2077,13 @@ def loop_rapido(client):
                 # Score mínimo para pig
                 # Se gold na conta <= 100g, aceita score >= 40 (precisa de qualquer ouro)
                 # Caso normal: score >= 60
+                # Sem gold: não tem como fazer missão nem pesquisar — para o bot
+                if gold_conta == 0:
+                    log.error("⚠ GOLD ZERADO — bot pausado. Faça missão ou taverna manualmente e reinicie.")
+                    atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "gold_zerado"})
+                    time.sleep(3600)
+                    continue
+
                 score_pig_min = SCORE_MIN_PIG_BROKE if gold_conta <= GOLD_CONTA_BROKE else SCORE_MIN_PIG
                 if av["score"] < score_pig_min:
                     log.info(f"    Score {av['score']} < {score_pig_min} (gold_conta={gold_conta}g) — pulando"); continue
@@ -2007,6 +2093,14 @@ def loop_rapido(client):
                     log.info(f"    Gold esperado {gold_esp}g < mínimo {GOLD_MIN_PIG}g — pulando"); continue
 
                 log.info(f"    ✓ ATACANDO {pig['nome']}! (gold_esp={gold_esp}g, xp_perda={xp_perda})")
+                meu_clan = estado.get("meu_clan_id")
+                ok, score_conf, motivo = verificar_alvo_antes_de_atacar(client, uid, score_pig_min, meu_clan)
+                if not ok:
+                    log.warning(f"    Ataque cancelado pré-verificação: {motivo}")
+                    if motivo == "mesma_guild":
+                        pig_list.pop(uid, None); salvar_pig_list(pig_list)
+                    continue
+                log.info(f"    Score confirmado: {score_conf} — atacando!")
                 executar_ataque(client, uid)
                 pig_list.pop(uid, None); salvar_pig_list(pig_list)
                 ataque_feito = True
@@ -2022,6 +2116,12 @@ def loop_rapido(client):
                     log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
                 alvo = buscar_alvo_imunizacao(client, estado, score_min_imun) if cache_ok else None
                 if alvo:
+                    meu_clan = estado.get("meu_clan_id")
+                    ok_imun, score_imun, motivo_imun = verificar_alvo_antes_de_atacar(
+                        client, alvo["user_id"], 50, meu_clan)
+                    if not ok_imun and motivo_imun == "mesma_guild":
+                        log.warning(f"Imunização cancelada: {alvo['nome']} é da mesma guild")
+                        continue
                     log.info(f"Imunizando com {alvo['nome']} Lv{alvo['level']}")
                     executar_ataque(client, alvo["user_id"])
                     ataque_feito = True

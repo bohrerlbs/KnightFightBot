@@ -324,10 +324,15 @@ def bonus_forca(dano_medio, forca):
     return forca * dano_medio / divisor
 
 def bonus_agilidade(def_media, agilidade):
-    """Estima bônus de defesa pela agilidade."""
-    if def_media <= 0 or agilidade <= 0:
+    """
+    Bônus de defesa pela agilidade.
+    Calibrado com combates reais: cada ponto de agilidade vale ~0.28 de defesa,
+    independente da defesa base (escudo/armadura).
+    Agilidade negativa = sem bônus.
+    """
+    if agilidade <= 0:
         return 0
-    return agilidade * def_media / 55
+    return agilidade * 0.28
 
 def simular_combate(eu, adv):
     """
@@ -391,6 +396,13 @@ def simular_combate(eu, adv):
     eu_dano_base  = (eu_arma[0]  + eu_arma[1])  / 2
     adv_encaixes  = adv_arma[2]
     eu_encaixes   = eu_arma[2]
+
+    # ── Aplica penalidades da arma APENAS no adversário ─────────────────────
+    # Os atributos do EU já vêm do status com itens equipados (MY_STATS)
+    # O adversário só temos os atributos base — precisamos estimar o impacto da arma
+    # Tupla arma: (dano_min, dano_max, encaixes, res_penalidade, agil_penalidade, skill)
+    adv_res  = max(0, adv_res  + adv_arma[3])
+    adv_agil = adv_agil + adv_arma[4]
 
     # ── Encaixes ─────────────────────────────────────────────────────────────
     adv_enc_dano = melhor_encaixe(adv_lv) * adv_encaixes
