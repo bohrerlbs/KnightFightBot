@@ -386,13 +386,52 @@ def parsear_adversarios(soup):
 
     return adversarios
 
+def parsear_turnos_combate_bg(turns_json):
+    """Extrai estatísticas dos turnos do BG (atacante = eu no BG)."""
+    stats = {
+        "hits_eu": 0, "misses_eu": 0,
+        "hits_adv": 0, "misses_adv": 0,
+        "taxa_acerto_eu": 0, "taxa_acerto_adv": 0,
+        "rounds": 0, "crits_eu": 0, "crits_adv": 0,
+        "dano_bloqueado_eu": 0.0,
+    }
+    if not turns_json: return stats
+    for t in turns_json:
+        p, acao = t.get("p",""), t.get("a","")
+        dano = float(t.get("d",0) or 0)
+        bloq = float(t.get("b",0) or 0)
+        crit = bool(t.get("c", False))
+        if p == "a":  # atacante = eu
+            stats["rounds"] += 1
+            if acao == "h":
+                stats["hits_eu"] += 1
+                stats["dano_bloqueado_adv"] = stats.get("dano_bloqueado_adv",0) + bloq
+                if crit: stats["crits_eu"] += 1
+            else:
+                stats["misses_eu"] += 1
+        elif p == "d":  # defensor = adv
+            if acao == "h":
+                stats["hits_adv"] += 1
+                stats["dano_bloqueado_eu"] += bloq
+                if crit: stats["crits_adv"] += 1
+            else:
+                stats["misses_adv"] += 1
+    te = stats["hits_eu"] + stats["misses_eu"]
+    ta = stats["hits_adv"] + stats["misses_adv"]
+    stats["taxa_acerto_eu"]  = round(stats["hits_eu"]  / te * 100, 1) if te > 0 else 0
+    stats["taxa_acerto_adv"] = round(stats["hits_adv"] / ta * 100, 1) if ta > 0 else 0
+    stats["dano_bloqueado_eu"] = round(stats["dano_bloqueado_eu"], 1)
+    return stats
+
+
 def parsear_resultado_combate(soup):
-    """Extrai resultado do combate BG."""
+    """Extrai resultado do combate BG incluindo stats de turnos."""
     resultado = "desconhecido"
     gold = 0
     xp = 0
     dano_causado = 0
     dano_recebido = 0
+    turnos_stats = {}
     try:
         for script in soup.find_all("script"):
             txt = script.string or ""
@@ -401,6 +440,13 @@ def parsear_resultado_combate(soup):
             if m:
                 winner = m.group(1)
                 resultado = "vitoria" if winner == "attacker" else "derrota"
+            try:
+                import json as _json
+                m_turns = re.search(r'"turns"\s*:\s*(\[.*?\])', txt, re.DOTALL)
+                if m_turns:
+                    turns = _json.loads(m_turns.group(1))
+                    turnos_stats = parsear_turnos_combate_bg(turns)
+            except Exception: pass
             break
 
         html_txt = str(soup)
@@ -411,7 +457,6 @@ def parsear_resultado_combate(soup):
         for v in m_xp:
             if int(v) > 0: xp = int(v); break
 
-        # Dano causado/recebido do log de combate
         danos_atk = re.findall(r'class="attacker"[^>]*>.*?(\d+[\.,]\d+)\s*points of damage', html_txt)
         danos_def = re.findall(r'class="defender"[^>]*>.*?(\d+[\.,]\d+)\s*points of damage', html_txt)
         dano_causado  = sum(float(d.replace(",",".")) for d in danos_atk)
@@ -419,12 +464,12 @@ def parsear_resultado_combate(soup):
 
     except Exception as e:
         log.warning(f"parsear_resultado_combate: {e}")
-    return resultado, gold, xp, round(dano_causado,1), round(dano_recebido,1)
+    return resultado, gold, xp, round(dano_causado,1), round(dano_recebido,1), turnos_stats
 
 # ═══════════════════════════════════════════════════════════════
 # SISTEMA DE APRENDIZADO
 # ═══════════════════════════════════════════════════════════════
-def registrar_combate(eu, adversario, resultado, gold, xp, dano_causado, dano_recebido):
+def registrar_combate(eu, adversario, resultado, gold, xp, dano_causado, dano_recebido, turnos=None):
     """Salva combate para aprendizado futuro."""
     combates = carregar_combates()
     registro = {
@@ -457,6 +502,16 @@ def registrar_combate(eu, adversario, resultado, gold, xp, dano_causado, dano_re
         # Score previsto e simulador
         "score_previsto": adversario.get("_score", 0),
         "score_sim":      adversario.get("_score_sim", adversario.get("_score", 0)),
+        # Dados reais dos turnos para calibrar simulador
+        "hits_eu":         (turnos or {}).get("hits_eu", 0),
+        "misses_eu":       (turnos or {}).get("misses_eu", 0),
+        "hits_adv":        (turnos or {}).get("hits_adv", 0),
+        "misses_adv":      (turnos or {}).get("misses_adv", 0),
+        "taxa_acerto_eu":  (turnos or {}).get("taxa_acerto_eu", 0),
+        "taxa_acerto_adv": (turnos or {}).get("taxa_acerto_adv", 0),
+        "rounds_real":     (turnos or {}).get("rounds", 0),
+        "crits_eu":        (turnos or {}).get("crits_eu", 0),
+        "dano_bloqueado_eu": (turnos or {}).get("dano_bloqueado_eu", 0),
     }
     combates.append(registro)
     salvar_combates(combates)
@@ -975,12 +1030,12 @@ def loop_bg(client, eu, modo):
             })
 
             soup_result = atacar(client, melhor)
-            resultado, gold, xp, dano_caus, dano_rec = parsear_resultado_combate(soup_result)
+            resultado, gold, xp, dano_caus, dano_rec, turnos_stats = parsear_resultado_combate(soup_result)
 
             log.info(f"  Resultado: {resultado.upper()} | Gold: {gold} | XP: {xp} | "
                      f"Dano: {dano_caus} causado / {dano_rec} recebido")
 
-            registrar_combate(eu, melhor, resultado, gold, xp, dano_caus, dano_rec)
+            registrar_combate(eu, melhor, resultado, gold, xp, dano_caus, dano_rec, turnos=turnos_stats)
 
             estado["batalhas_feitas"] = feitas + 1
             if resultado == "vitoria":

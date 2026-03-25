@@ -126,7 +126,7 @@ def carregar_modelo():
     return {}
 
 def registrar_combate_srv(perfil, resultado, gold_ganho, xp_ganho,
-                           dano_causado=0, dano_recebido=0):
+                           dano_causado=0, dano_recebido=0, turnos=None):
     """
     Registra combate do servidor original para aprendizado.
     Salva atributos de ambos os lados + resultado para análise futura.
@@ -158,7 +158,18 @@ def registrar_combate_srv(perfil, resultado, gold_ganho, xp_ganho,
         "adv_s1":   perfil.get("sk_1mao", 0),
         "adv_s2":   perfil.get("sk_2maos", 0),
         "score_previsto": perfil.get("_score_cache", 0),
-        "score_sim": perfil.get("_score_sim", perfil.get("_score_cache", 0)),
+        "score_sim":      perfil.get("_score_sim", perfil.get("_score_cache", 0)),
+        # Dados reais do combate para calibrar simulador
+        "hits_eu":          (turnos or {}).get("hits_eu", 0),
+        "misses_eu":        (turnos or {}).get("misses_eu", 0),
+        "hits_adv":         (turnos or {}).get("hits_adv", 0),
+        "misses_adv":       (turnos or {}).get("misses_adv", 0),
+        "taxa_acerto_eu":   (turnos or {}).get("taxa_acerto_eu", 0),
+        "taxa_acerto_adv":  (turnos or {}).get("taxa_acerto_adv", 0),
+        "rounds_real":      (turnos or {}).get("rounds", 0),
+        "crits_eu":         (turnos or {}).get("crits_eu", 0),
+        "crits_adv":        (turnos or {}).get("crits_adv", 0),
+        "dano_bloqueado_eu": (turnos or {}).get("dano_bloqueado_eu", 0),
     }
     combates.append(registro)
     # Mantém apenas os últimos 2000 combates
@@ -775,6 +786,66 @@ def avaliar_alvo(perfil, eu=None):
     return {"recomendacao": rec, "score": score,
             "vantagens": vantagens, "problemas": problemas}
 
+def parsear_turnos_combate(turns_json, eu_fui_atacante=True):
+    """
+    Extrai estatísticas detalhadas dos turnos do displayFightReport.
+    turns_json: lista de dicts com p, a, d, b, c
+    Retorna dict com hits/misses/dano de cada lado.
+    """
+    stats = {
+        "hits_eu": 0, "misses_eu": 0,
+        "hits_adv": 0, "misses_adv": 0,
+        "dano_eu": 0.0, "dano_adv": 0.0,
+        "dano_bloqueado_eu": 0.0, "dano_bloqueado_adv": 0.0,
+        "crits_eu": 0, "crits_adv": 0,
+        "rounds": 0,
+    }
+    if not turns_json:
+        return stats
+
+    # p="a" = attacker agiu, p="d" = defender agiu
+    # Se eu fui atacante: "a" = eu, "d" = adv
+    # Se fui defensor:    "d" = eu, "a" = adv
+    meu_lado  = "a" if eu_fui_atacante else "d"
+    adv_lado  = "d" if eu_fui_atacante else "a"
+
+    for t in turns_json:
+        p = t.get("p", "")
+        acao = t.get("a", "")
+        dano = float(t.get("d", 0) or 0)
+        bloq = float(t.get("b", 0) or 0)
+        crit = bool(t.get("c", False))
+
+        if p == meu_lado:
+            stats["rounds"] += 1
+            if acao == "h":
+                stats["hits_eu"] += 1
+                stats["dano_eu"] += dano
+                stats["dano_bloqueado_adv"] += bloq
+                if crit: stats["crits_eu"] += 1
+            else:
+                stats["misses_eu"] += 1
+        elif p == adv_lado:
+            if acao == "h":
+                stats["hits_adv"] += 1
+                stats["dano_adv"] += dano
+                stats["dano_bloqueado_eu"] += bloq
+                if crit: stats["crits_adv"] += 1
+            else:
+                stats["misses_adv"] += 1
+
+    # Taxa de acerto real
+    total_eu  = stats["hits_eu"]  + stats["misses_eu"]
+    total_adv = stats["hits_adv"] + stats["misses_adv"]
+    stats["taxa_acerto_eu"]  = round(stats["hits_eu"]  / total_eu  * 100, 1) if total_eu  > 0 else 0
+    stats["taxa_acerto_adv"] = round(stats["hits_adv"] / total_adv * 100, 1) if total_adv > 0 else 0
+    stats["dano_eu"]  = round(stats["dano_eu"],  1)
+    stats["dano_adv"] = round(stats["dano_adv"], 1)
+    stats["dano_bloqueado_eu"]  = round(stats["dano_bloqueado_eu"],  1)
+    stats["dano_bloqueado_adv"] = round(stats["dano_bloqueado_adv"], 1)
+    return stats
+
+
 def parsear_resultado_combate(soup, eu_fui_atacante=True):
     """
     Extrai resultado do relatório de combate.
@@ -784,44 +855,49 @@ def parsear_resultado_combate(soup, eu_fui_atacante=True):
        - Se eu ataquei (eu_fui_atacante=True): winner=attacker → vitória
        - Se fui atacado (eu_fui_atacante=False): winner=defender → vitória
     2. HTML: gold e XP ganhos ficam como "238 [img gold_coin]"
+    Também extrai turnos para calibração do simulador.
     """
     resultado = "desconhecido"
     gold_ganho = 0
     xp_ganho = 0
+    turnos_stats = {}
 
-    # 1. Extrai winner do JSON do displayFightReport
+    # 1. Extrai winner e turns do JSON do displayFightReport
     for script in soup.find_all("script"):
         txt = script.string or ""
         if "displayFightReport" not in txt:
             continue
         m = re.search(r'"winner"\s*:\s*"(\w+)"', txt)
         if m:
-            winner = m.group(1)  # "attacker" ou "defender"
+            winner = m.group(1)
             if eu_fui_atacante:
                 resultado = "vitoria" if winner == "attacker" else "derrota"
             else:
                 resultado = "vitoria" if winner == "defender" else "derrota"
+        # Extrai turnos
+        try:
+            m_turns = re.search(r'"turns"\s*:\s*(\[.*?\])', txt, re.DOTALL)
+            if m_turns:
+                import json as _json
+                turns = _json.loads(m_turns.group(1))
+                turnos_stats = parsear_turnos_combate(turns, eu_fui_atacante)
+        except Exception:
+            pass
         break
 
     # 2. Extrai gold e XP do HTML
-    # Padrão: "238 [img gold_coin]" → procura número antes da imagem gold_coin
     html_txt = str(soup)
     m_gold = re.search(r"(\d+)\s*<img[^>]*gold_coin[^>]*>", html_txt)
     if m_gold:
         gold_ganho = int(m_gold.group(1))
 
-    # XP: número antes de exp_scroll
     m_xp = re.findall(r"(\d+)\s*<img[^>]*exp_scroll[^>]*>", html_txt)
-    # Pega o XP do atacante (primeiro valor, geralmente maior que 0)
     for v in m_xp:
         if int(v) > 0:
             xp_ganho = int(v)
             break
 
-    # Quando perdemos, gold_ganho é o que o oponente roubou de nós
-    # O HTML mostra gold ganho pelo vencedor — se perdemos, isso é nosso gold perdido
-    # gold_ganho já capturou o valor correto — quem chamou decide se foi ganho ou perdido
-    return resultado, gold_ganho, xp_ganho
+    return resultado, gold_ganho, xp_ganho, turnos_stats
 
 
 def parsear_confirmacao_ataque(soup):
@@ -939,7 +1015,7 @@ def executar_ataque(client, user_id, dry_run=False):
             except: pass
         return {"status": "indisponivel", "motivo": motivo, "user_id": user_id}
 
-    resultado, gold_ganho, xp_ganho = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
+    resultado, gold_ganho, xp_ganho, turnos_stats = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
 
     # Registra para aprendizado (usa atributos frescos se disponíveis, senão usa cache)
     perfil_aprendizado = attrs or {}
@@ -951,7 +1027,7 @@ def executar_ataque(client, user_id, dry_run=False):
     pl = carregar_pig_list()
     if user_id in pl:
         perfil_aprendizado["_score_cache"] = pl[user_id].get("score_cache", 0)
-    registrar_combate_srv(perfil_aprendizado, resultado, gold_ganho, xp_ganho)
+    registrar_combate_srv(perfil_aprendizado, resultado, gold_ganho, xp_ganho, turnos=turnos_stats)
 
     estado = carregar_estado()
     registrar_ataque(estado, user_id, resultado, gold_ganho, xp_ganho)
