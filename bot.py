@@ -1340,12 +1340,38 @@ def verificar_raubzug(client):
     if m2:
         resultado["minutos_usados_hoje"] = int(m2.group(1))
 
+    # Detecta cota diária esgotada
+    frases_cota = [
+        "já usou todo o seu tempo de missão",
+        "usou todo o seu tempo",
+        "Somente amanhã você poderá",
+        "you have used all your mission time",
+        "no more missions today",
+    ]
+    if any(f.lower() in txt.lower() for f in frases_cota):
+        resultado["cota_diaria"] = True
+        resultado["livre"] = False
+        log.info("Cota diária de missões esgotada")
+        # Tenta extrair tempo até próxima atualização
+        m3 = re.search(r"próxima atualização[:\s]+(\d+:\d+:\d+)", txt)
+        if m3:
+            resultado["tempo_reset"] = m3.group(1)
+            log.info(f"  Reset em: {m3.group(1)}")
+
+    # Verifica se o form de missão está disponível (tem select jagdzeit)
+    missao_disponivel = False
     for form in soup.find_all("form"):
         if form.find("input", {"name": "ac", "value": "raubzug"}) and \
            form.find("input", {"name": "sac", "value": "mission"}):
             inp = form.find("input", {"name": "csrftoken"})
             if inp: resultado["csrf_missao"] = inp.get("value", "")
+            # Se tem o select de tempo, missão realmente disponível
+            if form.find("select", {"name": "jagdzeit"}):
+                missao_disponivel = True
             break
+
+    if not missao_disponivel and not resultado.get("cota_diaria") and resultado["livre"]:
+        log.debug("Form de missão sem select jagdzeit — cota pode estar esgotada")
 
     return resultado
 
@@ -1357,6 +1383,11 @@ def gerenciar_missao(client, dry_run=False):
     limite_min = 120 if IS_PREMIUM else 60
 
     rv = verificar_raubzug(client)
+
+    if rv.get("cota_diaria"):
+        reset = rv.get("tempo_reset", "amanhã")
+        log.info(f"Cota diária de missões esgotada — reset: {reset}")
+        return {"status": "cota_diaria", "reset": reset}
 
     if not rv["livre"]:
         fim = agora() + timedelta(seconds=rv["segundos_cd"])
