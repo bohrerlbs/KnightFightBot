@@ -1050,18 +1050,29 @@ def executar_ataque(client, user_id, dry_run=False):
             motivo = "alvo imune"
         elif "cooldown" in txt or "minutos" in txt or "secondscounter" in txt:
             motivo = "cooldown ativo"
-        elif "login" in txt or "session" in txt:
-            motivo = "sessão expirada"
+        elif "login" in txt or "session" in txt or len(r.text) < 5000:
+            motivo = "sessão expirada"  # página muito curta = provavelmente redirect para login
         elif "not found" in txt or "404" in txt:
             motivo = "página não encontrada"
         log.warning(f"displayFightReport ausente para {user_id} — motivo: {motivo}")
-        # Salva HTML para debug se motivo desconhecido
-        if motivo == "desconhecido":
-            try:
-                from pathlib import Path as _P
-                (_P(os.getcwd()) / "debug_ataque.html").write_text(r.text[:2000], encoding="utf-8")
-                log.debug("HTML salvo em debug_ataque.html")
-            except: pass
+        # Salva HTML completo para debug
+        try:
+            from pathlib import Path as _P
+            path_debug = _P(os.getcwd()) / "debug_ataque.html"
+            path_debug.write_text(r.text, encoding="utf-8")  # arquivo completo, sem truncar
+            # Tenta extrair mensagem útil do HTML
+            soup_err = BeautifulSoup(r.text, "html.parser")
+            # Procura mensagens de erro/aviso em divs comuns do KF
+            for cls in ["kf-error", "error", "box-bg", "content"]:
+                msg_err = soup_err.find("div", class_=cls)
+                if msg_err:
+                    txt = msg_err.get_text(strip=True)[:200]
+                    if txt:
+                        log.warning(f"  Servidor retornou: {txt}")
+                        break
+            log.warning(f"  HTML completo salvo em debug_ataque.html ({len(r.text)} bytes)")
+        except Exception as e_dbg:
+            log.debug(f"Erro ao salvar debug: {e_dbg}")
         return {"status": "indisponivel", "motivo": motivo, "user_id": user_id}
 
     resultado, gold_ganho, xp_ganho, turnos_stats = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
@@ -1104,7 +1115,7 @@ def executar_ataque(client, user_id, dry_run=False):
 # ═══════════════════════════════════════════
 # BUSCA DE ALVO PARA IMUNIZAÇÃO
 # ═══════════════════════════════════════════
-def buscar_alvo_imunizacao(client, estado, score_min):
+def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
     """
     Usa o cache de perfis para encontrar candidatos sem HTTP.
     Só verifica disponibilidade (botão Attack) em tempo real.
@@ -1118,6 +1129,12 @@ def buscar_alvo_imunizacao(client, estado, score_min):
     if not candidatos:
         log.warning("Cache de perfis vazio — não é possível buscar alvo sem HTTP massivo")
         return None
+
+    # Remove alvos já tentados nesta rodada
+    if excluir:
+        candidatos = [c for c in candidatos if c.get("user_id") not in excluir]
+        if not candidatos:
+            return None
 
     log.info(f"Candidatos imunização no cache: {len(candidatos)} (score_min={score_min})")
 
@@ -2188,18 +2205,40 @@ def loop_rapido(client):
                 else:
                     log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
                 alvo = buscar_alvo_imunizacao(client, estado, score_min_imun) if cache_ok else None
-                if alvo:
+                # Tenta até 5 alvos diferentes até conseguir imunizar
+                alvos_tentados = set()
+                for _tentativa_imun in range(5):
+                    if not alvo or alvo["user_id"] in alvos_tentados:
+                        # Busca próximo alvo excluindo os já tentados
+                        alvo = buscar_alvo_imunizacao(client, estado, score_min_imun,
+                                                       excluir=alvos_tentados) if cache_ok else None
+                    if not alvo:
+                        log.warning("Nenhum alvo seguro encontrado no cache!")
+                        break
+
+                    alvos_tentados.add(alvo["user_id"])
                     meu_clan = estado.get("meu_clan_id")
                     ok_imun, score_imun, motivo_imun = verificar_alvo_antes_de_atacar(
                         client, alvo["user_id"], 50, meu_clan)
                     if not ok_imun and motivo_imun == "mesma_guild":
-                        log.warning(f"Imunização cancelada: {alvo['nome']} é da mesma guild")
+                        log.warning(f"  Imunização: {alvo['nome']} mesma guild — próximo...")
+                        alvo = None
                         continue
+                    if not ok_imun:
+                        log.warning(f"  Imunização: {alvo['nome']} indisponível ({motivo_imun}) — próximo...")
+                        alvo = None
+                        continue
+
                     log.info(f"Imunizando com {alvo['nome']} Lv{alvo['level']}")
-                    executar_ataque(client, alvo["user_id"])
-                    ataque_feito = True
-                else:
-                    log.warning("Nenhum alvo seguro encontrado no cache!")
+                    res_imun = executar_ataque(client, alvo["user_id"])
+                    if res_imun.get("status") == "executado":
+                        ataque_feito = True
+                        break
+                    else:
+                        log.warning(f"  Ataque falhou ({res_imun.get('status')}) — próximo alvo...")
+                        alvos_tentados.add(alvo["user_id"])  # garante exclusão
+                        alvo = None
+                        continue  # tenta próximo no loop
 
             # Nada pra atacar → missão
             if not ataque_feito:
