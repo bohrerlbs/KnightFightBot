@@ -93,6 +93,27 @@ def carregar_combates():
 def salvar_combates(d):
     salvar_json(COMBATES_FILE, d)
 
+def resetar_dados_sessao_bg():
+    """
+    Apaga dados da sessão anterior do BG:
+    - bg_combates.json (histórico de combates)
+    - bg_estado.json (contadores da sessão)
+    - bg_ciclo.json (dados do dashboard)
+    Mantém logs.
+    """
+    try:
+        if COMBATES_FILE.exists():
+            COMBATES_FILE.unlink()
+            log.info("✓ Histórico de combates BG resetado")
+        if STATE_FILE.exists():
+            STATE_FILE.unlink()
+            log.info("✓ Estado BG resetado")
+        if CICLO_FILE.exists():
+            CICLO_FILE.unlink()
+            log.info("✓ Ciclo BG resetado")
+    except Exception as e:
+        log.warning(f"Erro ao resetar dados BG: {e}")
+
 def atualizar_ciclo(chave, valor):
     ciclo = carregar_json(CICLO_FILE, {})
     ciclo[chave] = valor
@@ -916,7 +937,8 @@ def loop_bg(client, eu, modo):
     sessao_atual_id = eu.get("sessao_inicio", "")
     sessao_salva_id = estado.get("sessao_bg_id", "")
     if sessao_atual_id != sessao_salva_id:
-        log.info(f"Nova sessão BG detectada — resetando contador de batalhas")
+        log.info(f"Nova sessão BG detectada — resetando dados da sessão anterior")
+        resetar_dados_sessao_bg()
         estado["batalhas_feitas"] = 0
         estado["vitorias"]    = 0
         estado["derrotas"]    = 0
@@ -941,6 +963,8 @@ def loop_bg(client, eu, modo):
         if feitas >= max_batalhas:
             log.info(f"✅ Limite de {max_batalhas} batalhas atingido! Bot encerrado.")
             atualizar_ciclo("status", "concluido")
+            log.info("Limpando dados da sessão encerrada...")
+            resetar_dados_sessao_bg()
             break
 
         # Verifica limite diário (sempre 100/dia independente do modo)
