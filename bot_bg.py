@@ -1396,9 +1396,7 @@ if __name__ == "__main__":
     # Verifica se existe sessão BG ativa antes de iniciar
     sessao_check = carregar_estado().get("sessao_bg", {})
     if not sessao_check.get("inicio"):
-        log.error("❌ Nenhuma sessão BG ativa encontrada. Inicie uma sessão no jogo primeiro.")
-        log.error("   Acesse: /battleground/currentbattle/ no jogo")
-        return
+        log.warning("⚠ Nenhuma sessão BG anterior encontrada — continuando mesmo assim...")
 
     # Verifica se há sessão BG ativa antes de iniciar
     sessao_inicio = eu.get("sessao_inicio", "")
