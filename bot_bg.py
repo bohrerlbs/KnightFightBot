@@ -27,7 +27,16 @@ MODOS_BG = {
     "medio":   {"batalhas": 200, "cooldown": 300,  "nome": "150 pedras (200 batalhas)"},
     "premium": {"batalhas": 400, "cooldown": 300,  "nome": "250 pedras (400 batalhas)"},
 }
-MODO_BG = "free"
+MODO_BG = "free"  # auto-detectado pela sessão
+
+def detectar_modo_bg(sessao):
+    """Auto-detecta o modo BG pelo total de batalhas da sessão."""
+    total = sessao.get("batalhas_total", 100)
+    if total >= 400:
+        return "premium"
+    elif total >= 200:
+        return "medio"
+    return "free"
 
 # Estratégia de busca
 EF_RANGE_ACIMA   = 2.0   # busca EF nossa até +2.0
@@ -932,6 +941,12 @@ def atacar(client, adversario):
 
 def loop_bg(client, eu, modo):
     """Loop principal do bot BG."""
+    # Auto-detecta modo pela sessão real (ignora parâmetro modo)
+    sessao_eu = eu.get("sessao_bg", carregar_estado().get("sessao_bg", {}))
+    modo_auto = detectar_modo_bg(sessao_eu)
+    if modo_auto != modo:
+        log.info(f"Modo auto-detectado: {modo_auto} (sessão tem {sessao_eu.get('batalhas_total','?')} batalhas)")
+        modo = modo_auto
     config_modo = MODOS_BG[modo]
     cooldown    = config_modo["cooldown"]
     max_batalhas = config_modo["batalhas"]

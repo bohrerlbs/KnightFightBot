@@ -724,11 +724,7 @@ function logClass(line){
 
 function renderProfiles(profiles){
   var grid = document.getElementById('profiles-grid');
-  // Preserva valores dos seletores BG antes de recriar HTML
-  var bgModoMap = {};
-  grid.querySelectorAll('.bg-modo-sel').forEach(function(sel){
-    bgModoMap[sel.dataset.name] = sel.value;
-  });
+
   var html = '';
 
   profiles.forEach(function(p){
@@ -770,11 +766,6 @@ function renderProfiles(profiles){
     html += '<div class="bg-section">';
     html += '<div class="bg-label">* BattleGround</div>';
     html += '<div class="bg-btns">';
-    html += '<select class="bg-modo-sel" data-name="'+name+'">';
-    html += '<option value="free">Free (100 bat.)</option>';
-    html += '<option value="medio">150 pedras (200 bat.)</option>';
-    html += '<option value="premium">250 pedras (400 bat.)</option>';
-    html += '</select>';
     if(bgRunning){
       html += '<button class="btn btn-stop" data-action="bgstop" data-name="'+name+'">[ Parar BG</button>';
     } else {
@@ -794,12 +785,6 @@ function renderProfiles(profiles){
 
   grid.innerHTML = html;
 
-  // Restaura valores dos seletores BG
-  grid.querySelectorAll('.bg-modo-sel').forEach(function(sel){
-    var saved = bgModoMap[sel.dataset.name];
-    if(saved) sel.value = saved;
-  });
-
   // Attach events via delegation (no inline onclick needed)
   grid.onclick = function(e){
     var btn = e.target.closest('[data-action]');
@@ -813,8 +798,7 @@ function renderProfiles(profiles){
 
     if(action === 'del')     deleteProfile(name);
     if(action === 'bgstart'){
-      var sel = grid.querySelector('.bg-modo-sel[data-name="'+name+'"]');
-      startBG(name, sel ? sel.value : 'free');
+      startBG(name, 'free');  // modo auto-detectado pelo bot via sessão BG
     }
     if(action === 'bgstop')  stopBG(name);
     if(action === 'bgdash')  openDashBG(parseInt(port));
