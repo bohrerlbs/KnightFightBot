@@ -95,22 +95,30 @@ def salvar_combates(d):
 
 def resetar_dados_sessao_bg():
     """
-    Apaga dados da sessão anterior do BG:
-    - bg_combates.json (histórico de combates)
-    - bg_estado.json (contadores da sessão)
-    - bg_ciclo.json (dados do dashboard)
-    Mantém logs.
+    Reseta dados da sessão anterior do BG para nova sessão.
+    - Apaga bg_combates.json (histórico de combates)
+    - Apaga bg_ciclo.json (dados do dashboard)
+    - NO estado: reseta contadores mas preserva flags de controle (parar_bot etc)
     """
     try:
         if COMBATES_FILE.exists():
             COMBATES_FILE.unlink()
             log.info("✓ Histórico de combates BG resetado")
-        if STATE_FILE.exists():
-            STATE_FILE.unlink()
-            log.info("✓ Estado BG resetado")
         if CICLO_FILE.exists():
             CICLO_FILE.unlink()
             log.info("✓ Ciclo BG resetado")
+        # Reseta contadores no estado mas preserva flags de controle
+        if STATE_FILE.exists():
+            est = carregar_json(STATE_FILE, {})
+            est["batalhas_feitas"] = 0
+            est["vitorias"]   = 0
+            est["derrotas"]   = 0
+            est["gold_total"] = 0
+            est["xp_total"]   = 0
+            est.pop("sessao_bg_id", None)
+            est.pop("sessao_bg", None)
+            salvar_json(STATE_FILE, est)
+            log.info("✓ Contadores de estado BG resetados")
     except Exception as e:
         log.warning(f"Erro ao resetar dados BG: {e}")
 
@@ -989,10 +997,9 @@ def loop_bg(client, eu, modo):
         sessao = estado.get("sessao_bg", {})
         restantes_hoje = sessao.get("restantes_hoje", 100)
         if restantes_hoje <= 0:
-            log.info("Limite diário de 100 batalhas atingido — aguardando próximo dia...")
+            log.info("✅ Limite diário de 100 batalhas atingido — bot encerrado. Reinicie amanhã.")
             atualizar_ciclo("status", "limite_diario")
-            time.sleep(3600)  # aguarda 1h e verifica novamente
-            continue
+            break  # encerra sem zerar dados (sessão BG ainda está ativa)
 
         restantes = max_batalhas - feitas
         log.info(f"\n⚔ [BG] Batalha {feitas+1}/{max_batalhas} ({restantes} restantes)")
@@ -1006,7 +1013,7 @@ def loop_bg(client, eu, modo):
                 salvar_estado(estado)
                 restantes_hoje = sessao_atual.get("restantes_hoje", 100)
                 if restantes_hoje <= 0:
-                    log.info("Limite diário de 100 batalhas atingido — aguardando...")
+                    log.info("Limite diário atingido — encerrando.")
                     atualizar_ciclo("status", "limite_diario")
                     time.sleep(3600)
                     continue
@@ -1390,6 +1397,14 @@ if __name__ == "__main__":
         log.error("❌ Nenhuma sessão BG ativa encontrada. Inicie uma sessão no jogo primeiro.")
         log.error("   Acesse: /battleground/currentbattle/ no jogo")
         return
+
+    # Verifica se há sessão BG ativa antes de iniciar
+    sessao_inicio = eu.get("sessao_inicio", "")
+    if not sessao_inicio:
+        log.error("❌ Nenhuma sessão BG ativa encontrada. Inscreva-se no BG primeiro.")
+        log.error("   Acesse o jogo → BattleGround → Iniciar sessão e reinicie o bot.")
+        atualizar_ciclo("status", "sem_sessao")
+        import sys; sys.exit(0)
 
     # Inicia loop
     try:

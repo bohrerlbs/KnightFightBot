@@ -441,6 +441,20 @@ header {
           Conta <strong style="color:var(--gold)">Premium</strong> — cooldown 5min + missao 2h/dia
         </label>
       </div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div>
+          <label class="form-label" style="font-size:11px">Varrer ranking (max)</label>
+          <input class="form-input" id="f-ranking-max" placeholder="500" type="number" value="500" style="padding:6px 8px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Pausa cache (s)</label>
+          <input class="form-input" id="f-pausa-cache" placeholder="0.5" type="number" step="0.1" value="0.5" style="padding:6px 8px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Hora varredura</label>
+          <input class="form-input" id="f-hora-cache" placeholder="3" type="number" min="0" max="23" value="3" style="padding:6px 8px">
+        </div>
+      </div>
     </div>
 
     <button class="btn-primary" onclick="saveProfile()">v Criar Perfil e Iniciar Bot</button>
@@ -1048,6 +1062,9 @@ function saveProfile(){
     perda_xp_max:   parseInt(document.getElementById('f-xp-max').value||0),
     gold_ignorar_xp:parseInt(document.getElementById('f-gold-xp').value||500),
     premium:        document.getElementById('f-premium').checked,
+    ranking_max:    parseInt(document.getElementById('f-ranking-max').value||500),
+    pausa_cache:    parseFloat(document.getElementById('f-pausa-cache').value||0.5),
+    hora_cache:     parseInt(document.getElementById('f-hora-cache').value||3),
   };
   if(!data.name){ toast('Informe um nome para o perfil','err'); return; }
   if(!data.cookies){ toast('Cookie e obrigatorio','err'); return; }
