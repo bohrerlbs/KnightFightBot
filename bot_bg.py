@@ -32,7 +32,7 @@ MODO_BG = "free"
 # Estratégia de busca
 EF_RANGE_ACIMA   = 2.0   # busca EF nossa até +2.0
 EF_RANGE_FALLBACK = 1.0  # se não achar bom, tenta com +1.0
-SCORE_MIN_ATACAR = 70    # score mínimo para atacar (simulador preciso)
+SCORE_MIN_ATACAR = 60    # score mínimo para atacar (simulador preciso)
 MAX_REBUSCAS     = 3     # tentativas de busca antes de desistir do ciclo
 
 # ── Arquivos de estado ──────────────────────────────────────────
@@ -1037,7 +1037,7 @@ def loop_bg(client, eu, modo):
         # Se chegar em minha_EF sem achar ninguém com 70%, ataca o melhor % disponível
         # Busca: começa em minha_EF+5, desce 0.5 por vez até minha_EF
         # Cada nível tenta 3x antes de descer
-        # Ao chegar na minha_EF: tenta 70%, depois 60%, depois 50%, depois maior %
+        # Ao chegar na minha_EF: tenta 60%, depois 50%, depois maior %
         ef_topo      = round(ef_minha + 5.0, 1)
         ef_busca     = ef_topo
         melhor       = None
@@ -1056,7 +1056,7 @@ def loop_bg(client, eu, modo):
                 return max(ok, key=lambda a: (a.get("ef", 0), a["_score"]))
             return None
 
-        # Fase 1: percorre EF+5 até EF, 3 tentativas por nível, procura 70%
+        # Fase 1: percorre EF+5 até EF, 3 tentativas por nível, procura 60%
         while ef_busca >= ef_minha and not melhor:
             ef_offset = round(ef_busca - ef_minha, 1)
             encontrou_alguem = False
