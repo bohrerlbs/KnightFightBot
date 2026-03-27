@@ -47,6 +47,7 @@ RENOVAR_IMUNIDADE_SEG = 600
 
 HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
+MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -1564,8 +1565,15 @@ def gerenciar_missao(client, dry_run=False):
         return {"status": "cota_diaria", "minutos_usados": minutos_usados}
 
     jagdzeit = 10
-    gesinnung = "1" if estado.get("missoes_hoje", 0) % 2 == 0 else "2"
-    log.info(f"Missão: {jagdzeit}min | {'bem' if gesinnung=='1' else 'mal'} | usados={minutos_usados}/{limite_min}min")
+    alin = MISSAO_ALINHAMENTO
+    if alin == "bem":
+        gesinnung = "1"
+    elif alin == "mal":
+        gesinnung = "2"
+    else:  # "alternado"
+        gesinnung = "1" if estado.get("missoes_hoje", 0) % 2 == 0 else "2"
+    label_alin = {"1": "bem ✓", "2": "mal ✗"}.get(gesinnung, "?")
+    log.info(f"Missão: {jagdzeit}min | {label_alin} | usados={minutos_usados}/{limite_min}min")
 
     if dry_run:
         return {"status": "dry_run", "jagdzeit": jagdzeit, "minutos_rest": minutos_rest}
@@ -2042,9 +2050,13 @@ def loop_rapido(client):
             # Atualiza gold real da conta a cada ciclo
             try:
                 gold_fresh, gems_fresh = parsear_gold_gems(client)
-                if gold_fresh > 0 or estado.get("gold_atual", 0) > 0:
+                if gold_fresh > 0:
+                    # Só salva se conseguiu ler gold positivo (evita falso 0 por erro de parsing)
                     estado["gold_atual"] = gold_fresh
                     salvar_estado(estado)
+                elif gold_fresh == 0 and estado.get("gold_atual", 0) > 0:
+                    # Gold lido como 0 mas estado tinha valor — não sobrescreve sem confirmar
+                    log.debug(f"Gold lido como 0 (estado={estado.get('gold_atual')}g) — aguardando confirmação")
             except Exception:
                 pass
 
@@ -2418,6 +2430,8 @@ if __name__ == "__main__":
         globals()["HORA_CACHE_PERFIS"] = int(cfg["hora_cache"])
     if cfg.get("score_min_imunizacao") is not None:
         globals()["SCORE_MIN_IMUNIZACAO"] = int(cfg["score_min_imunizacao"])
+    if "missao_alinhamento" in cfg:
+        globals()["MISSAO_ALINHAMENTO"] = cfg["missao_alinhamento"]
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:

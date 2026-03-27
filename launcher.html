@@ -455,6 +455,14 @@ header {
           <input class="form-input" id="f-hora-cache" placeholder="3" type="number" min="0" max="23" value="3" style="padding:6px 8px">
         </div>
       </div>
+      <div style="margin-top:10px">
+        <label class="form-label" style="font-size:11px">Alinhamento de Missoes</label>
+        <select class="form-select" id="f-missao-alin" style="padding:6px 8px">
+          <option value="bem">✓ Sempre Bem (cavaleiro da luz)</option>
+          <option value="mal">✗ Sempre Mal (cavaleiro das sombras)</option>
+          <option value="alternado" selected>↕ Alternado (bem/mal a cada missão)</option>
+        </select>
+      </div>
     </div>
 
     <button class="btn-primary" onclick="saveProfile()">v Criar Perfil e Iniciar Bot</button>
@@ -497,6 +505,14 @@ header {
       <div>
         <label class="form-label" style="font-size:11px">Hora da varredura (0-23)</label>
         <input class="form-input" id="cfg-hora-cache" type="number" placeholder="3" min="0" max="23">
+      </div>
+      <div style="margin-top:8px">
+        <label class="form-label" style="font-size:11px">Alinhamento de Missoes</label>
+        <select class="form-select" id="cfg-missao-alin">
+          <option value="bem">✓ Sempre Bem (cavaleiro da luz)</option>
+          <option value="mal">✗ Sempre Mal (cavaleiro das sombras)</option>
+          <option value="alternado">↕ Alternado (bem/mal a cada missão)</option>
+        </select>
       </div>
     </div>
 
@@ -560,6 +576,7 @@ function openCfgModal(name){
       document.getElementById('cfg-ranking-max').value = cfg.ranking_max     != null ? cfg.ranking_max     : 500;
       document.getElementById('cfg-pausa').value       = cfg.pausa_cache     != null ? cfg.pausa_cache     : 0.5;
       document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
+      document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-premium').checked   = !!cfg.premium;
     });
   openModal('modal-cfg');
@@ -574,7 +591,8 @@ function saveCfg(){
     gold_ignorar_xp: parseInt(document.getElementById('cfg-gold-xp').value||500),
     ranking_max:     parseInt(document.getElementById('cfg-ranking-max').value||500),
     pausa_cache:     parseFloat(document.getElementById('cfg-pausa').value||0.5),
-    hora_cache:      parseInt(document.getElementById('cfg-hora-cache').value||3),
+    hora_cache:          parseInt(document.getElementById('cfg-hora-cache').value||3),
+    missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     premium:         document.getElementById('cfg-premium').checked,
     _patch: true,
     _restart: true,  // reinicia o bot para aplicar imediatamente
@@ -849,26 +867,23 @@ function stopBot(name){
 function startBG(name, modo){
   modo = modo || 'free';
   toast('Iniciando BG Bot...');
-  // Usa AbortController com timeout de 2s
-  // Se o servidor demorar, cancela e assume que iniciou
-  var ctrl = new AbortController();
-  var timer = setTimeout(function(){ ctrl.abort(); }, 2000);
   fetch('/api/bg/start/'+name+'/', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({modo: modo}),
-    signal: ctrl.signal
+    body: JSON.stringify({modo: modo})
   })
-  .then(function(r){ clearTimeout(timer); return r.json(); })
+  .then(function(r){ return r.json(); })
   .then(function(d){
-    toast('BG Bot iniciado!');
-    setTimeout(function(){ loadProfiles(); }, 3000);
+    if(d.ok){
+      toast('BG Bot iniciado! PID: '+d.pid);
+    } else {
+      toast('Erro: '+(d.error||'falha ao iniciar'), 'err');
+    }
+    setTimeout(function(){ loadProfiles(); }, 2000);
   })
   .catch(function(e){
-    clearTimeout(timer);
-    // Timeout ou erro de conexao — assume que iniciou mesmo assim
-    toast('BG Bot iniciando...');
-    setTimeout(function(){ loadProfiles(); }, 3000);
+    toast('Erro de conexão: '+e, 'err');
+    setTimeout(function(){ loadProfiles(); }, 2000);
   });
 }
 
@@ -1064,7 +1079,8 @@ function saveProfile(){
     premium:        document.getElementById('f-premium').checked,
     ranking_max:    parseInt(document.getElementById('f-ranking-max').value||500),
     pausa_cache:    parseFloat(document.getElementById('f-pausa-cache').value||0.5),
-    hora_cache:     parseInt(document.getElementById('f-hora-cache').value||3),
+    hora_cache:          parseInt(document.getElementById('f-hora-cache').value||3),
+    missao_alinhamento:  document.getElementById('f-missao-alin').value || 'alternado',
   };
   if(!data.name){ toast('Informe um nome para o perfil','err'); return; }
   if(!data.cookies){ toast('Cookie e obrigatorio','err'); return; }

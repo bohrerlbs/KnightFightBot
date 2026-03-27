@@ -253,7 +253,8 @@ def save_profile(data):
     if data.get("_patch") and cfg_path.exists():
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium",
-                       "ranking_max", "pausa_cache", "hora_cache", "cookies"]:
+                       "ranking_max", "pausa_cache", "hora_cache", "cookies",
+                       "missao_alinhamento"]:
             if field in data:
                 cfg[field] = data[field]
         cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -288,8 +289,9 @@ def save_profile(data):
         "gold_ignorar_xp": data.get("gold_ignorar_xp", 500),
         "premium":         data.get("premium", False),
         "ranking_max":     data.get("ranking_max", 500),
-        "pausa_cache":     data.get("pausa_cache", 0.5),
-        "hora_cache":      data.get("hora_cache", 3),
+        "pausa_cache":          data.get("pausa_cache", 0.5),
+        "hora_cache":           data.get("hora_cache", 3),
+        "missao_alinhamento":   data.get("missao_alinhamento", "alternado"),
     }
     cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     bat = f'@echo off\ncd /d "{BASE_DIR}"\npython bot.py --profile {name}\npause\n'

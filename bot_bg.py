@@ -997,9 +997,11 @@ def loop_bg(client, eu, modo):
         sessao = estado.get("sessao_bg", {})
         restantes_hoje = sessao.get("restantes_hoje", 100)
         if restantes_hoje <= 0:
-            log.info("✅ Limite diário de 100 batalhas atingido — bot encerrado. Reinicie amanhã.")
+            log.info("⏸ Limite diário de 100 batalhas atingido — aguardando próximo dia...")
             atualizar_ciclo("status", "limite_diario")
-            break  # encerra sem zerar dados (sessão BG ainda está ativa)
+            # Aguarda 1h e verifica se resetou (sem zerar dados - sessão ainda ativa)
+            time.sleep(3600)
+            continue
 
         restantes = max_batalhas - feitas
         log.info(f"\n⚔ [BG] Batalha {feitas+1}/{max_batalhas} ({restantes} restantes)")
