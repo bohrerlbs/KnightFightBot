@@ -724,6 +724,11 @@ function logClass(line){
 
 function renderProfiles(profiles){
   var grid = document.getElementById('profiles-grid');
+  // Preserva valores dos seletores BG antes de recriar HTML
+  var bgModoMap = {};
+  grid.querySelectorAll('.bg-modo-sel').forEach(function(sel){
+    bgModoMap[sel.dataset.name] = sel.value;
+  });
   var html = '';
 
   profiles.forEach(function(p){
@@ -788,6 +793,12 @@ function renderProfiles(profiles){
   html += '</div>';
 
   grid.innerHTML = html;
+
+  // Restaura valores dos seletores BG
+  grid.querySelectorAll('.bg-modo-sel').forEach(function(sel){
+    var saved = bgModoMap[sel.dataset.name];
+    if(saved) sel.value = saved;
+  });
 
   // Attach events via delegation (no inline onclick needed)
   grid.onclick = function(e){

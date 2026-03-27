@@ -637,28 +637,15 @@ class Handler(BaseHTTPRequestHandler):
             name = parts[-1] if parts else ""
             body = self._body()
             modo = body.get("modo", "free") if body else "free"
-            # Inicia em thread separada para não bloquear o servidor
-            import threading as _t
-            bg_key = f"BG_{name.upper()}"
-            def _bg_thread():
-                try:
-                    r = start_bg_bot(name, modo)
-                    print(f"[BG] start_bg_bot({name}) = {r}", flush=True)
-                    print(f"[BG] running_bots keys: {list(running_bots.keys())}", flush=True)
-                except Exception as e:
-                    import traceback
-                    print(f"[BG] ERRO: {e}", flush=True)
-                    traceback.print_exc()
-            _t.Thread(target=_bg_thread, daemon=True).start()
-            # Calcula porta BG para retornar ao JS
+            # Executa start_bg_bot diretamente (sem thread) para retornar resultado real
             try:
-                import json as _j2
-                cfg_p = BASE_DIR / "profiles" / name.upper() / "config.json"
-                _cfg = _j2.loads(cfg_p.read_text(encoding="utf-8")) if cfg_p.exists() else {}
-                bg_port = _cfg.get("port", 8765) + 1
-            except:
-                bg_port = 8770
-            self._json({"ok": True, "pid": -1, "port": bg_port, "msg": "Iniciando..."})
+                result_bg = start_bg_bot(name, modo)
+                print(f"[BG] start_bg_bot({name}, {modo}) = {result_bg}", flush=True)
+                self._json(result_bg)
+            except Exception as e_bg:
+                import traceback
+                traceback.print_exc()
+                self._json({"ok": False, "error": str(e_bg)})
         elif p == "/api/capture-cookie":
             result = {}
             def run(): result["r"] = capture_cookie_browser(d.get("server", "int7"))
