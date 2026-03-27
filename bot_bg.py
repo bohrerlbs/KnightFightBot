@@ -958,6 +958,24 @@ def loop_bg(client, eu, modo):
 
     while True:
         estado = carregar_estado()
+
+        # Verifica flag de parada do dashboard
+        if estado.get("parar_bot"):
+            log.info("🛑 Bot BG parado pelo dashboard")
+            estado.pop("parar_bot", None)
+            salvar_estado(estado)
+            atualizar_ciclo("status", "parado")
+            break
+
+        # Verifica flag de pausa
+        while estado.get("pausado"):
+            log.info("⏸ Bot BG pausado — aguardando retomada pelo dashboard...")
+            atualizar_ciclo("status", "pausado")
+            time.sleep(10)
+            estado = carregar_estado()
+            if estado.get("parar_bot"):
+                break
+
         feitas = estado.get("batalhas_feitas", 0)
 
         if feitas >= max_batalhas:
@@ -1214,6 +1232,30 @@ def iniciar_servidor_bg(porta):
                 self.end_headers()
                 self.wfile.write(data)
 
+            elif self.path in ("/api/parar", "/api/parar/"):
+                estado_p = carregar_estado()
+                estado_p["parar_bot"] = True
+                salvar_estado(estado_p)
+                data = b'{"ok": true, "msg": "Sinal de parada enviado"}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(data)
+
+            elif self.path in ("/api/pausar", "/api/pausar/"):
+                estado_p = carregar_estado()
+                pausado = not estado_p.get("pausado", False)
+                estado_p["pausado"] = pausado
+                salvar_estado(estado_p)
+                msg = "pausado" if pausado else "retomado"
+                data = f'{{"ok": true, "pausado": {str(pausado).lower()}, "msg": "Bot {msg}"}}'.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(data)
+
             elif self.path in ("/dashboard", "/dashboard/"):
                 try:
                     # SCRIPT_DIR é resolvido antes do os.chdir()
@@ -1341,6 +1383,13 @@ if __name__ == "__main__":
     log.info(f"KnightFight BG Bot | Modo: {MODOS_BG[MODO_BG]['nome']}")
     log.info(f"Dashboard: http://localhost:{DASHBOARD_PORT}/dashboard")
     log.info("=" * 50)
+
+    # Verifica se existe sessão BG ativa antes de iniciar
+    sessao_check = carregar_estado().get("sessao_bg", {})
+    if not sessao_check.get("inicio"):
+        log.error("❌ Nenhuma sessão BG ativa encontrada. Inicie uma sessão no jogo primeiro.")
+        log.error("   Acesse: /battleground/currentbattle/ no jogo")
+        return
 
     # Inicia loop
     try:

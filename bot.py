@@ -2168,19 +2168,35 @@ def loop_rapido(client):
                 # Score mínimo para pig
                 # Se gold na conta <= 100g, aceita score >= 40 (precisa de qualquer ouro)
                 # Caso normal: score >= 60
-                # Sem gold: tenta taverna automaticamente
+                # Sem gold: double-check antes de ir para taverna
                 if gold_conta == 0:
-                    log.error("⚠ GOLD ZERADO — tentando aceitar job na taverna...")
-                    atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "gold_zerado_taverna"})
-                    ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=3)
-                    if ok_tab:
-                        log.info(f"✓ Taverna: aguardando {horas_tab}h para receber {gold_tab}g")
-                        time.sleep(horas_tab * 3600)
-                        log.info("✓ Job da taverna concluído — retomando bot")
+                    log.warning("⚠ Gold=0 detectado — verificando novamente...")
+                    time.sleep(5)
+                    gold_real, _ = parsear_gold_gems(client)
+                    if gold_real > 0:
+                        log.info(f"  Gold OK após double-check: {gold_real}g — continuando")
+                        estado["gold_atual"] = gold_real
+                        salvar_estado(estado)
+                        gold_conta = gold_real
                     else:
-                        log.error(f"✗ Taverna falhou: {msg_tab} — dormindo 1h")
-                        time.sleep(3600)
-                    continue
+                        log.error("⚠ GOLD ZERADO confirmado — tentando aceitar job na taverna...")
+                        atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "gold_zerado_taverna"})
+                        ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=3)
+                        if ok_tab:
+                            log.info(f"✓ Taverna: aguardando {horas_tab}h para receber {gold_tab}g")
+                            time.sleep(horas_tab * 3600)
+                            # Sai da taverna acessando a página para concluir o job
+                            try:
+                                client.get("/job/")
+                                log.info("✓ Taverna concluída — retomando bot")
+                            except Exception:
+                                pass
+                            gold_pos, _ = parsear_gold_gems(client)
+                            log.info(f"  Gold após taverna: {gold_pos}g")
+                        else:
+                            log.error(f"✗ Taverna falhou: {msg_tab} — dormindo 1h")
+                            time.sleep(3600)
+                        continue
 
                 score_pig_min = SCORE_MIN_PIG_BROKE if gold_conta <= GOLD_CONTA_BROKE else SCORE_MIN_PIG
                 if av["score"] < score_pig_min:
