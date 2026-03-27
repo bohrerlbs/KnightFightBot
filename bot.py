@@ -1938,10 +1938,18 @@ def loop_lento(client):
             except Exception as e:
                 log.error(f"Erro status: {e}")
 
-            # Cache de perfis às 3h (ou se expirou)
+            # Cache de perfis às 3h (ou se expirou há mais de 20h)
+            # Usa cache_precisa_atualizar() como principal gatilho para não depender
+            # de o loop cair exatamente na hora certa (ciclo é de 1h, pode pular a hora)
             hora_atual = agora().hour
-            if hora_atual == HORA_CACHE_PERFIS and cache_precisa_atualizar():
-                log.info("3h da manhã — atualizando cache de perfis...")
+            cache_velho = cache_precisa_atualizar()
+            janela_3h = abs(hora_atual - HORA_CACHE_PERFIS) <= 1  # janela de ±1h
+            if cache_velho and janela_3h:
+                log.info(f"Atualizando cache de perfis (hora={hora_atual}h, janela={HORA_CACHE_PERFIS}h)...")
+                coletar_perfis_cache(client)
+            elif cache_velho and seg_desde(carregar_perfis_cache().get("atualizado_em","")) / 3600 >= 25:
+                # Fallback: se passou 25h sem atualizar (perdeu a janela), atualiza imediatamente
+                log.warning(f"Cache de perfis com +25h sem atualizar — forçando varredura agora...")
                 coletar_perfis_cache(client)
 
             # Ranking + pig list
