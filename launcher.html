@@ -834,7 +834,7 @@ function renderProfiles(profiles){
     } else {
       html += '<button class="btn btn-start" data-action="start" data-name="'+name+'"> > Iniciar</button>';
     }
-    html += '<button class="btn btn-dash" data-action="dash" data-port="'+(p.port||8765)+'">Dashboard</button>';
+    html += '<button class="btn btn-dash" data-action="dash" data-port="'+(p.port||8765)+'" data-name="'+name+'">Dashboard</button>';
     html += '</div>';
     html += '<div class="card-actions" style="margin-top:4px">';
     html += '<button class="btn btn-dash" data-action="game" data-server="'+(p.server||p.servidor||'int7')+'" style="flex:1">Abrir Jogo</button>';
@@ -849,7 +849,7 @@ function renderProfiles(profiles){
     } else {
       html += '<button class="btn btn-start" data-action="bgstart" data-name="'+name+'"> > Iniciar BG</button>';
     }
-    html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'">Dashboard BG</button>';
+    html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'" data-name="'+name+'">Dashboard BG</button>';
     html += '</div>';
     html += '</div>';
     html += '</div>';
@@ -872,14 +872,14 @@ function renderProfiles(profiles){
     var port   = btn.dataset.port || '';
     if(action === 'start')   startBot(name);
     if(action === 'stop')    stopBot(name);
-    if(action === 'dash')    openDash(parseInt(port));
+    if(action === 'dash')    openDash(parseInt(port), name);
 
     if(action === 'del')     deleteProfile(name);
     if(action === 'bgstart'){
       startBG(name, 'free');  // modo auto-detectado pelo bot via sessão BG
     }
     if(action === 'bgstop')  stopBG(name);
-    if(action === 'bgdash')  openDashBG(parseInt(port));
+    if(action === 'bgdash')  openDashBG(parseInt(port), name);
     if(action === 'game'){
       var srv = btn.dataset.server || 'int7';
       window.open('https://'+srv+'.knightfight.moonid.net','_blank');
@@ -1000,17 +1000,23 @@ function stopBG(name){
     .catch(e=>{ toast('Erro ao parar BG: '+e,'err'); loadProfiles(); });
 }
 
-function openDashBG(port){
-  window.open('http://localhost:'+port+'/dashboard','_blank');
+var _isLocal = (location.hostname==='localhost'||location.hostname==='127.0.0.1');
+function openDashBG(port, name){
+  if(_isLocal){
+    window.open('http://localhost:'+port+'/dashboard','_blank');
+  } else {
+    window.open('/proxy/'+name+'/dashboard','_blank');
+  }
 }
 
-function openDash(port){
-  // Testa se o servidor do bot já está respondendo
-  fetch(`http://localhost:${port}/dados`)
-    .then(()=>{ window.open(`http://localhost:${port}/dashboard`,'_blank'); })
-    .catch(()=>{
-      toast('Bot ainda iniciando - aguarde alguns segundos e tente novamente','err');
-    });
+function openDash(port, name){
+  if(_isLocal){
+    fetch('http://localhost:'+port+'/dados')
+      .then(()=>{ window.open('http://localhost:'+port+'/dashboard','_blank'); })
+      .catch(()=>{ toast('Bot ainda iniciando - aguarde alguns segundos','err'); });
+  } else {
+    window.open('/proxy/'+name+'/dashboard','_blank');
+  }
 }
 
 

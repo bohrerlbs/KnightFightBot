@@ -336,8 +336,9 @@ function renderHistorico(combates){
   }).join('');
 }
 
+var _botBase = window._API_BASE || ('http://'+location.hostname+':'+location.port);
 function fetchLog(){
-  fetch('http://'+location.hostname+':'+location.port+'/log')
+  fetch(_botBase+'/log')
     .then(r=>r.text()).then(txt=>{
       var lines = txt.trim().split('\n').slice(-30);
       var box = document.getElementById('log-box');
@@ -357,7 +358,7 @@ function fetchLog(){
 }
 
 function fetchAll(){
-  fetch('http://'+location.hostname+':'+location.port+'/dados')
+  fetch(_botBase+'/dados')
     .then(r=>r.json()).then(d=>{
       document.getElementById('sdot').className = 'dot on';
       document.getElementById('stxt').textContent = 'Online';
@@ -368,7 +369,7 @@ function fetchAll(){
       document.getElementById('stxt').textContent = 'Offline';
     });
 
-  fetch('http://'+location.hostname+':'+location.port+'/combates')
+  fetch(_botBase+'/combates')
     .then(r=>r.json()).then(renderHistorico).catch(()=>{});
 
   fetchLog();

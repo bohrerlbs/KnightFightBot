@@ -362,8 +362,9 @@ function startTimer(id,isoEnd,elId,colorFn){
   tick(); timers[id]=setInterval(tick,1000);
 }
 
+var _botBase = window._API_BASE || ('http://'+location.hostname+':'+location.port);
 function fetchDados(){
-  fetch('http://'+location.hostname+':'+location.port+'/dados')
+  fetch(_botBase+'/dados')
     .then(r=>{if(!r.ok) throw 0; return r.json();})
     .then(d=>{
       document.getElementById('sdot').className='dot on';
@@ -379,7 +380,7 @@ function fetchDados(){
 }
 
 function fetchCache(){
-  fetch('http://'+location.hostname+':'+location.port+'/cache')
+  fetch(_botBase+'/cache')
     .then(r=>{if(!r.ok) throw 0; return r.json();})
     .then(d=>{
       dadosGlobal.cacheData=d;
@@ -388,7 +389,7 @@ function fetchCache(){
 }
 
 function fetchLog(){
-  fetch('http://'+location.hostname+':'+location.port+'/log')
+  fetch(_botBase+'/log')
     .then(r=>r.text())
     .then(txt=>{
       var lines=txt.trim().split('\n').slice(-30);

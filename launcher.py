@@ -652,6 +652,37 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json({"error": f"perfil '{pname}' nao encontrado"})
 
+        elif p.startswith("/proxy/"):
+            # Proxy reverso para dashboards dos bots
+            parts = [x for x in p.split("/") if x]  # ['proxy', 'name', 'path...']
+            if len(parts) < 2:
+                self.send_response(404); self.end_headers(); return
+            pname = parts[1]
+            subpath = "/" + "/".join(parts[2:]) if len(parts) > 2 else "/"
+            # Verifica acesso ao perfil
+            allowed = [pr.get("_name","").lower() for pr in filter_profiles(get_profiles(), session)]
+            if pname.lower() not in allowed:
+                self.send_response(403); self.end_headers(); return
+            port = get_profile_port(pname)
+            import urllib.request as _ur
+            try:
+                req_url = f"http://localhost:{port}{subpath}"
+                with _ur.urlopen(req_url, timeout=8) as resp:
+                    body = resp.read()
+                    ctype = resp.headers.get("Content-Type", "text/html")
+                    if "text/html" in ctype:
+                        inject = f'<script>window._API_BASE="/proxy/{pname}";</script>'
+                        body = body.replace(b"</head>", inject.encode() + b"</head>", 1)
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Cache-Control", "no-store")
+                    self._cors(); self.end_headers()
+                    self.wfile.write(body)
+            except Exception as e:
+                self.send_response(502)
+                self.send_header("Content-Type","text/plain")
+                self.end_headers()
+                self.wfile.write(f"Bot offline ou erro: {e}".encode())
         else:
             self.send_response(404); self.end_headers()
 
@@ -682,10 +713,17 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json({"ok": False, "error": "Não autenticado"}); return
         d = self._body()
-        if   p == "/api/start":          self._json(start_bot(d["name"]))
-        elif p == "/api/stop":           self._json(stop_bot(d["name"]))
+        def can_access(name):
+            if is_admin(session): return True
+            return name.lower() in [x.lower() for x in (session.get("profiles") or [])]
+        if   p == "/api/start":
+            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
+            self._json(start_bot(d["name"]))
+        elif p == "/api/stop":
+            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
+            self._json(stop_bot(d["name"]))
         elif p == "/api/save":
-            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(save_profile(d))
         elif p == "/api/delete":
             if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
