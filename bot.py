@@ -1365,13 +1365,30 @@ def carregar_snapshots():
 # ═══════════════════════════════════════════
 def carregar_pig_list():
     if os.path.exists(PIG_LIST_FILE):
-        with open(PIG_LIST_FILE, encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(PIG_LIST_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            bak = PIG_LIST_FILE + ".bak"
+            if os.path.exists(bak):
+                try:
+                    with open(bak, encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    pass
     return {}
 
 def salvar_pig_list(pig_list):
-    with open(PIG_LIST_FILE, "w", encoding="utf-8") as f:
+    tmp = PIG_LIST_FILE + ".tmp"
+    bak = PIG_LIST_FILE + ".bak"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(pig_list, f, indent=2, ensure_ascii=False)
+    if os.path.exists(PIG_LIST_FILE):
+        try:
+            os.replace(PIG_LIST_FILE, bak)
+        except OSError:
+            pass
+    os.replace(tmp, PIG_LIST_FILE)
 
 def atualizar_pig_list(pig_list, jogadores_ant, jogadores_atu, estado):
     """
