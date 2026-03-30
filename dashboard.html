@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KnightFight Bot</title>
+<style>
+:root{
+  --bg:#0d0d0f;--s1:#17171a;--s2:#1e1e22;
+  --b1:rgba(255,255,255,0.07);--b2:rgba(255,255,255,0.14);
+  --tx:#e8e6e0;--mt:#7a7870;
+  --gold:#c8943a;--gl:#f0b84a;--gdim:rgba(200,148,58,0.12);
+  --grn:#4db870;--red:#d45050;--blu:#5b8fd4;
+  --rbg:rgba(180,60,60,0.12);--gbg:rgba(58,140,90,0.12);--wbg:rgba(200,148,58,0.12);
+  font-family:'Courier New',monospace;font-size:13px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);padding:14px}
+header{display:flex;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--b1);gap:10px}
+.logo{font-size:17px;font-weight:bold;color:var(--gold);letter-spacing:2px}
+.logo small{color:var(--mt);font-size:10px;display:block;letter-spacing:1px}
+.hr{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--mt)}
+.dot{width:7px;height:7px;border-radius:50%}
+.dot.on{background:var(--grn);box-shadow:0 0 5px var(--grn);animation:pulse 2s infinite}
+.dot.off{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* TABS */
+.tabs{display:flex;gap:3px;margin-bottom:12px;border-bottom:1px solid var(--b1)}
+.tab{padding:6px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--mt);margin-bottom:-1px;transition:all .2s}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gl);border-bottom-color:var(--gl)}
+.tc{display:none}.tc.active{display:block}
+
+/* LAYOUT */
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:6px;padding:12px}
+.ct{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--mt);margin-bottom:8px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+
+/* TIMERS */
+.tval{font-size:28px;font-weight:bold;letter-spacing:3px;font-variant-numeric:tabular-nums;line-height:1;text-align:center}
+.tval.gold{color:var(--gl)}.tval.grn{color:var(--grn)}.tval.red{color:var(--red)}.tval.warn{color:var(--gold)}
+.tsub{color:var(--mt);font-size:10px;margin-top:4px;text-align:center}
+
+/* ROWS */
+.row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--b1)}
+.row:last-child{border-bottom:none}
+.rl{color:var(--mt)}.rv{font-weight:bold}
+.rv.g{color:var(--gl)}.rv.gr{color:var(--grn)}.rv.r{color:var(--red)}
+
+/* BARS */
+.bar{background:var(--s2);border-radius:2px;height:4px;margin:5px 0 2px;overflow:hidden}
+.fill{height:100%;border-radius:2px;transition:width .5s}
+.bxp{background:var(--blu)}.bhp{background:var(--red)}.bwr{background:var(--grn)}
+
+/* SKILLS */
+.sk{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.skn{width:105px;color:var(--mt);font-size:11px;flex-shrink:0}
+.skb{flex:1;background:var(--s2);height:4px;border-radius:2px}
+.skf{height:100%;border-radius:2px;background:var(--gold)}
+.skv{width:28px;text-align:right;font-size:11px}
+
+/* MORAL */
+.moral-bar{height:5px;border-radius:3px;background:linear-gradient(to right,#1a1a6e,#5555cc,#888,#cc5555,#6e1a1a);margin:5px 0 2px;position:relative}
+.moral-needle{width:2px;height:9px;background:var(--gl);position:absolute;top:-2px;border-radius:1px;transition:left .5s}
+
+/* LOG */
+.log-box{background:var(--bg);border:1px solid var(--b1);border-radius:4px;padding:8px;height:150px;overflow-y:auto;font-size:11px}
+.ll{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ll .ts{color:var(--mt);margin-right:6px}
+.ll.ok .msg{color:var(--grn)}.ll.warn .msg{color:var(--gl)}.ll.err .msg{color:var(--red)}.ll.info .msg{color:var(--tx)}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--mt);padding:5px 8px;border-bottom:1px solid var(--b2);text-align:left;font-weight:normal}
+.tbl td{padding:5px 8px;border-bottom:1px solid var(--b1)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--s2)}
+.tbl .r{text-align:right}
+.tbl .c{text-align:center}
+
+/* BADGES */
+.badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:2px;letter-spacing:1px;text-transform:uppercase}
+.bc{background:var(--gbg);color:var(--grn)}
+.bp{background:var(--wbg);color:var(--gl)}
+.bh{background:rgba(91,143,212,0.15);color:var(--blu)}
+
+/* SCORE CELL */
+.sc-ok{color:var(--grn);font-weight:bold}
+.sc-med{color:var(--gl);font-weight:bold}
+.sc-bad{color:var(--red);font-weight:bold}
+
+/* SORT ARROW */
+.tbl th.sort{cursor:pointer;user-select:none}
+.tbl th.sort:hover{color:var(--tx)}
+.arr{margin-left:3px;opacity:.5}
+
+/* SEARCH */
+.search-box{display:flex;gap:8px;margin-bottom:10px}
+.search-box input{background:var(--s2);border:1px solid var(--b2);border-radius:4px;color:var(--tx);padding:5px 10px;font-family:inherit;font-size:12px;flex:1}
+.search-box input:focus{outline:none;border-color:var(--gold)}
+
+/* REFRESH RING */
+svg.ring{width:13px;height:13px}
+
+@media(max-width:700px){.g3,.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⚔ KnightFight Bot<small id="perfil-sub">—</small></div>
+  <div class="hr">
+    <span id="nxt">—</span>s
+    <svg class="ring" viewBox="0 0 13 13">
+      <circle cx="6.5" cy="6.5" r="5" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>
+      <circle id="ring" cx="6.5" cy="6.5" r="5" fill="none" stroke="var(--gold)" stroke-width="2"
+        stroke-dasharray="31.4" stroke-dashoffset="31.4" transform="rotate(-90 6.5 6.5)" style="transition:stroke-dashoffset .5s"/>
+    </svg>
+    <div class="dot off" id="sdot"></div>
+    <span id="stxt">Conectando...</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('geral')">Geral</div>
+  <div class="tab" onclick="showTab('pigs')">Pigs <span id="pig-badge" style="color:var(--gl)"></span></div>
+  <div class="tab" onclick="showTab('cache')">Ranking cache <span id="cache-badge" style="color:var(--mt)"></span></div>
+  <div class="tab" onclick="showTab('historico')">Histórico</div>
+</div>
+
+<!-- ══ ABA GERAL ══ -->
+<div class="tc active" id="tc-geral">
+  <div class="g3" style="margin-bottom:10px">
+    <div class="card" style="text-align:center">
+      <div class="ct">Missão / CD</div>
+      <div class="tval gold" id="t-missao">--:--</div>
+      <div class="tsub" id="t-missao-sub">—</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div class="ct">Próximo ataque</div>
+      <div class="tval grn" id="t-ataque">--:--</div>
+      <div class="tsub" id="t-ataque-sub">CD de 15min</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div class="ct">Imunidade</div>
+      <div class="tval grn" id="t-imun">--:--</div>
+      <div class="tsub" id="t-imun-sub">1h após último combate</div>
+    </div>
+  </div>
+
+  <div class="g3">
+    <div class="card">
+      <div class="ct">Combates</div>
+      <div class="row"><span class="rl">Total</span><span class="rv" id="cb">—</span></div>
+      <div class="row"><span class="rl">Vitórias</span><span class="rv gr" id="vt">—</span></div>
+      <div class="row"><span class="rl">Derrotas</span><span class="rv r" id="dt">—</span></div>
+      <div class="row" style="margin-top:6px"><span class="rl">Gold ganho PvP</span><span class="rv g" id="gg">—</span></div>
+      <div class="row"><span class="rl">Gold perdido PvP</span><span class="rv r" id="gp">—</span></div>
+      <div class="row"><span class="rl">Preciosidades</span><span class="rv g" id="pr">—</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ct">Personagem — Lv<span id="lv">?</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:1px">
+        <span style="color:var(--mt)">XP</span><span id="xp-txt">—</span>
+      </div>
+      <div class="bar"><div class="fill bxp" id="xp-b" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:1px;margin-top:6px">
+        <span style="color:var(--mt)">HP</span><span id="hp-txt">—</span>
+      </div>
+      <div class="bar"><div class="fill bhp" id="hp-b" style="width:0%"></div></div>
+      <div class="row" style="margin-top:8px"><span class="rl">Gold na conta</span><span class="rv g" id="gold-c">—</span></div>
+      <div class="row"><span class="rl">Pedras preciosas</span><span class="rv" id="gems-c">—</span></div>
+      <div class="row"><span class="rl">Moral</span><span class="rv" id="moral-txt">—</span></div>
+      <div class="moral-bar"><div class="moral-needle" id="moral-n" style="left:50%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--mt);margin-top:1px">
+        <span>Trevas</span><span>Neutro</span><span>Luz</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ct">Atributos</div>
+      <div id="skills-area"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="ct">Log do bot</div>
+    <div class="log-box" id="log-box"></div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--b1)">
+      <div class="ct" style="margin-bottom:6px">Estatísticas de hoje (ataques do bot)</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px" id="stats-dia">
+        <div style="text-align:center"><div style="color:var(--mt);font-size:10px">Ataques</div><div style="font-weight:bold" id="sd-atk">—</div></div>
+        <div style="text-align:center"><div style="color:var(--mt);font-size:10px">Vitórias</div><div style="font-weight:bold;color:var(--grn)" id="sd-vit">—</div></div>
+        <div style="text-align:center"><div style="color:var(--mt);font-size:10px">Derrotas</div><div style="font-weight:bold;color:var(--red)" id="sd-der">—</div></div>
+        <div style="text-align:center"><div style="color:var(--mt);font-size:10px">Gold ganho</div><div style="font-weight:bold;color:var(--gl)" id="sd-gg">—</div></div>
+        <div style="text-align:center"><div style="color:var(--mt);font-size:10px">Gold perdido</div><div style="font-weight:bold;color:var(--red)" id="sd-gp">—</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ABA PIGS ══ -->
+<div class="tc" id="tc-pigs">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="ct" style="margin-bottom:0">Lista de pigs — ordenada por gold esperado</div>
+      <span style="font-size:10px;color:var(--mt)" id="pig-updated">—</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl" id="pig-table">
+        <thead><tr>
+          <th>Nome</th>
+          <th class="c">Lv</th>
+          <th class="c">Status</th>
+          <th class="c sort" onclick="sortPigs('win_rate')">WR <span class="arr">↕</span></th>
+          <th class="c sort" onclick="sortPigs('score')">Score <span class="arr">↕</span></th>
+          <th class="r sort" onclick="sortPigs('gold_esp')">Gold esp. <span class="arr">↓</span></th>
+          <th class="c">Tentativas</th>
+          <th class="c">Na lista</th>
+          <th class="r">Atacado</th>
+          <th class="r">Gold ganho</th>
+          <th class="r">XP</th>
+        </tr></thead>
+        <tbody id="pig-tbody"><tr><td colspan="11" style="text-align:center;color:var(--mt);padding:20px">Aguardando dados...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ABA CACHE ══ -->
+<div class="tc" id="tc-cache">
+  <div class="card">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <div class="ct" style="margin-bottom:0">Cache de perfis — ordenado por score de vitória</div>
+      <span style="font-size:10px;color:var(--mt)" id="cache-updated">—</span>
+      <div class="search-box" style="flex:1;min-width:200px;margin-bottom:0">
+        <input type="text" id="cache-search" placeholder="Buscar por nome..." oninput="renderCache()">
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl" id="cache-table">
+        <thead><tr>
+          <th class="c">#</th>
+          <th>Nome</th>
+          <th class="c sort" onclick="sortCache('level')">Lv <span class="arr">↕</span></th>
+          <th class="c sort" onclick="sortCache('score')">Score <span class="arr">↓</span></th>
+          <th class="c">Força</th>
+          <th class="c">Resist.</th>
+          <th class="c">Agil.</th>
+          <th class="c sort" onclick="sortCache('arte_combate')">AC <span class="arr">↕</span></th>
+          <th class="c sort" onclick="sortCache('bloqueio')">Bloqueio <span class="arr">↕</span></th>
+          <th class="c">Equip.</th>
+          <th class="c">1 mão</th>
+          <th class="c">2 mãos</th>
+          <th class="c sort" onclick="sortCache('win_rate')">WR <span class="arr">↕</span></th>
+        </tr></thead>
+        <tbody id="cache-tbody"><tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Aguardando cache de perfis...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ABA HISTÓRICO ══ -->
+<div class="tc" id="tc-historico">
+  <div class="card">
+    <div class="ct">Últimos 20 Combates</div>
+    <div style="overflow-x:auto">
+      <table class="tbl" id="hist-table">
+        <thead><tr>
+          <th>Hora</th>
+          <th>Adversário</th>
+          <th class="c">Lv</th>
+          <th class="c">Resultado</th>
+          <th class="r">Gold</th>
+          <th class="r">XP</th>
+          <th class="c">Score prev.</th>
+          <th class="c">Score sim.</th>
+          <th class="r">Dano caus.</th>
+          <th class="r">Dano rec.</th>
+        </tr></thead>
+        <tbody id="hist-tbody"><tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Clique em Histórico para carregar...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+var REFRESH=30, rfCount=REFRESH, rfInt=null;
+var timers={};
+var dadosGlobal={};
+var pigSortKey='gold_esp', pigSortDir=-1;
+var cacheSortKey='score', cacheSortDir=-1;
+
+function showTab(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active',['geral','pigs','cache','historico'][i]===id);
+  });
+  document.querySelectorAll('.tc').forEach(c=>{
+    c.classList.toggle('active',c.id==='tc-'+id);
+  });
+}
+
+function renderHistorico(combates){
+  if(!combates || !combates.length){
+    document.getElementById('hist-tbody').innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
+    return;
+  }
+  var rows = combates.slice().reverse().map(function(c){
+    var ts = c.ts ? new Date(c.ts).toLocaleTimeString('pt-BR') : '—';
+    var res = c.resultado==='vitoria'
+      ? '<span style="color:var(--green2);font-weight:bold">✓ Vitória</span>'
+      : '<span style="color:#e08080;font-weight:bold">✗ Derrota</span>';
+    var gold = c.gold>0 ? '<span style="color:var(--gold)">+'+c.gold+'g</span>'
+             : c.gold<0 ? '<span style="color:#e08080">'+c.gold+'g</span>' : '—';
+    var sc_prev = c.score_previsto>0 ? '<span class="'+scoreClass(c.score_previsto)+'">'+c.score_previsto+'</span>' : '—';
+    var sc_sim  = c.score_sim>0 ? '<span class="'+scoreClass(c.score_sim)+'">'+c.score_sim+'</span>' : '—';
+    return '<tr>'+
+      '<td style="font-size:11px;color:var(--muted)">'+ts+'</td>'+
+      '<td>'+(c.adv_nome||'?')+'</td>'+
+      '<td class="c">'+(c.adv_lv||'?')+'</td>'+
+      '<td class="c">'+res+'</td>'+
+      '<td class="r">'+gold+'</td>'+
+      '<td class="r">'+(c.xp||0)+'</td>'+
+      '<td class="c">'+sc_prev+'</td>'+
+      '<td class="c">'+sc_sim+'</td>'+
+      '<td class="r">'+(c.dano_causado||'—')+'</td>'+
+      '<td class="r">'+(c.dano_recebido||'—')+'</td>'+
+    '</tr>';
+  });
+  document.getElementById('hist-tbody').innerHTML = rows.join('');
+}
+
+function fmt(n){return Number(n||0).toLocaleString('pt-BR');}
+function fmtT(s){
+  s=Math.max(0,Math.floor(s));
+  if(s<=0) return '00:00';
+  var h=Math.floor(s/3600),r=s%3600,m=Math.floor(r/60),sc=r%60;
+  if(h>0) return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+'h';
+  return String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');
+}
+function fmtAge(iso){
+  if(!iso) return '—';
+  var h=((Date.now()-new Date(iso).getTime())/3600000);
+  if(h<1) return Math.round(h*60)+'min';
+  return h.toFixed(1)+'h';
+}
+function scoreClass(s){return s>=60?'sc-ok':s>=40?'sc-med':'sc-bad';}
+
+function startTimer(id,isoEnd,elId,colorFn){
+  clearInterval(timers[id]);
+  if(!isoEnd){document.getElementById(elId).textContent='--:--';return;}
+  var end=new Date(isoEnd).getTime();
+  function tick(){
+    var diff=(end-Date.now())/1000;
+    var el=document.getElementById(elId);
+    el.textContent=diff<=0?'00:00':fmtT(diff);
+    if(colorFn) colorFn(el,diff);
+    if(diff<=0) clearInterval(timers[id]);
+  }
+  tick(); timers[id]=setInterval(tick,1000);
+}
+
+function fetchDados(){
+  fetch('http://'+location.hostname+':'+location.port+'/dados')
+    .then(r=>{if(!r.ok) throw 0; return r.json();})
+    .then(d=>{
+      document.getElementById('sdot').className='dot on';
+      document.getElementById('stxt').textContent='Online';
+      dadosGlobal=d;
+      render(d);
+    })
+    .catch(()=>{
+      document.getElementById('sdot').className='dot off';
+      document.getElementById('stxt').textContent='Offline';
+      addLog('err','Servidor offline — python bot.py');
+    });
+}
+
+function fetchCache(){
+  fetch('http://'+location.hostname+':'+location.port+'/cache')
+    .then(r=>{if(!r.ok) throw 0; return r.json();})
+    .then(d=>{
+      dadosGlobal.cacheData=d;
+      renderCache();
+    }).catch(()=>{});
+}
+
+function fetchLog(){
+  fetch('http://'+location.hostname+':'+location.port+'/log')
+    .then(r=>r.text())
+    .then(txt=>{
+      var lines=txt.trim().split('\n').slice(-30);
+      var box=document.getElementById('log-box');
+      box.innerHTML='';
+      lines.forEach(function(line){
+        if(!line) return;
+        var tipo=line.includes('[ERROR]')?'err':line.includes('[WARNING]')?'warn':
+                 (line.includes('⚔')||line.includes('iniciada')||line.includes('Imunidade'))?'ok':'info';
+        var d=document.createElement('div');
+        d.className='ll '+tipo;
+        var msg=line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[.*?\] /,'');
+        d.innerHTML='<span class="ts">'+line.substring(11,19)+'</span><span class="msg">'+msg+'</span>';
+        box.appendChild(d);
+      });
+      box.scrollTop=box.scrollHeight;
+    }).catch(()=>{});
+}
+
+var MY_LV = 22; // Updated dynamically
+function render(d){
+  var ciclo=d.ciclo||{};
+  var s=ciclo.status||d.status||{};
+  // Atualiza título com perfil e servidor
+  var pf=ciclo.perfil||{};
+  if(pf.nome||pf.servidor){
+    var sub=(pf.nome||'').replace(/_/g,' ')+' — '+(pf.servidor||'');
+    document.getElementById('perfil-sub').textContent=sub;
+    document.title='KnightFight Bot — '+(pf.nome||pf.servidor||'');
+  }
+  var estado=d.estado||ciclo.estado||{};
+  if(s.level) MY_LV = s.level;
+  var missao=ciclo.missao||d.missao||{};
+  var pigs=ciclo.pig_list||d.pig_list||{};
+
+  // Level, XP, HP
+  document.getElementById('lv').textContent=s.level||'?';
+  var xpP=s.xp_total>0?Math.round(s.xp_atual/s.xp_total*100):0;
+  document.getElementById('xp-txt').textContent=fmt(s.xp_atual)+' / '+fmt(s.xp_total)+' ('+xpP+'%)';
+  document.getElementById('xp-b').style.width=xpP+'%';
+  var hpP=s.hp_total>0?Math.round((s.hp_atual||0)/s.hp_total*100):0;
+  document.getElementById('hp-txt').textContent=fmt(s.hp_atual||0)+' / '+fmt(s.hp_total)+' ('+hpP+'%)';
+  document.getElementById('hp-b').style.width=hpP+'%';
+
+  // Gold, moral
+  var gc = s.gold_conta||estado.gold_atual||0;
+  var gems = s.gems||estado.gems||0;
+  document.getElementById('gold-c').textContent=fmt(gc)+'g';
+  document.getElementById('gems-c').textContent=gems+' 💎';
+
+  // Stats do dia
+  var sd=estado.stats_dia||{};
+  document.getElementById('sd-atk').textContent=sd.ataques||0;
+  document.getElementById('sd-vit').textContent=sd.vitorias||0;
+  document.getElementById('sd-der').textContent=sd.derrotas||0;
+  document.getElementById('sd-gg').textContent=fmt(sd.gold_ganho||0)+'g';
+  document.getElementById('sd-gp').textContent=fmt(sd.gold_perdido||0)+'g';
+  // Colore vermelho se perdeu gold
+  var sdGpEl=document.getElementById('sd-gp');
+  sdGpEl.style.color=(sd.gold_perdido||0)>0?'var(--red)':'var(--mt)';
+  var moral=s.moral||'';
+  document.getElementById('moral-txt').textContent=moral||'—';
+  var pos=50;
+  if(moral.toLowerCase().includes('luz')) pos=Math.min(95,70+(moral.match(/\d+/)||[0])[0]/100);
+  else if(moral.toLowerCase().includes('sombra')) pos=Math.max(5,30-(moral.match(/\d+/)||[0])[0]/100);
+  document.getElementById('moral-n').style.left=pos+'%';
+
+  // Combates
+  var wr=s.combates>0?(s.vitorias/s.combates*100).toFixed(1):0;
+  document.getElementById('cb').textContent=fmt(s.combates);
+  document.getElementById('vt').textContent=fmt(s.vitorias);
+  document.getElementById('dt').textContent=fmt(s.derrotas);
+
+  document.getElementById('gg').textContent=fmt(s.gold_ganho)+'g';
+  document.getElementById('gp').textContent=fmt(s.gold_perdido)+'g';
+  document.getElementById('pr').textContent=fmt(s.preciosidades)+'g';
+
+  // Skills
+  var sks=[
+    {n:'Força',        v:s.forca||0,       mx:200},
+    {n:'Resistência',  v:s.resistencia||0, mx:200},
+    {n:'Agilidade',    v:s.agilidade||0,   mx:100},
+    {n:'Arte combate', v:s.arte_combate||0,mx:200},
+    {n:'Bloqueio',     v:s.bloqueio||0,    mx:200},
+    {n:'Equipamento',  v:s.sk_armadura||0, mx:300},
+    {n:'Skill 1 mão',  v:s.sk_1mao||0,     mx:300},
+    {n:'Skill 2 mãos', v:s.sk_2maos||0,    mx:300},
+  ];
+  document.getElementById('skills-area').innerHTML=sks.map(sk=>{
+    var p=Math.min(100,Math.round(sk.v/sk.mx*100));
+    return '<div class="sk"><span class="skn">'+sk.n+'</span>'+
+      '<div class="skb"><div class="skf" style="width:'+p+'%"></div></div>'+
+      '<span class="skv">'+sk.v+'</span></div>';
+  }).join('');
+
+  // TIMERS
+  if(missao.termina_em){
+    var sub=missao.status==='em_cd'?'CD ativo':missao.status==='iniciada'?'Missão ativa':missao.status||'';
+    if(missao.minutos_hoje!=null) sub+=' | '+missao.minutos_hoje+'/'+(missao.limite||60)+'min';
+    document.getElementById('t-missao-sub').textContent=sub;
+    startTimer('m',missao.termina_em,'t-missao',(el,d)=>{
+      el.className='tval '+(d<=0?'grn':d<120?'warn':'gold');
+    });
+  } else {
+    document.getElementById('t-missao').textContent='—';
+    var limiteMin = missao.limite || (estado.is_premium ? 120 : 60);
+    document.getElementById('t-missao-sub').textContent=(missao.minutos_hoje||0)+'/'+limiteMin+'min hoje'+(estado.is_premium?' (Premium)':'');
+  }
+
+  var ult=estado.ultimo_ataque;
+  var cdSeg = (estado.cooldown_seg || 900);
+  var cdMin = Math.round(cdSeg/60);
+  document.getElementById('t-ataque-sub').textContent='CD de '+cdMin+'min'+(estado.is_premium?' (Premium)':'');
+  if(ult){
+    var cdFim=new Date(new Date(ult).getTime()+cdSeg*1000).toISOString();
+    startTimer('a',cdFim,'t-ataque',(el,d)=>{
+      el.className='tval '+(d<=0?'grn':d<180?'warn':'grn');
+      document.getElementById('t-ataque-sub').textContent=d<=0?'✓ Livre para atacar!':'CD de '+cdMin+'min'+(estado.is_premium?' (Premium)':'');
+    });
+  } else {
+    document.getElementById('t-ataque').textContent='—';
+  }
+
+  if(estado.imunidade_ate){
+    startTimer('i',estado.imunidade_ate,'t-imun',(el,d)=>{
+      if(d<=0){el.className='tval red';el.textContent='EXPIRADA';document.getElementById('t-imun-sub').textContent='⚠ Vulnerável!';}
+      else{el.className='tval '+(d<600?'warn':'grn');document.getElementById('t-imun-sub').textContent=d<600?'⚠ Renovando em breve':'Protegido ✓';}
+    });
+  } else {
+    document.getElementById('t-imun').textContent='⚠';
+    document.getElementById('t-imun').className='tval red';
+    document.getElementById('t-imun-sub').textContent='Sem imunidade';
+  }
+
+  // Pigs
+  if(d.historico) renderHistorico(d.historico);
+  renderPigs(pigs);
+}
+
+function calcGoldEsp(p){
+  // Usa gold_esperado calculado pelo bot (delta/derrotas ou prec*10%)
+  if(p.gold_esperado!=null && p.gold_esperado>0) return p.gold_esperado;
+  // Fallback legado
+  if(p.delta_ouro_perdido>0 && p.delta_derrotas>0)
+    return Math.round(p.delta_ouro_perdido/p.delta_derrotas);
+  if(p.delta_ouro_perdido>0) return p.delta_ouro_perdido;
+  if(p.delta_prec>0) return Math.round(p.delta_prec*0.1);
+  return 0;
+}
+
+function sortPigs(key){
+  if(pigSortKey===key) pigSortDir*=-1;
+  else{pigSortKey=key;pigSortDir=-1;}
+  renderPigs(dadosGlobal.ciclo&&dadosGlobal.ciclo.pig_list||dadosGlobal.pig_list||{});
+}
+
+function renderPigs(pigs){
+  var keys=Object.keys(pigs||{});
+  var ativos=keys.filter(k=>pigs[k].status!=='atacado');
+  var hist=keys.filter(k=>pigs[k].status==='atacado');
+  document.getElementById('pig-badge').textContent=ativos.length?'('+ativos.length+')':'';
+  document.getElementById('pig-updated').textContent=new Date().toLocaleTimeString('pt-BR');
+
+  // Monta rows com gold esperado
+  var rows=keys.map(uid=>{
+    var p=pigs[uid]; var ge=calcGoldEsp(p);
+    var sc=p.score_cache;
+    return{uid,p,ge,sc};
+  });
+
+  // Sort
+  rows.sort((a,b)=>{
+    var va,vb;
+    if(pigSortKey==='gold_esp'){va=a.ge;vb=b.ge;}
+    else if(pigSortKey==='win_rate'){va=a.p.win_rate||0;vb=b.p.win_rate||0;}
+    else if(pigSortKey==='score'){va=a.sc||0;vb=b.sc||0;}
+    else{va=0;vb=0;}
+    return(va-vb)*pigSortDir;
+  });
+
+  // Ativos primeiro, histórico depois
+  var atRo=rows.filter(r=>r.p.status!=='atacado');
+  var hiRo=rows.filter(r=>r.p.status==='atacado');
+  var sorted=[...atRo,...hiRo];
+
+  if(!sorted.length){
+    document.getElementById('pig-tbody').innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--mt);padding:20px">Nenhum pig identificado ainda</td></tr>';
+    return;
+  }
+
+  document.getElementById('pig-tbody').innerHTML=sorted.map(({uid,p,ge,sc})=>{
+    var isHist=p.status==='atacado';
+    var catBadge=isHist
+      ?'<span class="badge bh">Atacado</span>'
+      :p.categoria==='PIG_CONFIRMADO'
+        ?'<span class="badge bc">Conf.</span>'
+        :'<span class="badge bp">Prov.</span>';
+    var scEl=sc!=null?'<span class="'+scoreClass(sc)+'">'+sc+'</span>':'—';
+    var ataEl=isHist?new Date(p.atacado_em).toLocaleTimeString('pt-BR'):'—';
+    var goldEl=isHist&&p.gold_ganho!=null
+      ?'<span class="rv '+(p.gold_ganho>0?'g':'mt')+'">'+fmt(p.gold_ganho)+'g</span>'
+      :'—';
+    var xpEl=isHist&&p.xp_ganho!=null
+      ?(p.xp_ganho>0?'<span class="rv g">+'+p.xp_ganho+'</span>':'0')
+      :'—';
+    var geEl=ge>0?'<span class="rv g">~'+fmt(ge)+'g</span>':'?';
+    var tr='<tr style="'+(isHist?'opacity:.55':'')+'">'+
+      '<td>'+p.nome+catBadge+'</td>'+
+      '<td class="c">'+p.level+'</td>'+
+      '<td class="c">'+catBadge.replace(/<[^>]+>/g,'').trim()+'</td>'+
+      '<td class="c '+(p.win_rate<50?'sc-ok':p.win_rate<65?'':'sc-bad')+'">'+p.win_rate+'%</td>'+
+      '<td class="c">'+scEl+'</td>'+
+      '<td class="r">'+geEl+'</td>'+
+      '<td class="c">'+p.tentativas+'</td>'+
+      '<td class="c">'+fmtAge(p.detectado_em)+'</td>'+
+      '<td class="r">'+ataEl+'</td>'+
+      '<td class="r">'+goldEl+'</td>'+
+      '<td class="r">'+xpEl+'</td>'+
+    '</tr>';
+    return tr;
+  }).join('');
+}
+
+function sortCache(key){
+  if(cacheSortKey===key) cacheSortDir*=-1;
+  else{cacheSortKey=key;cacheSortDir=-1;}
+  renderCache();
+}
+
+function renderCache(){
+  var data=dadosGlobal.cacheData;
+  if(!data||!data.perfis){
+    document.getElementById('cache-tbody').innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Cache não coletado — aguarde ou rode: python bot.py cache</td></tr>';
+    return;
+  }
+
+  if(data.atualizado_em){
+    document.getElementById('cache-updated').textContent='Atualizado: '+new Date(data.atualizado_em).toLocaleString('pt-BR');
+  }
+
+  var search=(document.getElementById('cache-search').value||'').toLowerCase();
+  var entries=Object.values(data.perfis).filter(p=>{
+    if(!p||!p.nome) return false;
+    if(search && !p.nome.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  // Calcula score para cada perfil do cache
+  entries.forEach(p=>{
+    if(p._score==null){
+      var ac=p.arte_combate||0, blq=p.bloqueio||0;
+      var myAC=71, myBlq=71, myFrc=51, myLv=22;
+      var score=50;
+      if(blq>0){var t=myAC/(myAC+blq);if(t<0.35)score-=40;else if(t<0.50)score-=20;else score+=20;}
+      if(ac>0){var t2=ac/(ac+myBlq);if(t2>0.65)score-=20;else if(t2<0.45)score+=15;}
+      if((p.resistencia||0)>200) score-=15;
+      if((p.forca||0)>myFrc*1.8) score-=15; else if((p.forca||0)>0&&(p.forca||0)<myFrc*0.6) score+=10;
+      var dlv=(p.level||0)-myLv;
+      if(dlv>10)score-=20;else if(dlv>5)score-=8;else if(dlv<-5)score+=5;
+      p._score=Math.max(0,Math.min(100,score));
+    }
+  });
+
+  // Sort
+  entries.sort((a,b)=>{
+    var va,vb;
+    if(cacheSortKey==='score'){va=a._score;vb=b._score;}
+    else if(cacheSortKey==='level'){va=a.level||0;vb=b.level||0;}
+    else if(cacheSortKey==='win_rate'){va=a.win_rate_ranking||0;vb=b.win_rate_ranking||0;}
+    else if(cacheSortKey==='arte_combate'){va=a.arte_combate||0;vb=b.arte_combate||0;}
+    else if(cacheSortKey==='bloqueio'){va=a.bloqueio||0;vb=b.bloqueio||0;}
+    else{va=0;vb=0;}
+    return(va-vb)*cacheSortDir;
+  });
+
+  document.getElementById('cache-badge').textContent='('+entries.length+')';
+
+  if(!entries.length){
+    document.getElementById('cache-tbody').innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Nenhum resultado</td></tr>';
+    return;
+  }
+
+  document.getElementById('cache-tbody').innerHTML=entries.map((p,i)=>{
+    var sc=p._score;
+    var myLv=MY_LV;
+    var dlv=(p.level||0)-myLv;
+    var lvColor=dlv>7?'var(--red)':dlv>3?'var(--gold)':dlv<-3?'var(--grn)':'';
+    var scCls=scoreClass(sc);
+    var wr=p.win_rate_ranking||0;
+    var wrCls=wr<30?'sc-ok':wr>60?'sc-bad':'';
+    var arm=p.sk_armadura||0;
+    var s1=p.sk_1mao||0;
+    var s2=p.sk_2maos||0;
+    return '<tr>'+
+      '<td class="c" style="color:var(--mt)">'+i+'</td>'+
+      '<td>'+p.nome+'</td>'+
+      '<td class="c" style="color:'+lvColor+'">'+p.level+'</td>'+
+      '<td class="c"><span class="'+scCls+'">'+sc+'</span></td>'+
+      '<td class="c">'+p.forca+'</td>'+
+      '<td class="c">'+p.resistencia+'</td>'+
+      '<td class="c">'+p.agilidade+'</td>'+
+      '<td class="c">'+p.arte_combate+'</td>'+
+      '<td class="c">'+p.bloqueio+'</td>'+
+      '<td class="c">'+(arm>0?arm:'—')+'</td>'+
+      '<td class="c">'+(s1>0?s1:'—')+'</td>'+
+      '<td class="c">'+(s2>0?s2:'—')+'</td>'+
+      '<td class="c '+(wrCls)+'">'+wr+'%</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function addLog(tipo,msg){
+  var box=document.getElementById('log-box');
+  var d=document.createElement('div');
+  d.className='ll '+tipo;
+  d.innerHTML='<span class="ts">'+new Date().toLocaleTimeString('pt-BR')+'</span><span class="msg">'+msg+'</span>';
+  box.appendChild(d);
+  box.scrollTop=box.scrollHeight;
+  if(box.children.length>80) box.removeChild(box.children[0]);
+}
+
+function startRefresh(){
+  rfCount=REFRESH; clearInterval(rfInt);
+  rfInt=setInterval(()=>{
+    rfCount--;
+    document.getElementById('nxt').textContent=rfCount;
+    document.getElementById('ring').setAttribute('stroke-dashoffset',31.4*(1-(REFRESH-rfCount)/REFRESH));
+    if(rfCount<=0){rfCount=REFRESH;fetchDados();fetchLog();fetchCache();}
+  },1000);
+}
+
+addLog('info','Dashboard iniciado');
+fetchDados(); fetchLog(); fetchCache();
+startRefresh();
+</script>
+</body>
+</html>

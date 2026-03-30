@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KnightFight Bot</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+
+:root {
+  --bg: #0a0907;
+  --surface: #111009;
+  --surface2: #1a1710;
+  --surface3: #221f14;
+  --border: rgba(180,140,60,0.15);
+  --border2: rgba(180,140,60,0.3);
+  --gold: #c8943a;
+  --gold2: #f0c060;
+  --gold3: #e8a840;
+  --red: #c04040;
+  --green: #508050;
+  --green2: #70b070;
+  --text: #e0d8c8;
+  --muted: #806858;
+  --glow: rgba(200,148,58,0.15);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Crimson Text', Georgia, serif;
+  font-size: 15px;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(180,120,30,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(100,60,20,0.06) 0%, transparent 50%);
+}
+
+/* -- HEADER -- */
+header {
+  padding: 28px 36px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(180deg, rgba(180,140,60,0.05) 0%, transparent 100%);
+}
+.logo-icon { font-size: 32px; line-height:1; }
+.logo-text { font-family:'Cinzel',serif; }
+.logo-text h1 { font-size:20px; color:var(--gold2); letter-spacing:3px; font-weight:700; }
+.logo-text p { font-size:11px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; margin-top:2px; }
+.header-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+.version { font-size:11px; color:var(--muted); }
+.update-badge {
+  font-size:10px; padding:3px 10px; border-radius:2px;
+  background:rgba(200,148,58,0.15); color:var(--gold3);
+  border:1px solid rgba(200,148,58,0.3); cursor:pointer;
+  font-family:'Cinzel',serif; letter-spacing:1px;
+  text-decoration:none; display:none;
+}
+.update-badge.show { display:inline-block; }
+
+/* -- LAYOUT -- */
+.container { padding: 28px 36px; max-width: 1100px; }
+.section-title {
+  font-family:'Cinzel',serif; font-size:11px; letter-spacing:3px;
+  text-transform:uppercase; color:var(--muted); margin-bottom:16px;
+  display:flex; align-items:center; gap:10px;
+}
+.section-title::after {
+  content:''; flex:1; height:1px; background:var(--border);
+}
+
+/* -- PROFILE CARDS -- */
+.profiles-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-bottom:32px; }
+
+.profile-card {
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:4px;
+  overflow:hidden;
+  transition: border-color .2s, transform .15s;
+  position:relative;
+}
+.profile-card:hover { border-color:var(--border2); transform:translateY(-1px); }
+.profile-card.running { border-color:rgba(80,128,80,0.4); }
+.profile-card.running::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, transparent, var(--green2), transparent);
+  animation: scanline 3s linear infinite;
+}
+@keyframes scanline { 0%{opacity:0.3} 50%{opacity:1} 100%{opacity:0.3} }
+
+.card-header {
+  padding:14px 16px 10px;
+  display:flex; align-items:center; gap:10px;
+  border-bottom:1px solid var(--border);
+}
+.server-badge {
+  font-family:'Cinzel',serif; font-size:9px; letter-spacing:2px;
+  padding:2px 7px; border-radius:2px; text-transform:uppercase;
+  background:rgba(200,148,58,0.1); color:var(--gold); border:1px solid var(--border2);
+}
+.profile-name {
+  font-family:'Cinzel',serif; font-size:14px; color:var(--gold2); font-weight:600;
+  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.status-dot {
+  width:7px; height:7px; border-radius:50%; flex-shrink:0;
+  background:var(--muted);
+}
+.status-dot.on { background:var(--green2); box-shadow:0 0 6px var(--green2); animation:pulse 2s infinite; }
+.status-dot.off { background:var(--muted); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.card-body { padding:12px 16px; }
+.card-info { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px; }
+.info-item { }
+.info-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+.info-val { font-size:13px; color:var(--text); }
+
+.log-preview {
+  background:var(--bg); border:1px solid var(--border); border-radius:3px;
+  padding:7px 9px; font-family:'Courier New',monospace; font-size:10px;
+  color:var(--muted); height:52px; overflow:hidden; margin-bottom:12px;
+  line-height:1.5;
+}
+.log-preview .log-ok { color:var(--green2); }
+.log-preview .log-warn { color:var(--gold3); }
+.log-preview .log-err { color:var(--red); }
+
+.card-actions { display:flex; gap:8px; }
+.btn {
+  font-family:'Cinzel',serif; font-size:10px; letter-spacing:1px; text-transform:uppercase;
+  padding:6px 14px; border-radius:3px; border:1px solid; cursor:pointer;
+  transition: all .15s; white-space:nowrap;
+}
+.btn-start {
+  background:rgba(80,128,80,0.15); color:var(--green2); border-color:rgba(80,128,80,0.3);
+  flex:1;
+}
+.btn-start:hover { background:rgba(80,128,80,0.25); }
+.btn-stop {
+  background:rgba(192,64,64,0.12); color:#e08080; border-color:rgba(192,64,64,0.25);
+  flex:1;
+}
+.btn-stop:hover { background:rgba(192,64,64,0.22); }
+.btn-dash {
+  background:rgba(200,148,58,0.1); color:var(--gold); border-color:var(--border2);
+}
+.btn-dash:hover { background:rgba(200,148,58,0.2); }
+.btn-del {
+  background:transparent; color:var(--muted); border-color:var(--border);
+  padding:6px 10px;
+}
+.btn-del:hover { color:#e08080; border-color:rgba(192,64,64,0.3); }
+
+/* -- NEW PROFILE CARD -- */
+.add-card {
+  background:var(--surface); border:1px dashed var(--border);
+  border-radius:4px; padding:28px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:10px;
+  cursor:pointer; transition:all .2s; min-height:180px;
+}
+.add-card:hover { border-color:var(--border2); background:var(--surface2); }
+.add-icon { font-size:28px; color:var(--muted); }
+.add-label { font-family:'Cinzel',serif; font-size:11px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; }
+
+/* -- MODAL -- */
+.modal-backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(4px); opacity:0; pointer-events:none;
+  transition:opacity .2s;
+}
+.modal-backdrop.show { opacity:1; pointer-events:all; }
+.modal {
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:6px; width:520px; max-width:95vw; max-height:90vh;
+  overflow-y:auto; padding:28px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(200,148,58,0.05);
+  transform:translateY(10px); transition:transform .2s;
+}
+.modal-backdrop.show .modal { transform:translateY(0); }
+.modal-title {
+  font-family:'Cinzel',serif; font-size:16px; color:var(--gold2);
+  font-weight:600; margin-bottom:20px; letter-spacing:1px;
+}
+.form-group { margin-bottom:16px; }
+.form-label {
+  display:block; font-size:10px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--muted); margin-bottom:6px;
+}
+.form-input, .form-select {
+  width:100%; background:var(--surface2); border:1px solid var(--border2);
+  border-radius:3px; color:var(--text); padding:9px 12px;
+  font-family:'Crimson Text',serif; font-size:14px;
+  transition:border-color .15s;
+}
+.form-input:focus, .form-select:focus {
+  outline:none; border-color:var(--gold);
+}
+.form-input::placeholder { color:var(--muted); }
+.form-hint { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic; }
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.btn-primary {
+  width:100%; padding:10px; font-family:'Cinzel',serif; font-size:11px;
+  letter-spacing:2px; text-transform:uppercase; border:1px solid var(--gold);
+  background:rgba(200,148,58,0.15); color:var(--gold2); border-radius:3px;
+  cursor:pointer; margin-top:8px; transition:all .15s;
+}
+.btn-primary:hover { background:rgba(200,148,58,0.25); }
+.btn-secondary {
+  width:100%; padding:9px; font-family:'Cinzel',serif; font-size:10px;
+  letter-spacing:2px; text-transform:uppercase; border:1px solid var(--border2);
+  background:transparent; color:var(--muted); border-radius:3px;
+  cursor:pointer; margin-top:6px; transition:all .15s;
+}
+.btn-secondary:hover { color:var(--text); border-color:var(--border2); }
+
+/* Cookie capture */
+.capture-box {
+  background:var(--surface2); border:1px solid var(--border); border-radius:3px;
+  padding:12px 14px; margin-bottom:12px;
+}
+.capture-status { font-size:12px; color:var(--muted); font-style:italic; }
+.capture-status.ok { color:var(--green2); font-style:normal; }
+.capture-status.err { color:#e08080; }
+.capture-status.loading::after {
+  content:''; display:inline-block; width:10px; animation: dots 1.2s infinite;
+}
+@keyframes dots {
+  0%{content:'.'} 33%{content:'..'} 66%{content:'...'} 100%{content:'.'}
+}
+
+.btn-capture {
+  width:100%; padding:9px; font-family:'Cinzel',serif; font-size:10px;
+  letter-spacing:2px; text-transform:uppercase;
+  border:1px solid rgba(200,148,58,0.3); background:rgba(200,148,58,0.08);
+  color:var(--gold); border-radius:3px; cursor:pointer; transition:all .15s;
+}
+.btn-capture:hover { background:rgba(200,148,58,0.16); }
+.btn-capture:disabled { opacity:.4; cursor:not-allowed; }
+
+/* Log modal */
+.log-full {
+  background:var(--bg); border:1px solid var(--border); border-radius:3px;
+  padding:10px; font-family:'Courier New',monospace; font-size:11px;
+  max-height:400px; overflow-y:auto; line-height:1.6;
+}
+.log-full .lline { display:block; }
+.log-full .ok { color:var(--green2); }
+.log-full .warn { color:var(--gold3); }
+.log-full .err { color:#e08080; }
+.log-full .info { color:var(--muted); }
+
+/* Toast */
+.toast {
+  position:fixed; bottom:24px; right:24px; z-index:200;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:4px; padding:12px 18px; font-size:13px;
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  opacity:0; transform:translateY(8px); transition:all .2s; pointer-events:none;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+.toast.ok { border-left:3px solid var(--green2); }
+.toast.err { border-left:3px solid var(--red); }
+
+.bg-section{border-top:1px solid var(--border);margin-top:8px;padding-top:8px;}
+.bg-label{font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.bg-btns{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.bg-modo-sel{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:11px;flex:1;min-width:120px;}
+.btn-bg{background:linear-gradient(135deg,#4a3a1a,#6b5420);color:var(--gold);border:1px solid var(--gold);padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;}
+.btn-bg:hover{background:linear-gradient(135deg,#6b5420,#8a6b2a);}
+.taverna-badge{background:linear-gradient(135deg,#2a1f0a,#3d2e10);border:1px solid #8a6b2a;color:#e8c96a;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;}
+.taverna-icon{font-size:14px;}
+.taverna-timer{font-weight:500;font-size:12px;color:#ffd97d;margin-left:auto;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">*</div>
+  <div class="logo-text">
+    <h1>KnightFight Bot</h1>
+    <p>Launcher - Gerenciador de Perfis</p>
+  </div>
+  <div class="header-right">
+    <span id="user-info" style="font-size:11px;color:var(--muted);margin-right:12px"></span>
+    <button class="btn-secondary" id="btn-users" onclick="openUsersModal()" style="font-size:10px;padding:4px 10px;margin-right:6px">Usuários</button>
+    <button class="btn-secondary" id="btn-logout" onclick="logout()" style="font-size:10px;padding:4px 10px;color:var(--red);display:none">Sair</button>
+    <span class="version" id="ver">v1.0.0</span>
+    <button class="update-badge" id="update-badge" onclick="doUpdate()">
+      ^ Atualização disponível - clique para instalar
+    </button>
+
+  </div>
+</header>
+
+<div class="container">
+  <div class="section-title">Perfis</div>
+  <div class="profiles-grid" id="profiles-grid">
+    <div style="color:var(--muted);font-style:italic;padding:20px;font-size:13px">Carregando...</div>
+  </div>
+</div>
+
+<!-- Modal novo perfil -->
+<div class="modal-backdrop" id="modal-new">
+  <div class="modal">
+    <div class="modal-title">* Novo Perfil</div>
+
+    <div class="capture-box">
+      <div style="font-size:12px;color:var(--text);margin-bottom:8px">
+        <strong>Login automático</strong> - abre o browser, faça login e o bot captura o cookie sozinho
+      </div>
+      <select class="form-select" id="cap-server" style="margin-bottom:8px" onchange="toggleCustomServer('cap')">
+        
+        <optgroup label="International">
+          <option value="int1">int1</option>
+          <option value="int2">int2</option>
+          <option value="int3">int3</option>
+          <option value="int4">int4</option>
+          <option value="int5">int5</option>
+          <option value="int6">int6</option>
+          <option value="int7" selected>int7</option>
+        </optgroup>
+        <optgroup label="Brasil">
+          <option value="br1">br1</option>
+          <option value="br2">br2</option>
+          <option value="br3">br3</option>
+        </optgroup>
+        <optgroup label="Portugal">
+          <option value="pt1">pt1</option>
+          <option value="pt2">pt2</option>
+        </optgroup>
+        <optgroup label="Deutsch">
+          <option value="de1">de1</option>
+          <option value="de2">de2</option>
+          <option value="de3">de3</option>
+        </optgroup>
+        <optgroup label="França">
+          <option value="fr1">fr1</option>
+          <option value="fr2">fr2</option>
+        </optgroup>
+        <optgroup label="Espanha">
+          <option value="es1">es1</option>
+          <option value="es2">es2</option>
+        </optgroup>
+        <optgroup label="Outro">
+          <option value="custom">Outro (digitar abaixo)</option>
+        </optgroup>
+      </select>
+      <input class="form-input" id="cap-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-bottom:8px">
+      <button class="btn-capture" id="btn-capture" onclick="captureCookie()">
+        [web] Abrir browser e capturar cookie automaticamente
+      </button>
+      <div class="capture-status" id="cap-status" style="margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nome do perfil</label>
+        <input class="form-input" id="f-name" placeholder="ex: bohrer_int7">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Servidor</label>
+        <select class="form-select" id="f-server" onchange="toggleCustomServer('f')">
+          
+        <optgroup label="International">
+          <option value="int1">int1</option>
+          <option value="int2">int2</option>
+          <option value="int3">int3</option>
+          <option value="int4">int4</option>
+          <option value="int5">int5</option>
+          <option value="int6">int6</option>
+          <option value="int7" selected>int7</option>
+        </optgroup>
+        <optgroup label="Brasil">
+          <option value="br1">br1</option>
+          <option value="br2">br2</option>
+          <option value="br3">br3</option>
+        </optgroup>
+        <optgroup label="Portugal">
+          <option value="pt1">pt1</option>
+          <option value="pt2">pt2</option>
+        </optgroup>
+        <optgroup label="Deutsch">
+          <option value="de1">de1</option>
+          <option value="de2">de2</option>
+          <option value="de3">de3</option>
+        </optgroup>
+        <optgroup label="França">
+          <option value="fr1">fr1</option>
+          <option value="fr2">fr2</option>
+        </optgroup>
+        <optgroup label="Espanha">
+          <option value="es1">es1</option>
+          <option value="es2">es2</option>
+        </optgroup>
+        <optgroup label="Outro">
+          <option value="custom">Outro (digitar abaixo)</option>
+        </optgroup>
+        </select>
+        <input class="form-input" id="f-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-top:4px">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">UserID</label>
+        <input class="form-input" id="f-userid" placeholder="522001100">
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="color:var(--muted)">Porta (auto)</label>
+        <input class="form-input" id="f-port" placeholder="auto" type="number" style="opacity:0.4" title="Deixe vazio para alocar automaticamente">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Cookie <span style="color:var(--muted)">(preenchido automaticamente acima)</span></label>
+      <textarea class="form-input" id="f-cookies" rows="3" placeholder="Ou cole manualmente: F12 -> Network -> Cookie"></textarea>
+      <div class="form-hint">F12 -> Network -> qualquer requisição -> Request Headers -> Cookie</div>
+    </div>
+
+    <div style="margin-top:14px;padding:10px 12px;background:rgba(0,0,0,0.2);border-radius:4px;border:1px solid var(--border2)">
+      <div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Configuracoes de Pig e XP</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div>
+          <label class="form-label" style="font-size:11px">Gold minimo pig</label>
+          <input class="form-input" id="f-gold-min" placeholder="50" type="number" value="50" style="padding:6px 8px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Perda XP maxima</label>
+          <input class="form-input" id="f-xp-max" placeholder="0" type="number" value="0" style="padding:6px 8px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Gold ignorar XP</label>
+          <input class="form-input" id="f-gold-xp" placeholder="500" type="number" value="500" style="padding:6px 8px">
+        </div>
+      </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="f-premium" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="f-premium" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Conta <strong style="color:var(--gold)">Premium</strong> — cooldown 5min + missao 2h/dia
+        </label>
+      </div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div>
+          <label class="form-label" style="font-size:11px">Varrer ranking (max)</label>
+          <input class="form-input" id="f-ranking-max" placeholder="500" type="number" value="500" style="padding:6px 8px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Pausa cache (s)</label>
+          <input class="form-input" id="f-pausa-cache" placeholder="0.5" type="number" step="0.1" value="0.5" style="padding:6px 8px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Hora varredura</label>
+          <input class="form-input" id="f-hora-cache" placeholder="3" type="number" min="0" max="23" value="3" style="padding:6px 8px">
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="form-label" style="font-size:11px">Alinhamento de Missoes</label>
+        <select class="form-select" id="f-missao-alin" style="padding:6px 8px">
+          <option value="bem">✓ Sempre Bem (cavaleiro da luz)</option>
+          <option value="mal">✗ Sempre Mal (cavaleiro das sombras)</option>
+          <option value="alternado" selected>↕ Alternado (bem/mal a cada missão)</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn-primary" onclick="saveProfile()">v Criar Perfil e Iniciar Bot</button>
+    <button class="btn-secondary" onclick="closeModal('modal-new')">Cancelar</button>
+  </div>
+</div>
+
+<!-- Modal log -->
+<div class="modal-backdrop" id="modal-cfg">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">cfg Configuracoes do Perfil: <span id="cfg-name-title"></span></div>
+    <input type="hidden" id="cfg-profile-name">
+
+    <div style="margin-top:12px;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px">Pig e XP</div>
+    <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div>
+        <label class="form-label" style="font-size:11px">Gold minimo (g)</label>
+        <input class="form-input" id="cfg-gold-min" type="number" placeholder="50">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Perda XP maxima</label>
+        <input class="form-input" id="cfg-xp-max" type="number" placeholder="0">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Gold ignorar XP (g)</label>
+        <input class="form-input" id="cfg-gold-xp" type="number" placeholder="500">
+      </div>
+    </div>
+
+    <div style="margin-top:12px;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px">Varredura do Ranking</div>
+    <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div>
+        <label class="form-label" style="font-size:11px">Max jogadores</label>
+        <input class="form-input" id="cfg-ranking-max" type="number" placeholder="500" min="100" max="10000" step="100">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Delay entre perfis (s)</label>
+        <input class="form-input" id="cfg-pausa" type="number" placeholder="0.5" step="0.1" min="0">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Hora da varredura (0-23)</label>
+        <input class="form-input" id="cfg-hora-cache" type="number" placeholder="3" min="0" max="23">
+      </div>
+      <div style="margin-top:8px">
+        <label class="form-label" style="font-size:11px">Alinhamento de Missoes</label>
+        <select class="form-select" id="cfg-missao-alin">
+          <option value="bem">✓ Sempre Bem (cavaleiro da luz)</option>
+          <option value="mal">✗ Sempre Mal (cavaleiro das sombras)</option>
+          <option value="alternado">↕ Alternado (bem/mal a cada missão)</option>
+        </select>
+      </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-taverna-ativa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-taverna-ativa" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Taverna automática quando sem pig e sem missão
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-premium" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-premium" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Conta <strong style="color:var(--gold)">Premium</strong> — cooldown 5min + missao 2h/dia
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;border-top:1px solid var(--border2);padding-top:12px">
+      <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Cookie</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button class="btn-secondary" style="flex:1;color:var(--gold);border-color:var(--gold);font-size:10px" onclick="renovarCookie()">Abrir browser e capturar</button>
+        <button class="btn-secondary" style="flex:1;font-size:10px" onclick="toggleManualCookie()">Colar manualmente</button>
+      </div>
+      <div id="cfg-manual-cookie" style="display:none;margin-bottom:8px">
+        <textarea class="form-input" id="cfg-cookie-text" rows="2" placeholder="Cole aqui o cookie copiado do F12 -> Network -> Request Headers -> Cookie" style="font-size:10px;resize:vertical"></textarea>
+        <button class="btn-primary" style="width:100%;margin-top:4px;font-size:11px" onclick="salvarCookieManual()">v Salvar Cookie e Reiniciar Bot</button>
+      </div>
+      <div id="cfg-cookie-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:3px;background:rgba(0,0,0,0.3)"></div>
+    </div>
+
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-primary" style="flex:1" onclick="saveCfg()">v Salvar Configuracoes</button>
+      <button class="btn-secondary" style="flex:0" onclick="closeModal('modal-cfg')">x Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop"
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+var REFRESH = 5000;
+var refreshInt = null;
+var capturingCookie = false;
+
+function toast(msg, type='ok'){
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(()=>{ el.className='toast'; }, 3000);
+}
+
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+
+function openCfgModal(name){
+  document.getElementById('cfg-profile-name').value = name;
+  document.getElementById('cfg-name-title').textContent = name;
+    // Lê direto do config.json via API para garantir valores atuais
+    fetch('/api/cfg/'+name).then(r=>r.json()).then(function(cfg){
+      document.getElementById('cfg-gold-min').value    = cfg.gold_min_pig    != null ? cfg.gold_min_pig    : 50;
+      document.getElementById('cfg-xp-max').value      = cfg.perda_xp_max   != null ? cfg.perda_xp_max    : 0;
+      document.getElementById('cfg-gold-xp').value     = cfg.gold_ignorar_xp != null ? cfg.gold_ignorar_xp : 500;
+      document.getElementById('cfg-ranking-max').value = cfg.ranking_max     != null ? cfg.ranking_max     : 500;
+      document.getElementById('cfg-pausa').value       = cfg.pausa_cache     != null ? cfg.pausa_cache     : 0.5;
+      document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
+      document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
+      document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
+      document.getElementById('cfg-premium').checked   = !!cfg.premium;
+    });
+  openModal('modal-cfg');
+}
+
+function saveCfg(){
+  var name = document.getElementById('cfg-profile-name').value;
+  var data = {
+    name:            name,
+    gold_min_pig:    parseInt(document.getElementById('cfg-gold-min').value||50),
+    perda_xp_max:    parseInt(document.getElementById('cfg-xp-max').value||0),
+    gold_ignorar_xp: parseInt(document.getElementById('cfg-gold-xp').value||500),
+    ranking_max:     parseInt(document.getElementById('cfg-ranking-max').value||500),
+    pausa_cache:     parseFloat(document.getElementById('cfg-pausa').value||0.5),
+    hora_cache:          parseInt(document.getElementById('cfg-hora-cache').value||3),
+    missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
+    taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
+    premium:         document.getElementById('cfg-premium').checked,
+    _patch: true,
+    _restart: true,  // reinicia o bot para aplicar imediatamente
+  };
+  fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  .then(r=>r.json())
+  .then(function(d){
+    if(d.ok){
+      closeModal('modal-cfg');
+      if(d.restarted){
+        toast('Configs salvas e bot reiniciado!');
+      } else {
+        toast('Configs salvas! Reinicie o bot para aplicar.');
+      }
+      setTimeout(loadProfiles, 2000);
+    } else {
+      toast('Erro: '+(d.error||'desconhecido'),'err');
+    }
+  });
+}
+
+function logout(){
+  window.location.href = '/logout';
+}
+
+function loadMe(){
+  fetch('/api/me',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  .then(r=>r.json()).then(function(d){
+    if(d.ok){
+      document.getElementById('user-info').textContent = d.user + (d.role==='admin'?' (admin)':'');
+      document.getElementById('btn-logout').style.display='inline-block';
+      if(d.role!=='admin'){
+        document.getElementById('btn-users').style.display='none';
+      }
+    } else {
+      document.getElementById('user-info').textContent = 'admin (local)';
+    }
+  }).catch(function(){
+    document.getElementById('user-info').textContent = 'admin (local)';
+  });
+}
+
+function openUsersModal(){
+  openModal('modal-users');
+  loadUsers();
+}
+
+function loadUsers(){
+  fetch('/api/users/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  .then(r=>r.json()).then(function(d){
+    if(!d.ok) return;
+    var html = '';
+    Object.keys(d.users).forEach(function(u){
+      var ud = d.users[u];
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2)">';
+      html += '<span style="flex:1;font-size:12px">'+(ud.role==='admin'?'👑 ':'')+u+'</span>';
+      html += '<span style="font-size:10px;color:var(--muted)">'+(ud.profiles.length?ud.profiles.join(', '):'todos')+'</span>';
+      html += '<button class="btn btn-del" onclick="editUser(this)" data-u="'+u+'">editar</button>';
+      if(u!=='admin') html += '<button class="btn btn-del" onclick="deleteUser(this)" data-u="'+u+'">x</button>';
+      html += '</div>';
+    });
+    document.getElementById('users-list').innerHTML = html || '<div style="color:var(--muted);font-size:12px">Nenhum usuário</div>';
+  });
+}
+
+function editUser(el){ var name = typeof el==='string'?el:el.dataset.u;
+  fetch('/api/users/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  .then(r=>r.json()).then(function(d){
+    var u = d.users[name] || {};
+    document.getElementById('u-name').value = name;
+    document.getElementById('u-name').disabled = true;
+    document.getElementById('u-pass').value = '';
+    document.getElementById('u-role').value = u.role || 'user';
+    document.getElementById('u-profiles').value = (u.profiles||[]).join(', ');
+    document.getElementById('user-form-title').textContent = 'Editar: '+name;
+    openModal('modal-user-form');
+  });
+}
+
+function newUser(){
+  document.getElementById('u-name').value = '';
+  document.getElementById('u-name').disabled = false;
+  document.getElementById('u-pass').value = '';
+  document.getElementById('u-role').value = 'user';
+  document.getElementById('u-profiles').value = '';
+  document.getElementById('user-form-title').textContent = 'Novo Usuário';
+  openModal('modal-user-form');
+}
+
+function saveUser(){
+  var name = document.getElementById('u-name').value.trim();
+  var pass = document.getElementById('u-pass').value.trim();
+  var role = document.getElementById('u-role').value;
+  var profs = document.getElementById('u-profiles').value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  if(!name){ toast('Nome obrigatório','err'); return; }
+  fetch('/api/users/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:name, password:pass, role:role, profiles:profs})
+  }).then(r=>r.json()).then(function(d){
+    if(d.ok){ closeModal('modal-user-form'); loadUsers(); toast('Usuário salvo!'); }
+    else toast('Erro: '+d.error,'err');
+  });
+}
+
+function deleteUser(el){ var name = typeof el==='string'?el:el.dataset.u;
+  if(!confirm('Deletar usuário "'+name+'"?')) return;
+  fetch('/api/users/delete',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:name})
+  }).then(r=>r.json()).then(function(d){
+    if(d.ok){ loadUsers(); toast('Usuário deletado!'); }
+    else toast('Erro: '+d.error,'err');
+  });
+}
+
+// Fecha modal clicando fora
+document.querySelectorAll('.modal-backdrop').forEach(b=>{
+  b.addEventListener('click', e=>{ if(e.target===b) b.classList.remove('show'); });
+});
+
+function logClass(line){
+  if(line.includes('[ERROR]')) return 'err';
+  if(line.includes('[WARNING]')) return 'warn';
+  if(line.includes('*')||line.includes('iniciada')||line.includes('Imunidade')) return 'ok';
+  return 'info';
+}
+
+function renderProfiles(profiles){
+  var grid = document.getElementById('profiles-grid');
+
+  var html = '';
+
+  profiles.forEach(function(p){
+    var running   = p._running   || false;
+    var bgRunning = p._bg_running || false;
+    var bgPort    = (p.port || 8765) + 1;
+    var name      = p._name || '';
+    var logs = (p._log_tail || []).slice(-3).map(function(l){
+      var cls = logClass(l);
+      var msg = l.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[.*?\] /,'');
+      return '<span class="'+cls+'">'+msg+'</span>';
+    }).join('\n');
+
+    html += '<div class="profile-card '+(running?'running':'')+'" data-name="'+name+'">';
+    html += '<div class="card-header">';
+    html += '<span class="server-badge">'+(p.server||'int7')+'</span>';
+    html += '<span class="profile-name">'+name+'</span>';
+    html += '<div class="status-dot '+(running?'on':'off')+'"></div>';
+    html += '</div>';
+    // Badge de cookie expirado
+    var motivo = p._motivo || '';
+    if(motivo === 'cookie_expirado' && running){
+      html += '<div style="background:linear-gradient(135deg,#3d0a0a,#5c1010);border:1px solid #c0392b;color:#ff6b6b;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;">';
+      html += '<span style="font-size:14px">&#128274;</span>';
+      html += ' <strong>Cookie vencido</strong> — atualize o cookie no Config e reinicie';
+      html += '</div>';
+    }
+    // Badge de taverna com countdown
+    var tavernaFim = p._taverna_fim || null;
+    var tavernaHoras = p._taverna_horas || 1;
+    var tavernaGold  = p._taverna_gold  || 0;
+    if(tavernaFim && running){
+      var fim = new Date(tavernaFim);
+      var agora = new Date();
+      var restaSeg = Math.max(0, Math.floor((fim - agora) / 1000));
+      var hh = Math.floor(restaSeg/3600);
+      var mm = Math.floor((restaSeg%3600)/60);
+      var ss = restaSeg % 60;
+      var countStr = (hh>0?hh+'h ':'') + mm+'m '+ (hh==0?ss+'s':'');
+      html += '<div class="taverna-badge" data-fim="'+tavernaFim+'">';
+      html += '<span class="taverna-icon">&#127867;</span>';
+      html += ' Taverna '+tavernaHoras+'h (+'+tavernaGold+'g)';
+      html += ' <span class="taverna-timer">'+countStr+'</span>';
+      html += '</div>';
+    }
+    html += '<div class="card-body">';
+    html += '<div class="card-info">';
+    html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||p.user_id||'-')+'</div></div>';
+    html += '<div class="info-item"><div class="info-label">Dashboard</div><div class="info-val" style="color:var(--gold)">:'+(p.port||8765)+'</div></div>';
+    html += '</div>';
+    html += '<div class="log-preview">'+(logs||'<span>Nenhum log ainda...</span>')+'</div>';
+    html += '<div class="card-actions">';
+    if(running){
+      html += '<button class="btn btn-stop" data-action="stop" data-name="'+name+'">[ Parar</button>';
+    } else {
+      html += '<button class="btn btn-start" data-action="start" data-name="'+name+'"> > Iniciar</button>';
+    }
+    html += '<button class="btn btn-dash" data-action="dash" data-port="'+(p.port||8765)+'">Dashboard</button>';
+    html += '</div>';
+    html += '<div class="card-actions" style="margin-top:4px">';
+    html += '<button class="btn btn-dash" data-action="game" data-server="'+(p.server||p.servidor||'int7')+'" style="flex:1">Abrir Jogo</button>';
+    html += '<button class="btn btn-del" data-action="cfg" data-name="'+name+'" style="color:var(--gold);flex:1">cfg</button>';
+    html += '<button class="btn btn-del" data-action="del" data-name="'+name+'" title="Excluir" style="flex:0">x</button>';
+    html += '</div>';
+    html += '<div class="bg-section">';
+    html += '<div class="bg-label">* BattleGround</div>';
+    html += '<div class="bg-btns">';
+    if(bgRunning){
+      html += '<button class="btn btn-stop" data-action="bgstop" data-name="'+name+'">[ Parar BG</button>';
+    } else {
+      html += '<button class="btn btn-start" data-action="bgstart" data-name="'+name+'"> > Iniciar BG</button>';
+    }
+    html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'">Dashboard BG</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+  });
+
+  html += '<div class="add-card" data-action="new">';
+  html += '<div class="add-icon">+</div>';
+  html += '<div class="add-label">Novo Perfil</div>';
+  html += '</div>';
+
+  grid.innerHTML = html;
+
+  // Attach events via delegation (no inline onclick needed)
+  grid.onclick = function(e){
+    var btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    var action = btn.dataset.action;
+    var name   = btn.dataset.name || '';
+    var port   = btn.dataset.port || '';
+    if(action === 'start')   startBot(name);
+    if(action === 'stop')    stopBot(name);
+    if(action === 'dash')    openDash(parseInt(port));
+
+    if(action === 'del')     deleteProfile(name);
+    if(action === 'bgstart'){
+      startBG(name, 'free');  // modo auto-detectado pelo bot via sessão BG
+    }
+    if(action === 'bgstop')  stopBG(name);
+    if(action === 'bgdash')  openDashBG(parseInt(port));
+    if(action === 'game'){
+      var srv = btn.dataset.server || 'int7';
+      window.open('https://'+srv+'.knightfight.moonid.net','_blank');
+    }
+    if(action === 'cfg')     openCfgModal(name);
+    if(action === 'new')     openModal('modal-new');
+  };
+}
+
+function loadProfiles(){
+  fetch('/api/profiles')
+    .then(r=>r.json())
+    .then(renderProfiles)
+    .catch(()=>{});
+}
+
+function startBot(name){
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        toast(`> ${name} iniciando...`);
+        // Aguarda servidor HTTP do bot subir (até 30s)
+        var port = d.port || 8765;
+        var attempts = 0;
+        var check = setInterval(()=>{
+          attempts++;
+          fetch(`http://localhost:${port}/dados`)
+            .then(()=>{
+              clearInterval(check);
+              toast(`> ${name} online!`);
+              loadProfiles();
+  loadMe();
+            })
+            .catch(()=>{
+              if(attempts >= 30){
+                clearInterval(check);
+                toast(`${name} demorou para iniciar - verifique o log`,'err');
+                loadProfiles();
+              }
+            });
+        }, 1000);
+      } else {
+        toast(`Erro: ${d.error}`,'err');
+      }
+    });
+}
+
+function stopBot(name){
+  fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){ toast(`[ ${name} parado`); setTimeout(loadProfiles,500); }
+      else toast(`Erro: ${d.error}`,'err');
+    });
+}
+
+function startBG(name, modo){
+  modo = modo || 'free';
+  toast('Iniciando BG Bot...');
+  fetch('/api/bg/start/'+name+'/', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({modo: modo})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.ok){
+      toast('BG Bot iniciado! PID: '+d.pid);
+      // Recarrega imediatamente e depois de 3s para garantir que o status atualizou
+      loadProfiles();
+      setTimeout(loadProfiles, 3000);
+    } else {
+      toast('Erro ao iniciar BG: '+(d.error||'falha'), 'err');
+      loadProfiles();
+    }
+  })
+  .catch(function(e){
+    toast('Erro de conexão ao iniciar BG: '+e, 'err');
+    loadProfiles();
+  });
+}
+
+function stopBG(name){
+  fetch('/api/bg/stop/'+name+'/')
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        toast('BG Bot parado.');
+      } else {
+        toast('Aviso: '+(d.error||'processo não encontrado'), 'err');
+      }
+      loadProfiles();
+      setTimeout(loadProfiles, 1000);
+    })
+    .catch(e=>{ toast('Erro ao parar BG: '+e,'err'); loadProfiles(); });
+}
+
+function openDashBG(port){
+  window.open('http://localhost:'+port+'/dashboard','_blank');
+}
+
+function openDash(port){
+  // Testa se o servidor do bot já está respondendo
+  fetch(`http://localhost:${port}/dados`)
+    .then(()=>{ window.open(`http://localhost:${port}/dashboard`,'_blank'); })
+    .catch(()=>{
+      toast('Bot ainda iniciando - aguarde alguns segundos e tente novamente','err');
+    });
+}
+
+
+function toggleManualCookie(){
+  var el = document.getElementById('cfg-manual-cookie');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function salvarCookieManual(){
+  var name   = document.getElementById('cfg-profile-name').value;
+  var cookie = document.getElementById('cfg-cookie-text').value.trim();
+  var status = document.getElementById('cfg-cookie-status');
+  if(!cookie){ toast('Cole o cookie primeiro','err'); return; }
+  status.style.display = 'block';
+  status.style.color = 'var(--gold)';
+  status.textContent = 'Salvando cookie...';
+  fetch('/api/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name:name, cookies:cookie, _patch:true, _restart:true})
+  }).then(r=>r.json()).then(function(d){
+    if(d.ok){
+      status.style.color = 'var(--green2)';
+      status.textContent = 'v Cookie salvo! Bot reiniciado.';
+      document.getElementById('cfg-cookie-text').value = '';
+      document.getElementById('cfg-manual-cookie').style.display = 'none';
+      setTimeout(loadProfiles, 2000);
+    } else {
+      status.style.color = '#e08080';
+      status.textContent = 'Erro: '+(d.error||'?');
+    }
+  });
+}
+
+function renovarCookie(){
+  var name   = document.getElementById('cfg-profile-name').value;
+  var status = document.getElementById('cfg-cookie-status');
+  // Pega servidor do perfil atual
+  fetch('/api/profiles').then(r=>r.json()).then(function(profiles){
+    var p = profiles.find(function(x){ return (x._name||'').toUpperCase() === name.toUpperCase(); });
+    var server = p ? (p.server || p.servidor || 'int7') : 'int7';
+    status.style.display = 'block';
+    status.style.color = 'var(--gold)';
+    status.textContent = 'Abrindo browser — faca login no jogo e aguarde...';
+    fetch('/api/capture-cookie', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({server: server})
+    })
+    .then(r=>r.json())
+    .then(function(d){
+      if(d.ok && d.cookie){
+        status.textContent = 'Cookie capturado! Salvando...';
+        return fetch('/api/save', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name: name, cookies: d.cookie, userid: d.userid||'', _patch: true, _restart: true})
+        }).then(r=>r.json()).then(function(r){
+          if(r.ok){
+            status.style.color = 'var(--green2)';
+            status.textContent = 'v Cookie renovado! Bot reiniciado.';
+            setTimeout(loadProfiles, 2000);
+          } else {
+            status.style.color = '#e08080';
+            status.textContent = 'Erro ao salvar: '+(r.error||'?');
+          }
+        });
+      } else {
+        status.style.color = '#e08080';
+        var msg = d.error || 'cookie nao capturado';
+        if(msg.includes('selenium')) {
+          status.innerHTML = 'Selenium nao instalado.<br>Execute no CMD: <code>pip install selenium webdriver-manager</code>';
+        } else {
+          status.textContent = 'Falhou: '+msg;
+        }
+      }
+    })
+    .catch(function(e){
+      status.style.color = '#e08080';
+      status.textContent = 'Erro de conexao: '+e;
+    });
+  });
+}
+
+function deleteProfile(name){
+  if(!confirm(`Excluir perfil "${name}"? Os dados serão removidos permanentemente.`)) return;
+  fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{ if(d.ok){ toast(`Perfil "${name}" excluído`); loadProfiles(); } });
+}
+
+function toggleCustomServer(prefix){
+  var sel = document.getElementById(prefix+'-server');
+  var inp = document.getElementById(prefix+'-server-custom');
+  if(sel.value === 'custom'){
+    inp.style.display = 'block';
+    inp.focus();
+  } else {
+    inp.style.display = 'none';
+  }
+}
+
+function getServerValue(prefix){
+  var sel = document.getElementById(prefix+'-server');
+  if(sel.value === 'custom'){
+    return document.getElementById(prefix+'-server-custom').value.trim();
+  }
+  return sel.value;
+}
+
+function captureCookie(){
+  if(capturingCookie) return;
+  var server = getServerValue('cap');
+  var btn = document.getElementById('btn-capture');
+  var status = document.getElementById('cap-status');
+  capturingCookie = true;
+  btn.disabled = true;
+  status.style.display = 'block';
+  status.className = 'capture-status loading';
+  status.textContent = 'Abrindo browser - faça login no jogo';
+
+  fetch('/api/capture-cookie',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({server})
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    capturingCookie = false;
+    btn.disabled = false;
+    if(d.ok){
+      document.getElementById('f-cookies').value = d.cookies;
+      // Sync server to form
+      var fsel = document.getElementById('f-server');
+      var opt = fsel.querySelector(`option[value="${server}"]`);
+      if(opt){ fsel.value = server; }
+      else {
+        fsel.value = 'custom';
+        document.getElementById('f-server-custom').value = server;
+        document.getElementById('f-server-custom').style.display = 'block';
+      }
+      if(d.userid) document.getElementById('f-userid').value = d.userid;
+      status.className = 'capture-status ok';
+      status.textContent = `v Cookie capturado via ${d.browser}! UserID: ${d.userid||'?'}`;
+      toast('Cookie capturado com sucesso!');
+    } else {
+      status.className = 'capture-status err';
+      status.textContent = `x ${d.error}`;
+    }
+  })
+  .catch(e=>{
+    capturingCookie = false;
+    btn.disabled = false;
+    status.className = 'capture-status err';
+    status.textContent = 'x Erro de conexão';
+  });
+}
+
+function saveProfile(){
+  var data = {
+    name:           document.getElementById('f-name').value.trim(),
+    server:         getServerValue('f'),
+    userid:         document.getElementById('f-userid').value.trim(),
+    cookies:        document.getElementById('f-cookies').value.trim(),
+    port:           document.getElementById('f-port').value || '',
+    gold_min_pig:   parseInt(document.getElementById('f-gold-min').value||50),
+    perda_xp_max:   parseInt(document.getElementById('f-xp-max').value||0),
+    gold_ignorar_xp:parseInt(document.getElementById('f-gold-xp').value||500),
+    premium:        document.getElementById('f-premium').checked,
+    ranking_max:    parseInt(document.getElementById('f-ranking-max').value||500),
+    pausa_cache:    parseFloat(document.getElementById('f-pausa-cache').value||0.5),
+    hora_cache:          parseInt(document.getElementById('f-hora-cache').value||3),
+    missao_alinhamento:  document.getElementById('f-missao-alin').value || 'alternado',
+  };
+  if(!data.name){ toast('Informe um nome para o perfil','err'); return; }
+  if(!data.cookies){ toast('Cookie e obrigatorio','err'); return; }
+  if(!data.userid){ toast('UserID e obrigatorio','err'); return; }
+
+  fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        closeModal('modal-new');
+        loadProfiles();
+        toast('Perfil "'+d.name+'" criado! Porta: '+d.config.port+' | BG: '+(d.config.port+1));
+        // Inicia automaticamente
+        setTimeout(()=>startBot(d.name), 500);
+      } else {
+        toast('Erro ao salvar','err');
+      }
+    });
+}
+
+// Modelo de aprendizado
+// Check update
+var latestVersion = null;
+fetch('/api/version', {credentials:'include'})
+  .then(r=>{ if(r.status===302||r.redirected){ window.location.href='/login'; throw 'redir'; } return r.json(); })
+  .then(d=>{
+    document.getElementById('ver').textContent = `v${d.current}`;
+    console.log('Version check:', d);
+    if(d.update && d.latest){
+      latestVersion = d.latest;
+      var b = document.getElementById('update-badge');
+      b.textContent = `^ v${d.latest} disponivel - clique para instalar`;
+      b.classList.add('show');
+    } else if(d.latest === null) {
+      // GitHub inacessivel - mostra versao apenas
+      console.warn('GitHub inacessivel para verificar atualizacoes');
+    }
+  }).catch(e=>{ console.error('Erro ao verificar versao:', e); });
+
+function doUpdate(){
+  var b = document.getElementById('update-badge');
+  if(!confirm(`Instalar atualização v${latestVersion||'?'}?
+
+Os bots serão parados e reiniciados automaticamente.`)) return;
+  b.textContent = '~ Baixando atualização...';
+  b.disabled = true;
+  fetch('/api/update',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        toast(`v Atualizado: ${d.updated.join(', ')} - reiniciando bots...`);
+        b.classList.remove('show');
+        // Reinicia todos os perfis (foram parados pelo update)
+        setTimeout(()=>{
+          fetch('/api/profiles').then(r=>r.json()).then(profiles=>{
+            var i = 0;
+            profiles.forEach(p=>{
+              // Reinicia todos, não só os que estavam rodando
+              setTimeout(()=>startBot(p._name), i * 1500);
+              i++;
+            });
+            setTimeout(loadProfiles, profiles.length * 1500 + 1000);
+          });
+        }, 1500);
+      } else {
+        toast(`Erro na atualização: ${d.errors.join(', ')}`, 'err');
+        b.textContent = `^ v${latestVersion} disponível - clique para instalar`;
+        b.disabled = false;
+      }
+    })
+    .catch(()=>{ toast('Erro de conexão','err'); b.disabled=false; });
+}
+
+// Auto-refresh
+loadProfiles();
+refreshInt = setInterval(loadProfiles, REFRESH);
+
+// Atualiza countdown de taverna a cada segundo (sem recarregar profiles)
+setInterval(function(){
+  document.querySelectorAll('.taverna-badge[data-fim]').forEach(function(el){
+    var fim = new Date(el.dataset.fim);
+    var restaSeg = Math.max(0, Math.floor((fim - new Date()) / 1000));
+    var hh = Math.floor(restaSeg/3600);
+    var mm = Math.floor((restaSeg%3600)/60);
+    var ss = restaSeg % 60;
+    var countStr = (hh>0?hh+'h ':'') + mm+'m '+(hh==0?ss+'s':'');
+    var timer = el.querySelector('.taverna-timer');
+    if(timer) timer.textContent = restaSeg > 0 ? countStr : 'concluído';
+  });
+}, 1000);
+</script>
+<div class="modal-backdrop" id="modal-users">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">Gerenciar Usuários</div>
+    <div id="users-list" style="max-height:300px;overflow-y:auto;margin:12px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn-primary" style="flex:1" onclick="newUser()">+ Novo Usuário</button>
+      <button class="btn-secondary" onclick="closeModal('modal-users')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-user-form">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title" id="user-form-title">Usuário</div>
+    <div style="margin-top:12px">
+      <label class="form-label">Nome de usuário</label>
+      <input class="form-input" id="u-name" placeholder="ex: joao123">
+      <label class="form-label" style="margin-top:8px">Senha <span style="color:var(--muted)">(deixe vazio para manter)</span></label>
+      <input class="form-input" id="u-pass" type="password" placeholder="nova senha">
+      <label class="form-label" style="margin-top:8px">Papel</label>
+      <select class="form-select" id="u-role">
+        <option value="user">Usuário (acesso limitado)</option>
+        <option value="admin">Admin (acesso total)</option>
+      </select>
+      <label class="form-label" style="margin-top:8px">Perfis permitidos <span style="color:var(--muted)">(separados por vírgula, vazio = nenhum)</span></label>
+      <input class="form-input" id="u-profiles" placeholder="ex: bohrer_int7, bohrinha_int7">
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">Admin vê todos os perfis independente deste campo</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn-primary" style="flex:1" onclick="saveUser()">v Salvar</button>
+      <button class="btn-secondary" onclick="closeModal('modal-user-form')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,65 @@
+# Sensiveis
+SENHAS KF.txt
+users.json
+
+# Profiles
+profiles/
+
+# Perfis especificos
+iniciar_angus_young_int6.bat
+iniciar_angus_young_int7.bat
+iniciar_angus_young_pl11.bat
+iniciar_bohrer.bat
+iniciar_bohrer_br1.bat
+iniciar_bohrer_int6.bat
+iniciar_bohrer_pt4.bat
+iniciar_bohrerinha.bat
+iniciar_bohrinha_int7.bat
+iniciar_hoplomachus_br2.bat
+iniciar_hoplomachus_de15.bat
+iniciar_hoplomachus_int5.bat
+iniciar_hoplomachus_int6.bat
+iniciar_hoplomachus_int7.bat
+iniciar_hoplomachus_nl1.bat
+iniciar_kelli.bat
+iniciar_molina_de1.bat
+iniciar_molina_es1.bat
+iniciar_molina_uk1.bat
+iniciar_molinari_int6.bat
+iniciar_molinari_int7.bat
+iniciar_pepe_legal_br2.bat
+iniciar_pepe_legal_de15.bat
+iniciar_pepe_legal_int5.bat
+iniciar_pepe_legal_int6.bat
+iniciar_pepe_legal_int7.bat
+iniciar_pepe_legal_it1.bat
+iniciar_pepe_legal_sk1.bat
+iniciar_pisteiro_int5.bat
+iniciar_pisteiro_pt7.bat
+iniciar_tiririca_pt1.bat
+
+# Itens
+Itens/
+
+# Backups e logs
+*.bak
+*.log
+
+# Archives e binarios
+*.rar
+cloudflared.exe
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Outputs gerados
+analise_combates.json
+analise_combates.txt
+test_output.txt
+
+# Subpasta duplicada
+kfbot/
+
+# Notas avulsas
+*.txt

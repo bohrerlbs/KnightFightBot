@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="15">
+<title>KnightFight BG Bot</title>
+<style>
+:root{
+  --bg:#0d0d0f;--bg1:#141418;--bg2:#1a1a20;--b1:#2a2a35;
+  --gold:#c8a84b;--gl:#d4af37;--grn:#4caf73;--red:#c0392b;
+  --blue:#4a9eda;--mt:#666;--tx:#ccc;--tx2:#999;
+  --warn:#e67e22;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--tx);font:13px/1.5 'Segoe UI',sans-serif;padding:12px;}
+h1{font-size:18px;color:var(--gold);letter-spacing:2px;text-transform:uppercase;}
+.sub{color:var(--mt);font-size:11px;}
+header{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--b1);margin-bottom:12px;}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;}
+.dot.on{background:var(--grn);}
+.dot.off{background:var(--red);}
+.grid{display:grid;gap:10px;margin-bottom:10px;}
+.g2{grid-template-columns:1fr 1fr;}
+.g3{grid-template-columns:1fr 1fr 1fr;}
+.g4{grid-template-columns:repeat(4,1fr);}
+.card{background:var(--bg1);border:1px solid var(--b1);border-radius:6px;padding:12px;}
+.ct{color:var(--mt);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+.row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--b1);}
+.row:last-child{border:none;}
+.rl{color:var(--tx2);font-size:12px;}
+.rv{font-weight:bold;}
+.g{color:var(--gl);}
+.r{color:var(--red);}
+.grn{color:var(--grn);}
+.bl{color:var(--blue);}
+.warn{color:var(--warn);}
+.gold{color:var(--gold);}
+.mt{color:var(--mt);}
+.bar{background:var(--bg2);border-radius:3px;height:6px;overflow:hidden;margin:4px 0;}
+.fill{height:100%;border-radius:3px;transition:width .5s;}
+.fbat{background:var(--blue);}
+.fvit{background:var(--grn);}
+.fef{background:var(--gold);}
+.tval{font-size:28px;font-weight:bold;text-align:center;padding:8px 0;}
+.tsub{font-size:11px;color:var(--mt);text-align:center;}
+.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-left:4px;}
+.bz{background:#2a3a2a;color:var(--grn);}
+.bh{background:#2a2a3a;color:var(--blue);}
+.bb{background:#3a2a2a;color:var(--red);}
+.tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.tbl th{color:var(--mt);font-weight:normal;text-transform:uppercase;font-size:10px;padding:4px 6px;border-bottom:1px solid var(--b1);text-align:left;}
+.tbl td{padding:4px 6px;border-bottom:1px solid #1a1a20;}
+.tbl tr:hover td{background:var(--bg2);}
+.tbl .c{text-align:center;}
+.tbl .ri{text-align:right;}
+.sc-ok{color:var(--grn);}
+.sc-med{color:var(--warn);}
+.sc-bad{color:var(--red);}
+.log-box{background:var(--bg2);border:1px solid var(--b1);border-radius:4px;padding:8px;height:200px;overflow-y:auto;font-family:monospace;font-size:11px;}
+.ll{padding:1px 0;border-bottom:1px solid #1a1a20;}
+.ll.ok .msg{color:var(--grn);}
+.ll.err .msg{color:var(--red);}
+.ll.warn .msg{color:var(--warn);}
+.ll.info .msg{color:var(--tx);}
+.ts{color:var(--mt);margin-right:8px;}
+.timer-big{font-size:36px;font-weight:bold;text-align:center;font-family:monospace;color:var(--grn);}
+.ef-badge{display:inline-block;background:var(--bg2);border:1px solid var(--gold);color:var(--gold);border-radius:4px;padding:2px 8px;font-size:12px;font-weight:bold;}
+.insight-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid var(--b1);}
+.insight-row:last-child{border:none;}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⚔ BattleGround Bot</h1>
+    <div class="sub" id="perfil-sub">—</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span><span class="dot on" id="sdot"></span><span id="stxt" style="font-size:11px">Online</span></span>
+    <span style="font-size:10px;color:var(--mt)">Auto-refresh 15s</span>
+  </div>
+</header>
+
+<!-- Timers -->
+<div class="grid g3" style="margin-bottom:10px">
+  <div class="card" style="text-align:center">
+    <div class="ct">Próximo ataque</div>
+    <div class="timer-big" id="t-prox">--:--</div>
+    <div class="tsub" id="t-prox-sub">—</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div class="ct">Batalhas hoje</div>
+    <div class="tval gold" id="bat-hoje">—</div>
+    <div class="tsub" id="bat-hoje-sub">—</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div class="ct">Total da sessão</div>
+    <div class="tval blue" id="bat-total">—</div>
+    <div class="tsub" id="bat-total-sub">—</div>
+  </div>
+</div>
+
+<!-- Linha principal -->
+<div class="grid g3" style="margin-bottom:10px">
+
+  <!-- Sessão BG -->
+  <div class="card">
+    <div class="ct">Sessão BG</div>
+    <div class="row"><span class="rl">Modo</span><span class="rv gold" id="modo">—</span></div>
+    <div class="row"><span class="rl">Batalhas feitas</span><span class="rv" id="bat-feitas">—</span></div>
+    <div class="row"><span class="rl">Restantes</span><span class="rv grn" id="bat-rest">—</span></div>
+    <div class="row"><span class="rl">Vitórias</span><span class="rv grn" id="vit">—</span></div>
+    <div class="row"><span class="rl">Derrotas</span><span class="rv r" id="der">—</span></div>
+    <div class="row"><span class="rl">Win rate</span><span class="rv" id="wr">—</span></div>
+    <div class="bar" style="margin-top:6px"><div class="fill fvit" id="wr-b" style="width:0%"></div></div>
+    <div class="row" style="margin-top:6px"><span class="rl">Gold ganho</span><span class="rv g" id="gold-t">—</span></div>
+    <div class="row"><span class="rl">XP ganho</span><span class="rv bl" id="xp-t">—</span></div>
+  </div>
+
+  <!-- Meu personagem -->
+  <div class="card">
+    <div class="ct">Meu personagem</div>
+    <div class="row"><span class="rl">EF</span><span class="rv gold" id="eu-ef">—</span></div>
+    <div class="row"><span class="rl">Level</span><span class="rv" id="eu-lv">—</span></div>
+    <div class="row"><span class="rl">Arte combate</span><span class="rv" id="eu-ac">—</span></div>
+    <div class="row"><span class="rl">Bloqueio</span><span class="rv" id="eu-blq">—</span></div>
+    <div class="row"><span class="rl">Força</span><span class="rv" id="eu-frc">—</span></div>
+    <div class="row"><span class="rl">Resistência</span><span class="rv" id="eu-res">—</span></div>
+    <div class="row"><span class="rl">Agilidade</span><span class="rv" id="eu-agi">—</span></div>
+    <div class="row"><span class="rl">Equipamento</span><span class="rv" id="eu-arm">—</span></div>
+    <div class="row"><span class="rl">Skill 1 mão</span><span class="rv" id="eu-s1">—</span></div>
+    <div class="row"><span class="rl">Skill 2 mãos</span><span class="rv" id="eu-s2">—</span></div>
+  </div>
+
+  <!-- Último combate -->
+  <div class="card">
+    <div class="ct">Último combate</div>
+    <div id="ult-combate">
+      <div style="color:var(--mt);text-align:center;padding:20px">Aguardando primeiro combate...</div>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- Dano e insights -->
+<div class="grid g2" style="margin-bottom:10px">
+  <div class="card">
+    <div class="ct">Aprendizado — insights dos combates</div>
+    <div id="insights-area">
+      <div style="color:var(--mt);text-align:center;padding:10px">Aguardando combates suficientes (mín. 5)...</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ct">Win rate por faixa de EF adversário</div>
+    <div id="ef-wr-area">
+      <div style="color:var(--mt);text-align:center;padding:10px">Aguardando dados...</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Log -->
+<div class="card">
+  <div class="ct">Log do bot</div>
+  <div class="log-box" id="log-box"></div>
+</div>
+
+<script>
+var timer = null;
+var dadosGlobal = {};
+
+function fmt(n){ return Number(n||0).toLocaleString('pt-BR'); }
+function fmtT(s){
+  s = Math.max(0, Math.floor(s));
+  var h=Math.floor(s/3600), r=s%3600, m=Math.floor(r/60), sc=r%60;
+  if(h>0) return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+'h';
+  return String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');
+}
+function scoreClass(s){ return s>=60?'sc-ok':s>=40?'sc-med':'sc-bad'; }
+
+function startTimer(isoEnd){
+  if(timer) clearInterval(timer);
+  if(!isoEnd){ document.getElementById('t-prox').textContent='00:00'; return; }
+  var end = new Date(isoEnd).getTime();
+  function tick(){
+    var diff = (end - Date.now())/1000;
+    var el = document.getElementById('t-prox');
+    if(diff <= 0){
+      el.textContent = '00:00';
+      el.style.color = 'var(--grn)';
+      document.getElementById('t-prox-sub').textContent = '✓ Livre para atacar!';
+      clearInterval(timer);
+    } else {
+      el.textContent = fmtT(diff);
+      el.style.color = diff < 60 ? 'var(--warn)' : 'var(--grn)';
+      document.getElementById('t-prox-sub').textContent = 'Aguardando cooldown';
+    }
+  }
+  tick(); timer = setInterval(tick, 1000);
+}
+
+function render(d){
+  var eu = d.eu || {};
+  var estado = d.estado || {};
+  var sessao = d.sessao || {};
+  var ult = d.ultimo_combate || null;
+  var insights = d.insights || {};
+  var modos = {free:'Free (100 bat.)', medio:'150 pedras (200 bat.)', premium:'250 pedras (400 bat.)'};
+
+  // Perfil
+  var perf = (eu.level ? 'Lv'+eu.level : '') + (eu.ef ? ' | EF '+eu.ef : '');
+  document.getElementById('perfil-sub').textContent = perf || '—';
+
+  // Timer
+  startTimer(d.proximo_ataque);
+
+  // Batalhas hoje (da sessão do jogo)
+  var batHoje = sessao.batalhas_feitas || estado.batalhas_feitas || 0;
+  var batMax  = estado.modo ? {free:100,medio:200,premium:400}[estado.modo] : 100;
+  var batRest = batMax - batHoje;
+  document.getElementById('bat-hoje').textContent = batHoje;
+  document.getElementById('bat-hoje-sub').textContent = 'de ' + batMax;
+  document.getElementById('bat-total').textContent = batRest;
+  document.getElementById('bat-total-sub').textContent = 'restantes';
+
+  // Barra de batalhas
+  var pct = batMax > 0 ? Math.round(batHoje/batMax*100) : 0;
+
+  // Stats sessão
+  var modo = estado.modo || 'free';
+  document.getElementById('modo').textContent = modos[modo] || modo;
+  document.getElementById('bat-feitas').textContent = batHoje;
+  document.getElementById('bat-rest').textContent = batRest;
+  var vit = estado.vitorias || 0;
+  var der = estado.derrotas || 0;
+  var tot = vit + der;
+  var wr  = tot > 0 ? (vit/tot*100).toFixed(1) : 0;
+  document.getElementById('vit').textContent = vit;
+  document.getElementById('der').textContent = der;
+  document.getElementById('wr').textContent = wr + '%';
+  document.getElementById('wr-b').style.width = wr + '%';
+  document.getElementById('gold-t').textContent = fmt(estado.gold_total || 0) + 'g';
+  document.getElementById('xp-t').textContent = fmt(estado.xp_total || 0) + ' XP';
+
+  // Meu personagem
+  document.getElementById('eu-ef').textContent = eu.ef || '—';
+  document.getElementById('eu-lv').textContent = eu.level || '—';
+  document.getElementById('eu-ac').textContent = eu.arte_combate || '—';
+  document.getElementById('eu-blq').textContent = eu.bloqueio || '—';
+  document.getElementById('eu-frc').textContent = eu.forca || '—';
+  document.getElementById('eu-res').textContent = eu.resistencia || '—';
+  document.getElementById('eu-agi').textContent = eu.agilidade || '—';
+  document.getElementById('eu-arm').textContent = eu.sk_armadura || '—';
+  document.getElementById('eu-s1').textContent  = eu.sk_1mao    || '—';
+  document.getElementById('eu-s2').textContent  = eu.sk_2maos   || '—';
+
+  // Último combate
+  if(ult){
+    var tipoBadge = ult.tipo === 'zumbi'
+      ? '<span class="badge bz">Zumbi</span>'
+      : '<span class="badge bh">Humano</span>';
+    var resBadge = ult.resultado === 'vitoria'
+      ? '<span style="color:var(--grn);font-weight:bold">✓ VITÓRIA</span>'
+      : '<span style="color:var(--red);font-weight:bold">✗ DERROTA</span>';
+    var hora = new Date(ult.timestamp).toLocaleTimeString('pt-BR');
+    document.getElementById('ult-combate').innerHTML =
+      '<div class="row"><span class="rl">Adversário</span><span class="rv">' + ult.nome + tipoBadge + '</span></div>' +
+      '<div class="row"><span class="rl">EF</span><span class="rv gold">' + ult.ef + '</span></div>' +
+      '<div class="row"><span class="rl">Score previsto</span><span class="rv ' + scoreClass(ult.score) + '">' + ult.score + '</span></div>' +
+      (ult.score_sim ? '<div class="row"><span class="rl">Score simulador</span><span class="rv ' + scoreClass(ult.score_sim) + '">' + ult.score_sim + '</span></div>' : '') +
+      '<div class="row"><span class="rl">Resultado</span>' + resBadge + '</div>' +
+      '<div class="row"><span class="rl">Gold</span><span class="rv g">' + fmt(ult.gold) + 'g</span></div>' +
+      '<div class="row"><span class="rl">XP</span><span class="rv bl">' + fmt(ult.xp) + '</span></div>' +
+      '<div class="row"><span class="rl">Horário</span><span class="rv mt">' + hora + '</span></div>';
+  }
+
+  // Insights
+  if(insights.total_combates && insights.total_combates >= 5){
+    document.getElementById('insights-area').innerHTML =
+      '<div class="insight-row"><span>Total combates</span><span class="rv">' + insights.total_combates + '</span></div>' +
+      '<div class="insight-row"><span>Win rate global</span><span class="rv ' + (insights.win_rate>=50?'grn':'r') + '">' + insights.win_rate + '%</span></div>' +
+      '<div class="insight-row"><span>Gold total</span><span class="rv g">' + fmt(insights.gold_total) + 'g</span></div>' +
+      '<div class="insight-row"><span>XP total</span><span class="rv bl">' + fmt(insights.xp_total) + '</span></div>' +
+      '<div class="insight-row"><span>Dano médio (vitória)</span><span class="rv grn">' + insights.media_dano_vitoria + '</span></div>' +
+      '<div class="insight-row"><span>Dano médio (derrota)</span><span class="rv r">' + insights.media_dano_derrota + '</span></div>';
+  }
+
+  // WR por EF
+  var efWR = insights.wr_por_ef || {};
+  var efKeys = Object.keys(efWR).sort((a,b)=>parseFloat(b)-parseFloat(a));
+  if(efKeys.length){
+    document.getElementById('ef-wr-area').innerHTML = efKeys.map(ef => {
+      var wr = efWR[ef];
+      var cls = wr >= 60 ? 'grn' : wr >= 40 ? 'warn' : 'r';
+      var bw = Math.round(wr) + '%';
+      return '<div style="margin-bottom:6px">' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">' +
+        '<span>EF ' + ef + '</span><span class="' + cls + '">' + wr + '%</span></div>' +
+        '<div class="bar"><div class="fill fvit" style="width:' + bw + '"></div></div></div>';
+    }).join('');
+  }
+}
+
+function renderHistorico(combates){
+  if(!combates || !combates.length){
+    document.getElementById('hist-tbody').innerHTML =
+      '<tr><td colspan="11" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
+    return;
+  }
+  document.getElementById('hist-count').textContent = '(' + combates.length + ')';
+  // Mostra os 30 mais recentes primeiro
+  var lista = combates.slice().reverse().slice(0,30);
+  document.getElementById('hist-tbody').innerHTML = lista.map(c => {
+    var res = c.resultado === 'vitoria'
+      ? '<span class="sc-ok">✓ Vitória</span>'
+      : '<span class="sc-bad">✗ Derrota</span>';
+    var tipo = c.adv_tipo === 'zumbi'
+      ? '<span class="badge bz">Z</span>'
+      : '<span class="badge bh">H</span>';
+    var hora = new Date(c.timestamp).toLocaleTimeString('pt-BR');
+    return '<tr>' +
+      '<td>' + c.adv_nome + '</td>' +
+      '<td class="c">' + tipo + '</td>' +
+      '<td class="c gold">' + c.adv_ef + '</td>' +
+      '<td class="c">' + c.adv_lv + '</td>' +
+      '<td class="c">' + c.adv_ac + '</td>' +
+      '<td class="c">' + c.adv_blq + '</td>' +
+      '<td class="c"><span class="' + scoreClass(c.score_previsto) + '">' + c.score_previsto + '</span></td>' +
+      '<td class="c">' + (c.score_sim ? '<span class="' + scoreClass(c.score_sim) + '">' + c.score_sim + '</span>' : '—') + '</td>' +
+      '<td class="c">' + res + '</td>' +
+      '<td class="ri g">' + (c.gold > 0 ? fmt(c.gold)+'g' : '—') + '</td>' +
+      '<td class="ri bl">' + (c.xp > 0 ? fmt(c.xp) : '—') + '</td>' +
+      '<td class="c mt">' + hora + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function fetchLog(){
+  fetch('http://'+location.hostname+':'+location.port+'/log')
+    .then(r=>r.text()).then(txt=>{
+      var lines = txt.trim().split('\n').slice(-30);
+      var box = document.getElementById('log-box');
+      box.innerHTML = '';
+      lines.forEach(function(line){
+        if(!line) return;
+        var tipo = line.includes('[ERROR]')?'err':line.includes('[WARNING]')?'warn':
+          (line.includes('✓')||line.includes('⚔')||line.includes('VITÓRIA'))?'ok':'info';
+        var d = document.createElement('div');
+        d.className = 'll ' + tipo;
+        var msg = line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[.*?\] /,'');
+        d.innerHTML = '<span class="ts">'+line.substring(11,19)+'</span><span class="msg">'+msg+'</span>';
+        box.appendChild(d);
+      });
+      box.scrollTop = box.scrollHeight;
+    }).catch(()=>{});
+}
+
+function fetchAll(){
+  fetch('http://'+location.hostname+':'+location.port+'/dados')
+    .then(r=>r.json()).then(d=>{
+      document.getElementById('sdot').className = 'dot on';
+      document.getElementById('stxt').textContent = 'Online';
+      dadosGlobal = d;
+      render(d);
+    }).catch(()=>{
+      document.getElementById('sdot').className = 'dot off';
+      document.getElementById('stxt').textContent = 'Offline';
+    });
+
+  fetch('http://'+location.hostname+':'+location.port+'/combates')
+    .then(r=>r.json()).then(renderHistorico).catch(()=>{});
+
+  fetchLog();
+}
+
+fetchAll();
+setInterval(fetchAll, 15000);
+
+function renderHistorico(combates){
+  var tbody = document.getElementById('hist-tbody');
+  var countEl = document.getElementById('hist-count'); if(countEl) countEl.textContent = combates.length;
+  if(!tbody) return;
+  if(!combates || !combates.length){
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
+    return;
+  }
+  var rows = combates.slice().reverse().slice(0,50).map(function(c){
+    var res = c.resultado==='vitoria'
+      ? '<span class="sc-ok">✓ Vitória</span>'
+      : '<span class="sc-bad">✗ Derrota</span>';
+    var sc_prev = c.score_previsto || c._score || 0;
+    var sc_sim  = c.score_sim || 0;
+    var hora = c.timestamp ? new Date(c.timestamp).toLocaleTimeString('pt-BR') : '—';
+    return '<tr>'+
+      '<td>'+(c.adv_nome||'?')+'</td>'+
+      '<td class="c">'+(c.adv_tipo||'?')+'</td>'+
+      '<td class="c">'+(c.adv_ef||'?')+'</td>'+
+      '<td class="c">'+(c.adv_lv||'?')+'</td>'+
+      '<td class="c">'+(c.adv_ac||'?')+'</td>'+
+      '<td class="c">'+(c.adv_blq||'?')+'</td>'+
+      '<td class="c"><span class="'+scoreClass(sc_prev)+'">'+sc_prev+'</span></td>'+
+      '<td class="c">'+(sc_sim ? '<span class="'+scoreClass(sc_sim)+'">'+sc_sim+'</span>' : '—')+'</td>'+
+      '<td class="c">'+res+'</td>'+
+      '<td class="ri g">'+(c.gold>0 ? fmt(c.gold)+'g' : '—')+'</td>'+
+      '<td class="ri bl">'+(c.xp>0 ? fmt(c.xp) : '—')+'</td>'+
+      '<td class="c mt">'+hora+'</td>'+
+    '</tr>';
+  });
+  tbody.innerHTML = rows.join('');
+}
+</script>
+
+<!-- Histórico de Combates -->
+<div class="card" style="margin-top:10px">
+  <div class="ct">Histórico de combates (<span id="hist-count">0</span>)</div>
+  <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr>
+        <th>Adversário</th>
+        <th class="c">Tipo</th>
+        <th class="c">EF</th>
+        <th class="c">Lv</th>
+        <th class="c">AC</th>
+        <th class="c">Blq</th>
+        <th class="c">Score</th>
+        <th class="c">Score Sim</th>
+        <th class="c">Resultado</th>
+        <th class="ri">Gold</th>
+        <th class="ri">XP</th>
+        <th class="c">Horário</th>
+      </tr></thead>
+      <tbody id="hist-tbody">
+        <tr><td colspan="12" style="text-align:center;color:var(--mt);padding:20px">Aguardando combates...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>
