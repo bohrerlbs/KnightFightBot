@@ -2079,14 +2079,14 @@ def parsear_taverna(client, horas_max=1):
                     horas = int(txt)
                     break
 
-            # Gold: primeiro número > 100 dentro de classe "jobvalues" ou hidden-mobile
-            # O HTML tem: <strong>230</strong> ou <strong>1.380</strong>
+            # Gold: primeiro número > 12 (horas vão de 1-12, gold mínimo é 70g)
+            # O HTML tem: <strong>70</strong>, <strong>140</strong>, <strong>210</strong> etc.
             gold = 0
             for strong in row.find_all("strong"):
                 txt = strong.get_text(strip=True).replace(".", "").replace(",", "")
                 if txt.isdigit():
                     v = int(txt)
-                    if v > 100:
+                    if v > 12:
                         gold = v
                         break
 
