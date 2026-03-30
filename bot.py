@@ -66,6 +66,7 @@ RENOVAR_IMUNIDADE_SEG = 600
 HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
 MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
+TAVERNA_ATIVA        = True   # pode ser sobrescrito pelo config.json
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
