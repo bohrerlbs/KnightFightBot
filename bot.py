@@ -66,7 +66,6 @@ RENOVAR_IMUNIDADE_SEG = 600
 HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
 MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
-TAVERNA_ATIVA        = True   # pode ser sobrescrito pelo config.json
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -1328,8 +1327,12 @@ def scrape_ranking(client, paginas=None):
 def salvar_snapshot(jogadores):
     snapshots = []
     if os.path.exists(RANKING_FILE):
-        with open(RANKING_FILE, encoding="utf-8") as f:
-            snapshots = json.load(f)
+        try:
+            with open(RANKING_FILE, encoding="utf-8") as f:
+                snapshots = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            log.warning(f"[snapshot] {RANKING_FILE} corrompido — reiniciando arquivo")
+            snapshots = []
     snapshots.append({"timestamp": agora().isoformat(), "jogadores": jogadores})
     snapshots = snapshots[-50:]
     with open(RANKING_FILE, "w", encoding="utf-8") as f:
@@ -1337,8 +1340,11 @@ def salvar_snapshot(jogadores):
 
 def carregar_snapshots():
     if not os.path.exists(RANKING_FILE): return []
-    with open(RANKING_FILE, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(RANKING_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        return []
 
 # ═══════════════════════════════════════════
 # PIG LIST
@@ -2624,10 +2630,13 @@ def iniciar_servidor(porta=8765):
                 resp["historico"] = combates[-20:]
             except: pass
             body = json.dumps(resp, ensure_ascii=False).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self._cors(); self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._cors(); self.end_headers()
+                self.wfile.write(body)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass
 
         def _serve_file(self, fname, ctype):
             # Procura o arquivo: primeiro na pasta atual (perfil),
