@@ -2287,19 +2287,21 @@ def _taverna_1h(client):
                         atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                         log.info("  ✓ Missão concluída — retomando")
                         break
-                ok_r, h_r, g_r, msg_r = aceitar_job_taverna(client, horas_max=1)
-                if ok_r:
-                    log.info(f"  🍺 Taverna: job {h_r}h aceito (+{g_r}g) — dormindo {h_r}h")
-                    fim_r = (agora() + timedelta(hours=h_r)).isoformat()
-                    atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "taverna",
-                        "taverna_fim": fim_r, "taverna_horas": h_r, "taverna_gold": g_r})
-                    time.sleep(h_r * 3600)
-                    sair_taverna(client)
-                    atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
-                    log.info("  ✓ Job da taverna concluído — retomando")
-                    break
-                if _tent % 60 == 0:
-                    log.info(f"  Aguardando job 1h... t={_tent+1}")
+                # Tenta aceitar job a cada 30s (não a cada 1s para não spammar o servidor)
+                if _tent % 30 == 0:
+                    ok_r, h_r, g_r, msg_r = aceitar_job_taverna(client, horas_max=1)
+                    if ok_r:
+                        log.info(f"  🍺 Taverna: job {h_r}h aceito (+{g_r}g) — dormindo {h_r}h")
+                        fim_r = (agora() + timedelta(hours=h_r)).isoformat()
+                        atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "taverna",
+                            "taverna_fim": fim_r, "taverna_horas": h_r, "taverna_gold": g_r})
+                        time.sleep(h_r * 3600)
+                        sair_taverna(client)
+                        atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
+                        log.info("  ✓ Job da taverna concluído — retomando")
+                        break
+                    if _tent % 60 == 0:
+                        log.info(f"  Aguardando job 1h... t={_tent+1}")
             else:
                 log.warning("  Sem job de 1h após 2h — retomando bot")
 
@@ -2487,8 +2489,8 @@ def loop_rapido(client):
                 if av["score"] < score_pig_min:
                     log.info(f"    Score {av['score']} < {score_pig_min} (gold_conta={gold_conta}g) — pulando"); continue
 
-                # Verifica gold mínimo esperado
-                if gold_esp < GOLD_MIN_PIG and pig.get("categoria") != "PIG_CONFIRMADO":
+                # Verifica gold mínimo esperado (todos os pigs, inclusive confirmados)
+                if gold_esp < GOLD_MIN_PIG:
                     log.info(f"    Gold esperado {gold_esp}g < mínimo {GOLD_MIN_PIG}g — pulando"); continue
 
                 log.info(f"    ✓ ATACANDO {pig['nome']}! (gold_esp={gold_esp}g, xp_perda={xp_perda})")

@@ -652,20 +652,27 @@ function openUsersModal(){
 }
 
 function loadUsers(){
-  fetch('/api/users/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  document.getElementById('users-list').innerHTML='<div style="color:var(--muted);font-size:12px">Carregando...</div>';
+  fetch('/api/users/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',credentials:'include'})
   .then(r=>r.json()).then(function(d){
-    if(!d.ok) return;
+    if(!d.ok){
+      document.getElementById('users-list').innerHTML='<div style="color:var(--red);font-size:12px">Erro: '+(d.error||'sem permissão')+'</div>';
+      return;
+    }
     var html = '';
     Object.keys(d.users).forEach(function(u){
       var ud = d.users[u];
+      var profs = ud.profiles&&ud.profiles.length?ud.profiles.join(', '):'todos';
       html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2)">';
       html += '<span style="flex:1;font-size:12px">'+(ud.role==='admin'?'👑 ':'')+u+'</span>';
-      html += '<span style="font-size:10px;color:var(--muted)">'+(ud.profiles.length?ud.profiles.join(', '):'todos')+'</span>';
+      html += '<span style="font-size:10px;color:var(--muted)">'+profs+'</span>';
       html += '<button class="btn btn-del" onclick="editUser(this)" data-u="'+u+'">editar</button>';
       if(u!=='admin') html += '<button class="btn btn-del" onclick="deleteUser(this)" data-u="'+u+'">x</button>';
       html += '</div>';
     });
     document.getElementById('users-list').innerHTML = html || '<div style="color:var(--muted);font-size:12px">Nenhum usuário</div>';
+  }).catch(function(e){
+    document.getElementById('users-list').innerHTML='<div style="color:var(--red);font-size:12px">Erro de conexão: '+e+'</div>';
   });
 }
 
@@ -1195,6 +1202,7 @@ Os bots serão parados e reiniciados automaticamente.`)) return;
 }
 
 // Auto-refresh
+loadMe();
 loadProfiles();
 refreshInt = setInterval(loadProfiles, REFRESH);
 
