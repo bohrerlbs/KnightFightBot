@@ -117,8 +117,21 @@ def get_log_tail(name, lines=20):
     if not log.exists():
         return []
     try:
-        with open(log, encoding="utf-8", errors="replace") as f:
-            return [l.rstrip() for l in f.readlines()[-lines:]]
+        chunk = 4096
+        result = []
+        with open(log, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            pos = size
+            buf = b""
+            while pos > 0 and len(result) < lines + 1:
+                read = min(chunk, pos)
+                pos -= read
+                f.seek(pos)
+                buf = f.read(read) + buf
+                result = buf.split(b"\n")
+            lines_out = [l.decode("utf-8", errors="replace").rstrip() for l in result[-lines:] if l]
+            return lines_out
     except:
         return []
 
