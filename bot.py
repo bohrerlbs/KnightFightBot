@@ -980,6 +980,10 @@ def parsear_resultado_combate(soup, eu_fui_atacante=True):
             xp_ganho = int(v)
             break
 
+    # XP é negativo em derrota
+    if resultado == "derrota" and xp_ganho > 0:
+        xp_ganho = -xp_ganho
+
     return resultado, gold_ganho, xp_ganho, turnos_stats
 
 
@@ -1160,7 +1164,10 @@ def executar_ataque(client, user_id, dry_run=False):
     pl = carregar_pig_list()
     if user_id in pl:
         perfil_aprendizado["_score_cache"] = pl[user_id].get("score_cache", 0)
-    registrar_combate_srv(perfil_aprendizado, resultado, gold_ganho, xp_ganho, turnos=turnos_stats)
+    registrar_combate_srv(perfil_aprendizado, resultado, gold_ganho, xp_ganho,
+                          dano_causado=turnos_stats.get("dano_eu", 0),
+                          dano_recebido=turnos_stats.get("dano_adv", 0),
+                          turnos=turnos_stats)
 
     estado = carregar_estado()
     registrar_ataque(estado, user_id, resultado, gold_ganho, xp_ganho)

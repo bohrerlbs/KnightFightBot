@@ -319,14 +319,14 @@ function renderHistorico(combates){
     return '<tr>'+
       '<td style="font-size:11px;color:var(--muted)">'+ts+'</td>'+
       '<td>'+(c.adv_nome||'?')+'</td>'+
-      '<td class="c">'+(c.adv_lv||'?')+'</td>'+
+      '<td class="c">'+(c.adv_lv!=null?c.adv_lv:'?')+'</td>'+
       '<td class="c">'+res+'</td>'+
       '<td class="r">'+gold+'</td>'+
-      '<td class="r">'+(c.xp||0)+'</td>'+
+      '<td class="r">'+(c.xp>0?'<span style="color:var(--green2)">+'+c.xp+'</span>':c.xp<0?'<span style="color:#e08080">'+c.xp+'</span>':'0')+'</td>'+
       '<td class="c">'+sc_prev+'</td>'+
       '<td class="c">'+sc_sim+'</td>'+
-      '<td class="r">'+(c.dano_causado||'—')+'</td>'+
-      '<td class="r">'+(c.dano_recebido||'—')+'</td>'+
+      '<td class="r">'+(c.dano_causado>0?c.dano_causado:'—')+'</td>'+
+      '<td class="r">'+(c.dano_recebido>0?c.dano_recebido:'—')+'</td>'+
     '</tr>';
   });
   document.getElementById('hist-tbody').innerHTML = rows.join('');
@@ -569,8 +569,8 @@ function renderPigs(pigs){
     return(va-vb)*pigSortDir;
   });
 
-  // Ativos primeiro, histórico depois
-  var atRo=rows.filter(r=>r.p.status!=='atacado');
+  // Ativos primeiro (ge>=50), histórico depois
+  var atRo=rows.filter(r=>r.p.status!=='atacado'&&r.ge>=50);
   var hiRo=rows.filter(r=>r.p.status==='atacado');
   var sorted=[...atRo,...hiRo];
 
@@ -592,7 +592,8 @@ function renderPigs(pigs){
       ?'<span class="rv '+(p.gold_ganho>0?'g':'mt')+'">'+fmt(p.gold_ganho)+'g</span>'
       :'—';
     var xpEl=isHist&&p.xp_ganho!=null
-      ?(p.xp_ganho>0?'<span class="rv g">+'+p.xp_ganho+'</span>':'0')
+      ?(p.xp_ganho>0?'<span class="rv g">+'+p.xp_ganho+'</span>'
+        :p.xp_ganho<0?'<span style="color:#e08080">'+p.xp_ganho+'</span>':'0')
       :'—';
     var geEl=ge>0?'<span class="rv g">~'+fmt(ge)+'g</span>':'?';
     var tr='<tr style="'+(isHist?'opacity:.55':'')+'">'+
