@@ -974,13 +974,14 @@ def parsear_resultado_combate(soup, eu_fui_atacante=True):
     if m_gold:
         gold_ganho = int(m_gold.group(1))
 
-    m_xp = re.findall(r"(\d+)\s*<img[^>]*exp_scroll[^>]*>", html_txt)
+    m_xp = re.findall(r"(-?\d+)\s*<img[^>]*exp_scroll[^>]*>", html_txt)
     for v in m_xp:
-        if int(v) > 0:
-            xp_ganho = int(v)
+        val = int(v)
+        if val != 0:
+            xp_ganho = val
             break
 
-    # XP é negativo em derrota
+    # Se o HTML não mostrou XP negativo mas foi derrota, nega o valor
     if resultado == "derrota" and xp_ganho > 0:
         xp_ganho = -xp_ganho
 
@@ -1155,15 +1156,20 @@ def executar_ataque(client, user_id, dry_run=False):
     resultado, gold_ganho, xp_ganho, turnos_stats = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
 
     # Registra para aprendizado (usa atributos frescos se disponíveis, senão usa cache)
-    perfil_aprendizado = attrs or {}
+    perfil_aprendizado = attrs.copy() if attrs else {}
     perfil_aprendizado["user_id"] = user_id
     if not attrs:
         cache = carregar_perfis_cache()
         perfil_aprendizado.update(cache.get("perfis", {}).get(user_id, {}))
-    # Adiciona score previsto se estava na pig_list
+    # Adiciona nome e level do pig_list (parsear_confirmacao_ataque não retorna esses campos)
     pl = carregar_pig_list()
     if user_id in pl:
-        perfil_aprendizado["_score_cache"] = pl[user_id].get("score_cache", 0)
+        pig_entry = pl[user_id]
+        if not perfil_aprendizado.get("nome") and pig_entry.get("nome"):
+            perfil_aprendizado["nome"] = pig_entry["nome"]
+        if not perfil_aprendizado.get("level") and pig_entry.get("level"):
+            perfil_aprendizado["level"] = pig_entry["level"]
+        perfil_aprendizado["_score_cache"] = pig_entry.get("score_cache", 0)
     registrar_combate_srv(perfil_aprendizado, resultado, gold_ganho, xp_ganho,
                           dano_causado=turnos_stats.get("dano_eu", 0),
                           dano_recebido=turnos_stats.get("dano_adv", 0),

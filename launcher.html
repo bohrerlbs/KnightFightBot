@@ -554,7 +554,41 @@ header {
   </div>
 </div>
 
-<div class="modal-backdrop"
+<!-- Modal usuários -->
+<div class="modal-backdrop" id="modal-users">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">Gerenciar Usuários</div>
+    <div id="users-list" style="max-height:300px;overflow-y:auto;margin:12px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn-primary" style="flex:1" onclick="newUser()">+ Novo Usuário</button>
+      <button class="btn-secondary" onclick="closeModal('modal-users')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-user-form">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title" id="user-form-title">Usuário</div>
+    <div style="margin-top:12px">
+      <label class="form-label">Nome de usuário</label>
+      <input class="form-input" id="u-name" placeholder="ex: joao123">
+      <label class="form-label" style="margin-top:8px">Senha <span style="color:var(--muted)">(deixe vazio para manter)</span></label>
+      <input class="form-input" id="u-pass" type="password" placeholder="nova senha">
+      <label class="form-label" style="margin-top:8px">Papel</label>
+      <select class="form-select" id="u-role">
+        <option value="user">Usuário (acesso limitado)</option>
+        <option value="admin">Admin (acesso total)</option>
+      </select>
+      <label class="form-label" style="margin-top:8px">Perfis permitidos <span style="color:var(--muted)">(separados por vírgula, vazio = nenhum)</span></label>
+      <input class="form-input" id="u-profiles" placeholder="ex: bohrer_int7, bohrinha_int7">
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">Admin vê todos os perfis independente deste campo</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn-primary" style="flex:1" onclick="saveUser()">v Salvar</button>
+      <button class="btn-secondary" onclick="closeModal('modal-user-form')">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -855,10 +889,12 @@ function renderProfiles(profiles){
   };
 }
 
+var _profilesReqId = 0;
 function loadProfiles(){
+  var reqId = ++_profilesReqId;
   fetch('/api/profiles')
     .then(r=>r.json())
-    .then(renderProfiles)
+    .then(function(d){ if(reqId===_profilesReqId) renderProfiles(d); })
     .catch(()=>{});
 }
 
@@ -930,7 +966,7 @@ function startBG(name, modo){
 }
 
 function stopBG(name){
-  fetch('/api/bg/stop/'+name+'/')
+  fetch('/api/bg/stop/'+name+'/',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
     .then(r=>r.json())
     .then(d=>{
       if(d.ok){
@@ -1220,40 +1256,6 @@ setInterval(function(){
   });
 }, 1000);
 </script>
-<div class="modal-backdrop" id="modal-users">
-  <div class="modal" style="max-width:480px">
-    <div class="modal-title">Gerenciar Usuários</div>
-    <div id="users-list" style="max-height:300px;overflow-y:auto;margin:12px 0"></div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn-primary" style="flex:1" onclick="newUser()">+ Novo Usuário</button>
-      <button class="btn-secondary" onclick="closeModal('modal-users')">Fechar</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-backdrop" id="modal-user-form">
-  <div class="modal" style="max-width:400px">
-    <div class="modal-title" id="user-form-title">Usuário</div>
-    <div style="margin-top:12px">
-      <label class="form-label">Nome de usuário</label>
-      <input class="form-input" id="u-name" placeholder="ex: joao123">
-      <label class="form-label" style="margin-top:8px">Senha <span style="color:var(--muted)">(deixe vazio para manter)</span></label>
-      <input class="form-input" id="u-pass" type="password" placeholder="nova senha">
-      <label class="form-label" style="margin-top:8px">Papel</label>
-      <select class="form-select" id="u-role">
-        <option value="user">Usuário (acesso limitado)</option>
-        <option value="admin">Admin (acesso total)</option>
-      </select>
-      <label class="form-label" style="margin-top:8px">Perfis permitidos <span style="color:var(--muted)">(separados por vírgula, vazio = nenhum)</span></label>
-      <input class="form-input" id="u-profiles" placeholder="ex: bohrer_int7, bohrinha_int7">
-      <div style="font-size:10px;color:var(--muted);margin-top:4px">Admin vê todos os perfis independente deste campo</div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn-primary" style="flex:1" onclick="saveUser()">v Salvar</button>
-      <button class="btn-secondary" onclick="closeModal('modal-user-form')">Cancelar</button>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>
