@@ -892,10 +892,30 @@ function renderProfiles(profiles){
 var _profilesReqId = 0;
 function loadProfiles(){
   var reqId = ++_profilesReqId;
-  fetch('/api/profiles')
-    .then(r=>r.json())
-    .then(function(d){ if(reqId===_profilesReqId) renderProfiles(d); })
-    .catch(()=>{});
+  fetch('/api/profiles', {credentials:'include'})
+    .then(function(r){
+      if(r.redirected || r.url.indexOf('/login') !== -1){
+        document.getElementById('profiles-grid').innerHTML =
+          '<div style="color:var(--red);padding:20px;font-size:13px">Sessão expirada — <a href="/login" style="color:var(--gold)">faça login novamente</a></div>';
+        return Promise.reject('auth');
+      }
+      return r.json();
+    })
+    .then(function(d){
+      if(reqId!==_profilesReqId) return;
+      if(d && d.error){
+        document.getElementById('profiles-grid').innerHTML =
+          '<div style="color:var(--red);padding:20px;font-size:13px">Erro: '+d.error+'</div>';
+      } else {
+        renderProfiles(Array.isArray(d)?d:[]);
+      }
+    })
+    .catch(function(e){
+      if(e==='auth') return;
+      if(reqId===_profilesReqId)
+        document.getElementById('profiles-grid').innerHTML =
+          '<div style="color:var(--red);padding:20px;font-size:13px">Erro ao carregar perfis: '+e+'</div>';
+    });
 }
 
 function startBot(name){

@@ -49,9 +49,9 @@ def get_session(handler):
     return None
 
 def filter_profiles(profiles, session):
-    if session["role"] == "admin":
+    if session.get("role") == "admin":
         return profiles
-    allowed = [p.lower() for p in session["profiles"]]
+    allowed = [p.lower() for p in (session.get("profiles") or [])]
     return [p for p in profiles if p.get("_name","").lower() in allowed]
 
 def is_admin(session):
@@ -616,7 +616,10 @@ class Handler(BaseHTTPRequestHandler):
         if p in ("/", "/launcher"):
             self._file("launcher.html", "text/html")
         elif p == "/api/profiles":
-            self._json(filter_profiles(get_profiles(), session))
+            try:
+                self._json(filter_profiles(get_profiles(), session))
+            except Exception as e:
+                self._json({"error": str(e), "profiles": []})
         elif p == "/api/version":
             self._json(check_update())
         elif p.startswith("/api/log/"):
