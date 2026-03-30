@@ -574,15 +574,11 @@ function toast(msg, type='ok'){
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
-var _cfgAbort = null;
 function openCfgModal(name){
-  if(_cfgAbort) _cfgAbort.abort();
-  _cfgAbort = new AbortController();
   document.getElementById('cfg-profile-name').value = name;
   document.getElementById('cfg-name-title').textContent = name;
     // Lê direto do config.json via API para garantir valores atuais
-    fetch('/api/cfg/'+name, {signal: _cfgAbort.signal}).then(r=>r.json()).then(function(cfg){
-      if(cfg.error){ toast('Erro ao ler config: '+cfg.error,'err'); return; }
+    fetch('/api/cfg/'+name).then(r=>r.json()).then(function(cfg){
       document.getElementById('cfg-gold-min').value    = cfg.gold_min_pig    != null ? cfg.gold_min_pig    : 50;
       document.getElementById('cfg-xp-max').value      = cfg.perda_xp_max   != null ? cfg.perda_xp_max    : 0;
       document.getElementById('cfg-gold-xp').value     = cfg.gold_ignorar_xp != null ? cfg.gold_ignorar_xp : 500;
@@ -590,9 +586,9 @@ function openCfgModal(name){
       document.getElementById('cfg-pausa').value       = cfg.pausa_cache     != null ? cfg.pausa_cache     : 0.5;
       document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
-      document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa === true;
+      document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
       document.getElementById('cfg-premium').checked   = !!cfg.premium;
-    }).catch(function(){});
+    });
   openModal('modal-cfg');
 }
 
@@ -658,24 +654,18 @@ function openUsersModal(){
 function loadUsers(){
   fetch('/api/users/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
   .then(r=>r.json()).then(function(d){
-    if(!d.ok){
-      document.getElementById('users-list').innerHTML = '<div style="color:var(--red);font-size:12px">Erro: '+(d.error||'sem permissão')+'</div>';
-      return;
-    }
+    if(!d.ok) return;
     var html = '';
     Object.keys(d.users).forEach(function(u){
       var ud = d.users[u];
-      var profs = ud.profiles || [];
       html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2)">';
       html += '<span style="flex:1;font-size:12px">'+(ud.role==='admin'?'👑 ':'')+u+'</span>';
-      html += '<span style="font-size:10px;color:var(--muted)">'+(profs.length?profs.join(', '):'todos')+'</span>';
+      html += '<span style="font-size:10px;color:var(--muted)">'+(ud.profiles.length?ud.profiles.join(', '):'todos')+'</span>';
       html += '<button class="btn btn-del" onclick="editUser(this)" data-u="'+u+'">editar</button>';
       if(u!=='admin') html += '<button class="btn btn-del" onclick="deleteUser(this)" data-u="'+u+'">x</button>';
       html += '</div>';
     });
     document.getElementById('users-list').innerHTML = html || '<div style="color:var(--muted);font-size:12px">Nenhum usuário</div>';
-  }).catch(function(e){
-    document.getElementById('users-list').innerHTML = '<div style="color:var(--red);font-size:12px">Erro de conexão: '+e+'</div>';
   });
 }
 
@@ -858,15 +848,10 @@ function renderProfiles(profiles){
   };
 }
 
-var _profilesReqId = 0;
 function loadProfiles(){
-  var reqId = ++_profilesReqId;
   fetch('/api/profiles')
     .then(r=>r.json())
-    .then(function(profiles){
-      if(reqId !== _profilesReqId) return; // resposta antiga, ignorar
-      renderProfiles(profiles);
-    })
+    .then(renderProfiles)
     .catch(()=>{});
 }
 
@@ -938,7 +923,7 @@ function startBG(name, modo){
 }
 
 function stopBG(name){
-  fetch('/api/bg/stop/'+name+'/', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  fetch('/api/bg/stop/'+name+'/')
     .then(r=>r.json())
     .then(d=>{
       if(d.ok){
@@ -1210,7 +1195,6 @@ Os bots serão parados e reiniciados automaticamente.`)) return;
 }
 
 // Auto-refresh
-loadMe();
 loadProfiles();
 refreshInt = setInterval(loadProfiles, REFRESH);
 
