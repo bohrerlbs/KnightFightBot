@@ -1,14 +1,14 @@
 @echo off
 cd /d "%~dp0"
-echo [1/4] Encerrando bots e launcher...
+echo [1/3] Encerrando bots e launcher...
 taskkill /F /IM python.exe /T > nul 2>&1
 taskkill /F /IM pythonw.exe /T > nul 2>&1
 taskkill /F /IM ngrok.exe /T > nul 2>&1
 timeout /t 2 /nobreak > nul
 
-echo [2/4] Baixando atualizacao do GitHub...
+echo [2/3] Baixando atualizacao do GitHub...
 python -c "
-import urllib.request, zipfile, shutil, os
+import urllib.request
 from pathlib import Path
 
 base = Path(r'%~dp0')
@@ -19,8 +19,7 @@ files = ['launcher.py','launcher.html','dashboard.html','dashboard_bg.html',
 updated = 0
 for f in files:
     try:
-        url = f'{raw}/{f}'
-        data = urllib.request.urlopen(url, timeout=10).read()
+        data = urllib.request.urlopen(f'{raw}/{f}', timeout=10).read()
         (base / f).write_bytes(data)
         print(f'  OK {f}')
         updated += 1
@@ -28,14 +27,8 @@ for f in files:
         print(f'  SKIP {f}: {e}')
 print(f'Atualizados: {updated}/{len(files)}')
 "
-if errorlevel 1 (
-    echo AVISO: Erro ao atualizar. Reiniciando com versao atual...
-)
 
-echo [3/4] Iniciando launcher...
+echo [3/3] Iniciando launcher...
 timeout /t 1 /nobreak > nul
-start "" pythonw launcher.py
-
-echo [4/4] Pronto! O launcher esta subindo em background.
-echo        Acesse: http://localhost:8764/launcher
-timeout /t 3 /nobreak > nul
+python launcher.py
+pause
