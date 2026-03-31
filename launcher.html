@@ -292,6 +292,7 @@ header {
     <button class="btn-secondary" id="btn-users" onclick="openUsersModal()" style="font-size:10px;padding:4px 10px;margin-right:6px">Usuários</button>
     <button class="btn-secondary" id="btn-change-pass" onclick="openChangePassModal()" style="font-size:10px;padding:4px 10px;display:none">Alterar Senha</button>
     <button class="btn-secondary" id="btn-logout" onclick="logout()" style="font-size:10px;padding:4px 10px;color:var(--red);display:none">Sair</button>
+    <a id="tunnel-link" href="#" target="_blank" style="font-size:10px;color:var(--muted);text-decoration:none;display:none" title="URL pública (ngrok)">🌐 <span id="tunnel-domain"></span></a>
     <span class="version" id="ver">v1.0.0</span>
     <button class="update-badge" id="update-badge" onclick="doUpdate()">
       ^ Atualização disponível - clique para instalar
@@ -1352,10 +1353,22 @@ Os bots serão parados e reiniciados automaticamente.`)) return;
     .catch(()=>{ toast('Erro de conexão','err'); b.disabled=false; });
 }
 
+function loadTunnel(){
+  fetch('/api/tunnel').then(r=>r.json()).then(function(d){
+    if(d && d.url && d.active){
+      var el=document.getElementById('tunnel-link');
+      el.href=d.url; el.style.display='inline';
+      document.getElementById('tunnel-domain').textContent=d.domain;
+    }
+  }).catch(function(){});
+}
+
 // Auto-refresh
 loadMe();
 loadProfiles();
+loadTunnel();
 refreshInt = setInterval(loadProfiles, REFRESH);
+setInterval(loadTunnel, 15000);
 
 // Atualiza countdown de taverna a cada segundo (sem recarregar profiles)
 setInterval(function(){

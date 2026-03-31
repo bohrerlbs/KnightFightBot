@@ -65,9 +65,31 @@ def get_version():
     except:
         return "1.0.0"
 
-GITHUB_RAW  = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
+GITHUB_RAW    = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
 LAUNCHER_PORT = 8764
 running_bots  = {}
+
+# ── Ngrok ─────────────────────────────────────────────────────────────────────
+NGROK_DOMAIN  = "eve-unbanned-asunder.ngrok-free.dev"   # domínio fixo ngrok
+_ngrok_proc   = None
+
+def _start_ngrok():
+    global _ngrok_proc
+    ngrok_exe = BASE_DIR / "ngrok.exe"
+    if not ngrok_exe.exists():
+        print("[NGROK] ngrok.exe não encontrado — tunnel desativado")
+        return
+    print(f"[NGROK] Iniciando tunnel para {NGROK_DOMAIN}...")
+    try:
+        _ngrok_proc = subprocess.Popen(
+            [str(ngrok_exe), "http", str(LAUNCHER_PORT),
+             "--domain", NGROK_DOMAIN, "--log", "stdout"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        )
+        print(f"[NGROK] Tunnel ativo: https://{NGROK_DOMAIN}")
+    except Exception as e:
+        print(f"[NGROK] Erro ao iniciar: {e}")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_profiles():
@@ -637,6 +659,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": str(e), "profiles": []})
         elif p == "/api/version":
             self._json(check_update())
+        elif p == "/api/tunnel":
+            self._json({"url": f"https://{NGROK_DOMAIN}", "domain": NGROK_DOMAIN, "active": _ngrok_proc is not None and _ngrok_proc.poll() is None})
         elif p.startswith("/api/log/"):
             self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
         elif p.startswith("/api/cfg/"):
@@ -886,11 +910,14 @@ def run():
     url    = f"http://localhost:{LAUNCHER_PORT}/launcher"
     print(f"KnightFight Bot Launcher {get_version()}")
     print(f"Abrindo {url}")
+    threading.Thread(target=_start_ngrok, daemon=True).start()
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("Launcher encerrado.")
+        if _ngrok_proc and _ngrok_proc.poll() is None:
+            _ngrok_proc.terminate()
         for p in running_bots.values():
             if p.poll() is None:
                 p.terminate()
