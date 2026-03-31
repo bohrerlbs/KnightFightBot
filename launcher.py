@@ -86,7 +86,7 @@ def _start_ngrok():
         with open(log_path, "w", encoding="utf-8") as lf:
             _ngrok_proc = subprocess.Popen(
                 [str(ngrok_exe), "http", str(LAUNCHER_PORT),
-                 "--domain", NGROK_DOMAIN],
+                 "--url", NGROK_DOMAIN],
                 stdout=lf, stderr=lf,
                 creationflags=flags
             )
