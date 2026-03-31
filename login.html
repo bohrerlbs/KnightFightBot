@@ -88,38 +88,93 @@
     text-transform: uppercase;
   }
   button:hover { background: rgba(200,148,58,0.25); }
-  .error {
-    color: var(--red);
+  .btn-link {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: 'Open Sans', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0;
+    padding: 8px;
+    text-transform: none;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .btn-link:hover { background: transparent; color: var(--gold); }
+  .msg {
     font-size: 12px;
     text-align: center;
     margin-top: 14px;
     display: none;
+    padding: 8px 12px;
+    border-radius: 3px;
   }
+  .msg.err  { color: var(--red);    background: rgba(192,80,80,0.1);  display: block; }
+  .msg.ok   { color: var(--green2); background: rgba(106,191,105,0.1); display: block; }
   .sep {
     border: none;
     border-top: 1px solid var(--border);
-    margin: 24px 0;
+    margin: 20px 0;
   }
+  .panel { display: none; }
+  .panel.active { display: block; }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="logo">⚔ KnightFight Bot</div>
-  <div class="sub">Painel de Controle</div>
-  <label>Usuário</label>
-  <input type="text" id="user" placeholder="usuário" autocomplete="username">
-  <label>Senha</label>
-  <input type="password" id="pass" placeholder="••••••••" autocomplete="current-password">
-  <button onclick="login()">Entrar</button>
-  <div class="error" id="err">Usuário ou senha inválidos</div>
+  <div class="sub" id="page-sub">Painel de Controle</div>
+
+  <!-- Login -->
+  <div class="panel active" id="panel-login">
+    <label>Usuário</label>
+    <input type="text" id="login-user" placeholder="usuário" autocomplete="username">
+    <label>Senha</label>
+    <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+    <button onclick="login()">Entrar</button>
+    <hr class="sep">
+    <button class="btn-link" onclick="showPanel('register')">Criar nova conta</button>
+    <div class="msg" id="login-msg"></div>
+  </div>
+
+  <!-- Registro -->
+  <div class="panel" id="panel-register">
+    <label>Usuário</label>
+    <input type="text" id="reg-user" placeholder="escolha um nome de usuário" autocomplete="username">
+    <label>Senha</label>
+    <input type="password" id="reg-pass" placeholder="mínimo 4 caracteres" autocomplete="new-password">
+    <label>Confirmar Senha</label>
+    <input type="password" id="reg-pass2" placeholder="repita a senha" autocomplete="new-password">
+    <button onclick="register()">Criar Conta</button>
+    <hr class="sep">
+    <button class="btn-link" onclick="showPanel('login')">Já tenho conta — entrar</button>
+    <div class="msg" id="reg-msg"></div>
+  </div>
 </div>
 <script>
+function showPanel(name){
+  document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+  document.getElementById('panel-'+name).classList.add('active');
+  document.getElementById('page-sub').textContent = name === 'register' ? 'Criar Conta' : 'Painel de Controle';
+  document.getElementById('login-msg').className = 'msg';
+  document.getElementById('reg-msg').className = 'msg';
+}
+
 document.addEventListener('keydown', function(e){
-  if(e.key === 'Enter') login();
+  if(e.key !== 'Enter') return;
+  if(document.getElementById('panel-login').classList.contains('active')) login();
+  else register();
 });
+
+function showMsg(id, text, type){
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + type;
+}
+
 function login(){
-  var user = document.getElementById('user').value.trim();
-  var pass = document.getElementById('pass').value;
+  var user = document.getElementById('login-user').value.trim();
+  var pass = document.getElementById('login-pass').value;
   if(!user || !pass) return;
   fetch('/api/login', {
     method: 'POST',
@@ -128,17 +183,30 @@ function login(){
   })
   .then(r => r.json())
   .then(function(d){
-    if(d.ok){
-      window.location.href = '/';
-    } else {
-      document.getElementById('err').style.display = 'block';
-      document.getElementById('err').textContent = d.error || 'Erro ao fazer login';
-    }
+    if(d.ok){ window.location.href = '/'; }
+    else { showMsg('login-msg', d.error || 'Usuário ou senha inválidos', 'err'); }
   })
-  .catch(function(){
-    document.getElementById('err').style.display = 'block';
-    document.getElementById('err').textContent = 'Erro de conexão';
-  });
+  .catch(function(){ showMsg('login-msg', 'Erro de conexão', 'err'); });
+}
+
+function register(){
+  var user  = document.getElementById('reg-user').value.trim();
+  var pass  = document.getElementById('reg-pass').value;
+  var pass2 = document.getElementById('reg-pass2').value;
+  if(!user || !pass || !pass2){ showMsg('reg-msg','Preencha todos os campos','err'); return; }
+  if(pass !== pass2){ showMsg('reg-msg','As senhas não coincidem','err'); return; }
+  if(pass.length < 4){ showMsg('reg-msg','Senha muito curta (mín. 4 caracteres)','err'); return; }
+  fetch('/api/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user: user, password: pass})
+  })
+  .then(r => r.json())
+  .then(function(d){
+    if(d.ok){ window.location.href = '/'; }
+    else { showMsg('reg-msg', d.error || 'Erro ao criar conta', 'err'); }
+  })
+  .catch(function(){ showMsg('reg-msg', 'Erro de conexão', 'err'); });
 }
 </script>
 </body>

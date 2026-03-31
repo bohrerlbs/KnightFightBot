@@ -290,6 +290,7 @@ header {
   <div class="header-right">
     <span id="user-info" style="font-size:11px;color:var(--muted);margin-right:12px"></span>
     <button class="btn-secondary" id="btn-users" onclick="openUsersModal()" style="font-size:10px;padding:4px 10px;margin-right:6px">Usuários</button>
+    <button class="btn-secondary" id="btn-change-pass" onclick="openChangePassModal()" style="font-size:10px;padding:4px 10px;display:none">Alterar Senha</button>
     <button class="btn-secondary" id="btn-logout" onclick="logout()" style="font-size:10px;padding:4px 10px;color:var(--red);display:none">Sair</button>
     <span class="version" id="ver">v1.0.0</span>
     <button class="update-badge" id="update-badge" onclick="doUpdate()">
@@ -615,6 +616,30 @@ header {
   </div>
 </div>
 
+<!-- Modal alterar senha -->
+<div class="modal-backdrop" id="modal-change-pass">
+  <div class="modal" style="max-width:360px">
+    <div style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold2);margin-bottom:16px">Alterar Senha</div>
+    <div class="form-group">
+      <label class="form-label">Senha atual</label>
+      <input class="form-input" type="password" id="cp-old" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nova senha</label>
+      <input class="form-input" type="password" id="cp-new" placeholder="mínimo 4 caracteres" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Confirmar nova senha</label>
+      <input class="form-input" type="password" id="cp-new2" placeholder="repita a nova senha" autocomplete="new-password">
+    </div>
+    <div id="cp-msg" style="font-size:12px;margin:8px 0;display:none"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn-primary" style="flex:1" onclick="changePassword()">v Alterar Senha</button>
+      <button class="btn-secondary" onclick="closeModal('modal-change-pass')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -694,6 +719,32 @@ function saveCfg(){
   });
 }
 
+function openChangePassModal(){
+  document.getElementById('cp-old').value='';
+  document.getElementById('cp-new').value='';
+  document.getElementById('cp-new2').value='';
+  var msg=document.getElementById('cp-msg'); msg.style.display='none'; msg.textContent='';
+  openModal('modal-change-pass');
+}
+
+function changePassword(){
+  var oldp=document.getElementById('cp-old').value;
+  var newp=document.getElementById('cp-new').value;
+  var newp2=document.getElementById('cp-new2').value;
+  var msg=document.getElementById('cp-msg');
+  function showMsg(t,ok){
+    msg.textContent=t; msg.style.color=ok?'var(--green2)':'var(--red)'; msg.style.display='block';
+  }
+  if(!oldp||!newp||!newp2){showMsg('Preencha todos os campos',false);return;}
+  if(newp!==newp2){showMsg('As senhas não coincidem',false);return;}
+  if(newp.length<4){showMsg('Nova senha muito curta (mín. 4 caracteres)',false);return;}
+  fetch('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:oldp,new_password:newp})})
+  .then(r=>r.json()).then(function(d){
+    if(d.ok){showMsg('Senha alterada com sucesso!',true);setTimeout(function(){closeModal('modal-change-pass');},1200);}
+    else{showMsg(d.error||'Erro ao alterar senha',false);}
+  }).catch(function(){showMsg('Erro de conexão',false);});
+}
+
 function logout(){
   window.location.href = '/logout';
 }
@@ -704,6 +755,7 @@ function loadMe(){
     if(d.ok){
       document.getElementById('user-info').textContent = d.user + (d.role==='admin'?' (admin)':'');
       document.getElementById('btn-logout').style.display='inline-block';
+      document.getElementById('btn-change-pass').style.display='inline-block';
       if(d.role!=='admin'){
         document.getElementById('btn-users').style.display='none';
       }

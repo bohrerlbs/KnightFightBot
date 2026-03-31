@@ -704,6 +704,29 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json({"ok": False, "error": "Usuário ou senha inválidos"})
             return
+        # Registro público
+        if p == "/api/register":
+            d = self._body()
+            uname = d.get("user","").strip()
+            passwd = d.get("password","")
+            if not uname or not passwd:
+                self._json({"ok": False, "error": "Usuário e senha obrigatórios"}); return
+            if len(passwd) < 4:
+                self._json({"ok": False, "error": "Senha muito curta (mín. 4 caracteres)"}); return
+            users = load_users()
+            if uname in users:
+                self._json({"ok": False, "error": "Usuário já existe"}); return
+            users[uname] = {"password": _hash_pw(passwd), "role": "user", "profiles": []}
+            save_users(users)
+            # Faz login automático após registro
+            token = do_login(uname, passwd)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", f"kf_session={token}; Path=/; HttpOnly; SameSite=Strict")
+            self.send_header("Cache-Control", "no-store")
+            self._cors(); self.end_headers()
+            self.wfile.write(json.dumps({"ok": True}).encode())
+            return
         # Demais endpoints exigem sessão
         cf_ip     = self.headers.get("CF-Connecting-IP", "")
         client_ip = self.client_address[0]
@@ -800,6 +823,21 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
         elif p == "/api/me":
             self._json({"ok":True,"user":session["user"],"role":session["role"]})
+        elif p == "/api/change-password":
+            uname    = session["user"]
+            old_pass = d.get("old_password","")
+            new_pass = d.get("new_password","")
+            if not old_pass or not new_pass:
+                self._json({"ok":False,"error":"Preencha todos os campos"}); return
+            if len(new_pass) < 4:
+                self._json({"ok":False,"error":"Senha muito curta (mín. 4 caracteres)"}); return
+            users = load_users()
+            u = users.get(uname,{})
+            if u.get("password") != _hash_pw(old_pass):
+                self._json({"ok":False,"error":"Senha atual incorreta"}); return
+            users[uname]["password"] = _hash_pw(new_pass)
+            save_users(users)
+            self._json({"ok":True})
         elif p == "/api/bg/diag":
             import json as _j
             diag = {}
