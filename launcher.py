@@ -731,7 +731,7 @@ class Handler(BaseHTTPRequestHandler):
             if token:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Set-Cookie", f"kf_session={token}; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Set-Cookie", f"kf_session={token}; Path=/; HttpOnly; SameSite=Lax")
                 self.send_header("Cache-Control", "no-store")
                 self._cors(); self.end_headers()
                 self.wfile.write(json.dumps({"ok": True}).encode())
@@ -756,7 +756,7 @@ class Handler(BaseHTTPRequestHandler):
             token = do_login(uname, passwd)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Set-Cookie", f"kf_session={token}; Path=/; HttpOnly; SameSite=Strict")
+            self.send_header("Set-Cookie", f"kf_session={token}; Path=/; HttpOnly; SameSite=Lax")
             self.send_header("Cache-Control", "no-store")
             self._cors(); self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode())
@@ -813,9 +813,8 @@ class Handler(BaseHTTPRequestHandler):
         elif p.startswith("/api/bg/start/"):
             parts = [x for x in p.split("/") if x]
             name = parts[-1] if parts else ""
-            body = self._body()
-            modo = body.get("modo", "free") if body else "free"
-            # Executa start_bg_bot diretamente (sem thread) para retornar resultado real
+            if not can_access(name): self._json({"ok":False,"error":"Sem permissão"}); return
+            modo = d.get("modo", "free")  # d já lido em self._body() acima
             try:
                 result_bg = start_bg_bot(name, modo)
                 print(f"[BG] start_bg_bot({name}, {modo}) = {result_bg}", flush=True)
@@ -889,7 +888,9 @@ class Handler(BaseHTTPRequestHandler):
                     }
             self._json(diag)
         elif p.startswith("/api/bg/stop/"):
-            self._json(stop_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
+            name_bg = p.split("/")[-1] or p.split("/")[-2]
+            if not can_access(name_bg): self._json({"ok":False,"error":"Sem permissão"}); return
+            self._json(stop_bg_bot(name_bg))
         elif p.startswith("/api/bg/status/"):
             self._json(status_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
         else:
