@@ -39,6 +39,62 @@ def _verificar_sessao(r, url=""):
         txt_low = txt.lower()
         if any(k in txt_low for k in ["moonid.net/login", "password", "passwort", "forgot password"]):
             raise SessaoExpiradaError(f"Login detectado ({len(txt)} bytes) em {url}")
+def fazer_login_moonid(server, username, password):
+    """Faz login no moonid.net e retorna cookie string para o servidor especificado."""
+    import requests as _req
+    login_url = "https://moonid.net/account/login/"
+    game_url  = f"https://{server}.knightfight.moonid.net/"
+    s = _req.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+    # GET para obter CSRF token
+    r = s.get(login_url + "?next=/games/knightfight/", timeout=15)
+    r.raise_for_status()
+    csrf = s.cookies.get("csrftoken", "")
+    if not csrf:
+        from bs4 import BeautifulSoup as _BS
+        inp = _BS(r.text, "html.parser").find("input", {"name": "csrfmiddlewaretoken"})
+        csrf = inp["value"] if inp else ""
+    # POST credenciais
+    r = s.post(login_url, data={
+        "username": username, "password": password,
+        "csrfmiddlewaretoken": csrf, "next": "/games/knightfight/",
+    }, headers={"Referer": login_url}, timeout=15, allow_redirects=True)
+    if "login" in r.url.lower():
+        raise Exception("Login falhou — usuário ou senha inválidos")
+    # Navega até o servidor do jogo para coletar cookies do game server
+    s.get(game_url, timeout=15)
+    # Extrai cookies relevantes (domínio do jogo + moonid.net)
+    game_domain = f"{server}.knightfight.moonid.net"
+    cookies_dict = {}
+    for c in s.cookies:
+        if c.domain and (game_domain in c.domain or "moonid.net" in c.domain):
+            cookies_dict[c.name] = c.value
+    if not cookies_dict:
+        cookies_dict = dict(s.cookies)
+    return "; ".join(f"{k}={v}" for k, v in cookies_dict.items())
+
+def renovar_cookie_auto(cfg_path="config.json"):
+    """Tenta renovar o cookie usando game_user/game_pass do config. Retorna novo cookie ou None."""
+    try:
+        import json as _j
+        with open(cfg_path, encoding="utf-8") as f:
+            cfg = _j.load(f)
+        game_user = cfg.get("game_user", "")
+        game_pass = cfg.get("game_pass", "")
+        server    = cfg.get("server", "int7")
+        if not game_user or not game_pass:
+            return None
+        log.info("🔑 Tentando renovar cookie automaticamente...")
+        novo_cookie = fazer_login_moonid(server, game_user, game_pass)
+        cfg["cookies"] = novo_cookie
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            _j.dump(cfg, f, indent=2, ensure_ascii=False)
+        log.info("✓ Cookie renovado com sucesso!")
+        return novo_cookie
+    except Exception as e:
+        log.error(f"Falha ao renovar cookie: {e}")
+        return None
+
 COOKIES_RAW = "COLE_SEUS_COOKIES_AQUI"
 MY_USER_ID  = "522001100"
 DASHBOARD_PORT = 8765
@@ -2605,10 +2661,16 @@ def loop_rapido(client):
 
         except SessaoExpiradaError as e:
             log.error(f"🔒 COOKIE VENCIDO: {e}")
-            atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "cookie_expirado"})
-            # Para o bot — não adianta continuar sem sessão válida
-            log.error("Bot pausado — atualize o cookie no launcher e reinicie o bot.")
-            time.sleep(3600)  # dorme 1h antes de tentar de novo
+            novo = renovar_cookie_auto()
+            if novo:
+                globals()["COOKIES_RAW"] = novo
+                client = KFClient(novo)
+                atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
+                log.info("✓ Continuando com novo cookie...")
+            else:
+                atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "cookie_expirado"})
+                log.error("Bot pausado — configure game_user/game_pass no cfg ou atualize o cookie manualmente.")
+                time.sleep(3600)
         except Exception as e:
             log.error(f"Erro loop rápido: {e}", exc_info=True)
 
@@ -2778,8 +2840,22 @@ if __name__ == "__main__":
     if cfg.get("gold_ignorar_xp") is not None:
         globals()["GOLD_IGNORAR_XP"] = int(cfg["gold_ignorar_xp"])
 
-    if COOKIES_RAW == "COLE_SEUS_COOKIES_AQUI":
-        print("\n❌ Configure COOKIES_RAW no bot.py ou passe --cookies 'seu_cookie'\n")
+    # Auto-login: se não tem cookie mas tem user/pass, faz login automático
+    if (COOKIES_RAW == "COLE_SEUS_COOKIES_AQUI" or not COOKIES_RAW.strip()) and cfg.get("game_user") and cfg.get("game_pass"):
+        print("🔑 Sem cookie — tentando login automático...")
+        try:
+            server_auto = cfg.get("server", "int7")
+            novo = fazer_login_moonid(server_auto, cfg["game_user"], cfg["game_pass"])
+            globals()["COOKIES_RAW"] = novo
+            cfg["cookies"] = novo
+            with open("config.json", "w", encoding="utf-8") as _f:
+                import json as _j2; _j2.dump(cfg, _f, indent=2, ensure_ascii=False)
+            print("✓ Login automático OK!")
+        except Exception as _e:
+            print(f"\n❌ Login automático falhou: {_e}\n")
+            sys.exit(1)
+    elif COOKIES_RAW == "COLE_SEUS_COOKIES_AQUI":
+        print("\n❌ Configure cookies ou game_user/game_pass no config.json\n")
         sys.exit(1)
 
     client = KFClient(COOKIES_RAW)
