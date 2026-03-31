@@ -647,10 +647,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", "kf_session=; Max-Age=0; Path=/")
             self.end_headers(); return
         # Verifica sessão
-        # Se vier pelo Cloudflare, CF-Connecting-IP tem o IP real do cliente
-        cf_ip     = self.headers.get("CF-Connecting-IP", "")
-        client_ip = self.client_address[0]
-        is_local  = not cf_ip and client_ip in ("127.0.0.1", "::1", "localhost")
+        # Se vier pelo Cloudflare/ngrok, headers de proxy indicam acesso externo
+        cf_ip      = self.headers.get("CF-Connecting-IP", "")
+        forwarded  = self.headers.get("X-Forwarded-For", "")
+        client_ip  = self.client_address[0]
+        is_local   = not cf_ip and not forwarded and client_ip in ("127.0.0.1", "::1", "localhost")
         session = get_session(self)
         if not session:
             if is_local:
@@ -762,8 +763,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         # Demais endpoints exigem sessão
         cf_ip     = self.headers.get("CF-Connecting-IP", "")
+        forwarded = self.headers.get("X-Forwarded-For", "")
         client_ip = self.client_address[0]
-        is_local  = not cf_ip and client_ip in ("127.0.0.1", "::1", "localhost")
+        is_local  = not cf_ip and not forwarded and client_ip in ("127.0.0.1", "::1", "localhost")
         session = get_session(self)
         if not session:
             if is_local:
