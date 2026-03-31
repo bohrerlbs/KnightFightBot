@@ -96,7 +96,7 @@ def get_profiles():
                 cfg["_bg_running"] = False
             cfg["_log_tail"] = get_log_tail(d.name, 5)
             # Lê status_bot do ciclo para taverna countdown
-            ciclo_path = d / "ciclo.json"
+            ciclo_path = d / "ultimo_ciclo.json"
             if ciclo_path.exists():
                 try:
                     ciclo = json.loads(ciclo_path.read_text(encoding="utf-8"))

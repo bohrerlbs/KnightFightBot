@@ -412,6 +412,26 @@ function fetchLog(){
 var MY_LV = 22; // Updated dynamically
 function render(d){
   var ciclo=d.ciclo||{};
+  var sb=ciclo.status_bot||{};
+  // Banner de cookie vencido / bot pausado
+  var banner=document.getElementById('cookie-banner');
+  if(!banner){
+    banner=document.createElement('div');
+    banner.id='cookie-banner';
+    banner.style.cssText='display:none;background:linear-gradient(135deg,#3d0a0a,#5c1010);border:1px solid #c0392b;color:#ff6b6b;font-size:13px;padding:10px 16px;margin:8px 0;border-radius:4px;text-align:center;font-weight:600';
+    document.querySelector('.container')&&document.querySelector('.container').prepend(banner);
+  }
+  if(sb.parado&&sb.motivo==='cookie_expirado'){
+    banner.textContent='🔒 COOKIE VENCIDO — Bot pausado. Atualize o cookie no Launcher e reinicie.';
+    banner.style.display='block';
+    document.getElementById('sdot').className='dot off';
+    document.getElementById('stxt').textContent='Cookie vencido';
+  } else if(sb.parado){
+    banner.textContent='⚠ Bot pausado — motivo: '+(sb.motivo||'desconhecido');
+    banner.style.display='block';
+  } else {
+    banner.style.display='none';
+  }
   var s=ciclo.status||d.status||{};
   // Atualiza título com perfil e servidor
   var pf=ciclo.perfil||{};
