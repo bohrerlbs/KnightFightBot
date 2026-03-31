@@ -723,10 +723,29 @@ class Handler(BaseHTTPRequestHandler):
             if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(stop_bot(d["name"]))
         elif p == "/api/save":
-            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
-            self._json(save_profile(d))
+            name_req = re.sub(r'[^\w\-]', '_', d.get("name","")).lower()
+            is_new   = not (PROFILES_DIR / name_req / "config.json").exists()
+            # Novo perfil: qualquer user logado pode criar
+            # Perfil existente (patch): só quem tem acesso
+            if not is_new and not can_access(name_req):
+                self._json({"ok":False,"error":"Sem permissão"}); return
+            result = save_profile(d)
+            # Após criar novo perfil com sucesso, adiciona ao allowed list do user
+            if result.get("ok") and is_new and not is_admin(session):
+                users = load_users()
+                uname = session.get("user","")
+                if uname in users:
+                    profs = list(users[uname].get("profiles") or [])
+                    if name_req not in profs:
+                        profs.append(name_req)
+                        users[uname]["profiles"] = profs
+                        save_users(users)
+                        for sess in SESSIONS.values():
+                            if sess.get("user") == uname:
+                                sess["profiles"] = profs
+            self._json(result)
         elif p == "/api/delete":
-            if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
+            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(delete_profile(d["name"]))
         elif p == "/api/update":
             if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
