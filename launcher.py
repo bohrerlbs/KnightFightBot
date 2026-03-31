@@ -80,14 +80,23 @@ def _start_ngrok():
         print("[NGROK] ngrok.exe não encontrado — tunnel desativado")
         return
     print(f"[NGROK] Iniciando tunnel para {NGROK_DOMAIN}...")
+    log_path = BASE_DIR / "ngrok.log"
     try:
-        _ngrok_proc = subprocess.Popen(
-            [str(ngrok_exe), "http", str(LAUNCHER_PORT),
-             "--domain", NGROK_DOMAIN, "--log", "stdout"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        )
-        print(f"[NGROK] Tunnel ativo: https://{NGROK_DOMAIN}")
+        flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+        with open(log_path, "w", encoding="utf-8") as lf:
+            _ngrok_proc = subprocess.Popen(
+                [str(ngrok_exe), "http", str(LAUNCHER_PORT),
+                 "--domain", NGROK_DOMAIN],
+                stdout=lf, stderr=lf,
+                creationflags=flags
+            )
+        # aguarda 3s e verifica se ainda está rodando
+        time.sleep(3)
+        if _ngrok_proc.poll() is not None:
+            err = log_path.read_text(encoding="utf-8", errors="replace")[-500:]
+            print(f"[NGROK] Processo encerrou imediatamente. Log:\n{err}")
+        else:
+            print(f"[NGROK] Tunnel ativo: https://{NGROK_DOMAIN}")
     except Exception as e:
         print(f"[NGROK] Erro ao iniciar: {e}")
 
