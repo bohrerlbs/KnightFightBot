@@ -226,6 +226,7 @@ def start_bg_bot(name, modo="free"):
             env=env,
             cwd=str(BASE_DIR),
         )
+        log_f.close()  # fecha handle do pai — filho já tem sua cópia, libera para rotação
         running_bots[bg_key] = proc
         return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
     except Exception as e:

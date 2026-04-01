@@ -63,16 +63,14 @@ _sh.setFormatter(_fmt)
 log.addHandler(_sh)
 
 def init_log_file():
-    from logging.handlers import TimedRotatingFileHandler
-    fh = TimedRotatingFileHandler(
+    from logging.handlers import RotatingFileHandler
+    fh = RotatingFileHandler(
         LOG_FILE,
-        when="midnight",
-        interval=1,
+        maxBytes=2 * 1024 * 1024,  # 2 MB por arquivo
         backupCount=2,
         encoding="utf-8",
-        utc=False,
+        delay=True,
     )
-    fh.suffix = "%Y-%m-%d"
     fh.setFormatter(_fmt)
     log.addHandler(fh)
     # Limpa logs antigos (>48h)
