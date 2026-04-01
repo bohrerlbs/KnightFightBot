@@ -275,12 +275,11 @@ svg.ring{width:13px;height:13px}
           <th class="c">Resultado</th>
           <th class="r">Gold</th>
           <th class="r">XP</th>
-          <th class="c">Score prev.</th>
-          <th class="c">Score sim.</th>
+          <th class="c">Score</th>
           <th class="r">Dano caus.</th>
           <th class="r">Dano rec.</th>
         </tr></thead>
-        <tbody id="hist-tbody"><tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Clique em Histórico para carregar...</td></tr></tbody>
+        <tbody id="hist-tbody"><tr><td colspan="9" style="text-align:center;color:var(--mt);padding:20px">Clique em Histórico para carregar...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -304,7 +303,7 @@ function showTab(id){
 
 function renderHistorico(combates){
   if(!combates || !combates.length){
-    document.getElementById('hist-tbody').innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
+    document.getElementById('hist-tbody').innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--mt);padding:20px">Nenhum combate ainda</td></tr>';
     return;
   }
   var rows = combates.slice().reverse().map(function(c){
@@ -314,17 +313,17 @@ function renderHistorico(combates){
       : '<span style="color:#e08080;font-weight:bold">✗ Derrota</span>';
     var gold = c.gold>0 ? '<span style="color:var(--gold)">+'+c.gold+'g</span>'
              : c.gold<0 ? '<span style="color:#e08080">'+c.gold+'g</span>' : '—';
-    var sc_prev = c.score_previsto>0 ? '<span class="'+scoreClass(c.score_previsto)+'">'+c.score_previsto+'</span>' : '—';
-    var sc_sim  = c.score_sim>0 ? '<span class="'+scoreClass(c.score_sim)+'">'+c.score_sim+'</span>' : '—';
+    var sc_val = c.score_sim>0 ? c.score_sim : (c.score_previsto>0 ? c.score_previsto : 0);
+    var sc_el  = sc_val>0 ? '<span class="'+scoreClass(sc_val)+'">'+sc_val+'</span>' : '—';
+    var nome   = c.adv_nome || c.adv_id || 'Desconhecido';
     return '<tr>'+
       '<td style="font-size:11px;color:var(--muted)">'+ts+'</td>'+
-      '<td>'+(c.adv_nome||'?')+'</td>'+
-      '<td class="c">'+(c.adv_lv!=null?c.adv_lv:'?')+'</td>'+
+      '<td>'+nome+'</td>'+
+      '<td class="c">'+(c.adv_lv!=null&&c.adv_lv!==0?c.adv_lv:'—')+'</td>'+
       '<td class="c">'+res+'</td>'+
       '<td class="r">'+gold+'</td>'+
       '<td class="r">'+(c.xp>0?'<span style="color:var(--green2)">+'+c.xp+'</span>':c.xp<0?'<span style="color:#e08080">'+c.xp+'</span>':'0')+'</td>'+
-      '<td class="c">'+sc_prev+'</td>'+
-      '<td class="c">'+sc_sim+'</td>'+
+      '<td class="c">'+sc_el+'</td>'+
       '<td class="r">'+(c.dano_causado>0?c.dano_causado:'—')+'</td>'+
       '<td class="r">'+(c.dano_recebido>0?c.dano_recebido:'—')+'</td>'+
     '</tr>';

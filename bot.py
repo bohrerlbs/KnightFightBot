@@ -2581,8 +2581,10 @@ def loop_rapido(client):
                         pig_list.pop(uid, None); salvar_pig_list(pig_list)
                     continue
                 log.info(f"    Score confirmado: {score_conf} — atacando!")
+                pig_list[uid]["score_cache"] = score_conf  # salva score para dashboard
+                salvar_pig_list(pig_list)
                 executar_ataque(client, uid)
-                pig_list.pop(uid, None); salvar_pig_list(pig_list)
+                # não remove: executar_ataque já marca como "atacado" com gold/xp/resultado
                 ataque_feito = True
                 break
 
