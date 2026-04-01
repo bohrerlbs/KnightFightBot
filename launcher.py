@@ -688,18 +688,20 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json({"error": f"perfil '{pname}' nao encontrado"})
 
-        elif p.startswith("/proxy/"):
+        elif p.startswith("/proxy/") or p.startswith("/proxybg/"):
             # Proxy reverso para dashboards dos bots
-            parts = [x for x in p.split("/") if x]  # ['proxy', 'name', 'path...']
+            is_bg   = p.startswith("/proxybg/")
+            prefix  = "proxybg" if is_bg else "proxy"
+            parts   = [x for x in p.split("/") if x]  # ['proxy(bg)', 'name', 'path...']
             if len(parts) < 2:
                 self.send_response(404); self.end_headers(); return
-            pname = parts[1]
+            pname   = parts[1]
             subpath = "/" + "/".join(parts[2:]) if len(parts) > 2 else "/"
             # Verifica acesso ao perfil
             allowed = [pr.get("_name","").lower() for pr in filter_profiles(get_profiles(), session)]
             if pname.lower() not in allowed:
                 self.send_response(403); self.end_headers(); return
-            port = get_profile_port(pname)
+            port = get_profile_port(pname) + (1 if is_bg else 0)
             import urllib.request as _ur
             try:
                 req_url = f"http://localhost:{port}{subpath}"
@@ -707,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                     body = resp.read()
                     ctype = resp.headers.get("Content-Type", "text/html")
                     if "text/html" in ctype:
-                        inject = f'<script>window._API_BASE="/proxy/{pname}";</script>'
+                        inject = f'<script>window._API_BASE="/{prefix}/{pname}";</script>'
                         body = body.replace(b"</head>", inject.encode() + b"</head>", 1)
                     self.send_response(200)
                     self.send_header("Content-Type", ctype)
