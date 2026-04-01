@@ -215,8 +215,8 @@ function render(d){
   // Timer
   startTimer(d.proximo_ataque);
 
-  // Batalhas hoje (da sessão do jogo)
-  var batHoje = sessao.batalhas_feitas || estado.batalhas_feitas || 0;
+  // Batalhas hoje — usa estado (atualizado a cada combate) com fallback na sessão
+  var batHoje = estado.batalhas_feitas != null ? estado.batalhas_feitas : (sessao.batalhas_feitas || 0);
   var batMax  = estado.modo ? {free:100,medio:200,premium:400}[estado.modo] : 100;
   var batRest = batMax - batHoje;
   document.getElementById('bat-hoje').textContent = batHoje;
