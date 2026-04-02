@@ -337,13 +337,18 @@ def parsear_sessao_bg(soup):
             sessao["restantes_hoje"] = sessao["batalhas_dia_max"] - sessao["batalhas_dia"]
 
         # Datas
-        m = re.search(r"Inicio da sessão[^:]*:\s*([\d.]+\s[\d:]+)", texto)
+        m = re.search(r"In[ií]cio da sess[aã]o[^:]*:\s*([\d.]+\s[\d:]+)", texto, re.IGNORECASE)
         if m: sessao["inicio"] = m.group(1)
-        m = re.search(r"Fim da sessão[^:]*:\s*([\d.]+\s[\d:]+)", texto)
+        m = re.search(r"Fim da sess[aã]o[^:]*:\s*([\d.]+\s[\d:]+)", texto, re.IGNORECASE)
         if m: sessao["fim"] = m.group(1)
         # Limite diário: "pode realizar mais X ataques"
         m = re.search(r"pode realizar mais\s+(\d+)\s+ataques", texto)
         if m: sessao["restantes_hoje"] = int(m.group(1))
+
+        # Fallback: sessão existe (tem dados de batalha) mas data não foi parseada
+        if "batalhas_dia" in sessao and "inicio" not in sessao:
+            log.debug(f"parsear_sessao_bg: data de início não encontrada — texto: {texto[:300]}")
+            sessao["inicio"] = f"sess_{datetime.now():%Y%m%d}"
 
     except Exception as e:
         log.warning(f"parsear_sessao_bg: {e}")
