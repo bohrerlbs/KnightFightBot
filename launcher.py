@@ -68,6 +68,7 @@ def get_version():
 GITHUB_RAW    = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
 LAUNCHER_PORT = 8764
 running_bots  = {}
+_bg_start_lock = threading.Lock()
 
 # ── Ngrok ─────────────────────────────────────────────────────────────────────
 NGROK_DOMAIN  = "eve-unbanned-asunder.ngrok-free.dev"   # domínio fixo ngrok
@@ -120,9 +121,9 @@ def get_profiles():
             bg_key = f"BG_{d.name.upper()}"
             if bg_key in running_bots:
                 proc_bg = running_bots[bg_key]
-                cfg["_bg_running"] = proc_bg.poll() is None
-                if proc_bg.poll() is not None:
-                    del running_bots[bg_key]  # limpa processo morto
+                cfg["_bg_running"] = proc_bg is not None and proc_bg.poll() is None
+                if proc_bg is None or proc_bg.poll() is not None:
+                    del running_bots[bg_key]  # limpa processo morto ou placeholder
             else:
                 cfg["_bg_running"] = False
             cfg["_log_tail"] = get_log_tail(d.name, 5)
@@ -182,8 +183,12 @@ def start_bg_bot(name, modo="free"):
     if not bot_bg.exists():
         return {"ok": False, "error": "bot_bg.py não encontrado"}
     bg_key = f"BG_{name.upper()}"
-    if bg_key in running_bots and running_bots[bg_key].poll() is None:
-        return {"ok": False, "error": "BG Bot já rodando para este perfil"}
+    with _bg_start_lock:
+        _existing = running_bots.get(bg_key)
+        if _existing is not None and _existing.poll() is None:
+            return {"ok": False, "error": "BG Bot já rodando para este perfil"}
+        # Reserva a chave imediatamente para bloquear chamadas concorrentes
+        running_bots[bg_key] = None
     # Sempre parte do config.json normal (tem cookies, servidor, userid)
     cfg_normal = profile_dir / "config.json"
     if cfg_normal.exists():
@@ -230,6 +235,7 @@ def start_bg_bot(name, modo="free"):
         running_bots[bg_key] = proc
         return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
     except Exception as e:
+        running_bots.pop(bg_key, None)
         return {"ok": False, "error": f"Erro ao iniciar processo: {e}"}
 
 def stop_bg_bot(name):
