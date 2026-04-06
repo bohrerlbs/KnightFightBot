@@ -40,46 +40,68 @@ def _verificar_sessao(r, url=""):
         if any(k in txt_low for k in ["moonid.net/login", "password", "passwort", "forgot password"]):
             raise SessaoExpiradaError(f"Login detectado ({len(txt)} bytes) em {url}")
 def fazer_login_moonid(server, username, password):
-    """Faz login no moonid.net e retorna dict com 'cookie' e 'userid'."""
-    import requests as _req
-    login_url   = "https://moonid.net/account/login/"
-    status_url  = f"https://{server}.knightfight.moonid.net/status/"
-    s = _req.Session()
+    """Faz login no jogo via fluxo OAuth moonid.net. Retorna dict com 'cookie' e 'userid'.
+
+    Fluxo correto:
+      1. Teaser page do jogo → extrai URL OAuth do botão Login
+      2. Visita URL OAuth → redireciona para login moonid.net com next=/api/account/connect/ID/
+      3. POST login com esse next → moonid redireciona via OAuth → game server recebe token
+      4. Visita /status/ para confirmar sessão e extrair userid
+    """
+    from urllib.parse import urlparse
+    s = requests.Session()
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-    # GET para obter CSRF token
-    r = s.get(login_url + "?next=/games/knightfight/", timeout=15)
-    r.raise_for_status()
-    csrf = s.cookies.get("csrftoken", "")
-    if not csrf:
-        inp = BeautifulSoup(r.text, "html.parser").find("input", {"name": "csrfmiddlewaretoken"})
-        csrf = inp["value"] if inp else ""
-    # POST credenciais
-    r = s.post(login_url, data={
+
+    # Passo 1: Teaser page → URL OAuth do botão Login (ex: moonid.net/api/account/connect/193)
+    r0 = s.get(f"https://{server}.knightfight.moonid.net/", timeout=15)
+    connect_url = None
+    for a in BeautifulSoup(r0.text, "html.parser").find_all("a", href=True):
+        if "/api/account/connect/" in a["href"]:
+            connect_url = a["href"]
+            break
+    if not connect_url:
+        raise Exception(f"URL de login não encontrada no servidor '{server}' — servidor existe?")
+
+    # Passo 2: Visita URL OAuth → redireciona para página de login moonid.net
+    r1 = s.get(connect_url, timeout=15, allow_redirects=True)
+    soup1 = BeautifulSoup(r1.text, "html.parser")
+
+    # Passo 3: Lê CSRF e parâmetro next do formulário de login
+    csrf_inp = soup1.find("input", {"name": "csrfmiddlewaretoken"})
+    csrf = csrf_inp["value"] if csrf_inp else s.cookies.get("csrftoken", "")
+    next_inp = soup1.find("input", {"name": "next"})
+    next_val = next_inp["value"] if next_inp else (urlparse(connect_url).path.rstrip("/") + "/")
+
+    # Passo 4: POST login → moonid redireciona via OAuth → game server autentica
+    r2 = s.post("https://moonid.net/account/login/", data={
         "username": username, "password": password,
-        "csrfmiddlewaretoken": csrf, "next": "/games/knightfight/",
-    }, headers={"Referer": login_url}, timeout=15, allow_redirects=True)
-    if "login" in r.url.lower():
+        "csrfmiddlewaretoken": csrf, "next": next_val,
+    }, headers={"Referer": r1.url}, timeout=20, allow_redirects=True)
+    if "/account/login/" in r2.url:
         raise Exception("Login falhou — usuário ou senha inválidos")
-    # Navega até /status/ do servidor do jogo para iniciar sessão no game server
-    r2 = s.get(status_url, timeout=20, allow_redirects=True)
-    if "login" in r2.url.lower():
-        raise Exception("Sessão do jogo não iniciada — verifique usuário/senha e servidor")
-    # Coleta TODOS os cookies da sessão (moonid.net + game server)
+
+    # Passo 5: Visita /status/ para confirmar sessão no game server e extrair userid
+    r3 = s.get(f"https://{server}.knightfight.moonid.net/status/", timeout=20, allow_redirects=True)
+    soup3 = BeautifulSoup(r3.text, "html.parser")
+    if soup3.find(id="main-teaser-box"):
+        raise Exception("OAuth não completou no game server — verifique credenciais e servidor")
+
+    # Coleta todos os cookies da sessão (moonid.net + game server)
     cookies_dict = {c.name: c.value for c in s.cookies}
     if not cookies_dict:
         raise Exception("Nenhum cookie capturado após login")
-    cookie_str = "; ".join(f"{k}={v}" for k, v in cookies_dict.items())
-    # Tenta extrair userid do .your_id na página de status
+
+    # Extrai userid via .your_id na página de status
     userid = ""
     try:
-        soup2 = BeautifulSoup(r2.text, "html.parser")
-        el = soup2.find(class_="your_id")
+        el = soup3.find(class_="your_id")
         if el:
-            m = re.search(r'(\d{6,})', el.get_text())
+            m = re.search(r"(\d{6,})", el.get_text())
             if m: userid = m.group(1)
     except Exception:
         pass
-    return {"cookie": cookie_str, "userid": userid}
+
+    return {"cookie": "; ".join(f"{k}={v}" for k, v in cookies_dict.items()), "userid": userid}
 
 def renovar_cookie_auto(cfg_path="config.json"):
     """Tenta renovar o cookie usando game_user/game_pass do config. Retorna novo cookie ou None."""
