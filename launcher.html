@@ -313,7 +313,7 @@ header {
   <div class="modal">
     <div class="modal-title">* Novo Perfil</div>
 
-    <div class="capture-box">
+    <div class="capture-box" id="new-capture-box">
       <div style="font-size:12px;color:var(--text);margin-bottom:8px">
         <strong>Login automático</strong> - abre o browser, faça login e o bot captura o cookie sozinho
       </div>
@@ -413,7 +413,7 @@ header {
         <label class="form-label">UserID</label>
         <input class="form-input" id="f-userid" placeholder="522001100">
       </div>
-      <div class="form-group">
+      <div class="form-group" id="new-port-group">
         <label class="form-label" style="color:var(--muted)">Porta (auto)</label>
         <input class="form-input" id="f-port" placeholder="auto" type="number" style="opacity:0.4" title="Deixe vazio para alocar automaticamente">
       </div>
@@ -433,7 +433,7 @@ header {
       <div style="font-size:10px;color:var(--muted);margin-top:6px">Com user/senha preenchidos o bot faz login e renova o cookie automaticamente quando vencer.</div>
     </div>
 
-    <div class="form-group" style="margin-top:8px">
+    <div class="form-group" id="new-cookie-group" style="margin-top:8px">
       <label class="form-label">Cookie <span style="color:var(--muted)">(opcional se preenchiu user/senha acima)</span></label>
       <textarea class="form-input" id="f-cookies" rows="2" placeholder="Ou cole manualmente: F12 -> Network -> Cookie"></textarea>
     </div>
@@ -465,11 +465,11 @@ header {
           <label class="form-label" style="font-size:11px">Varrer ranking (max)</label>
           <input class="form-input" id="f-ranking-max" placeholder="500" type="number" value="500" style="padding:6px 8px">
         </div>
-        <div>
+        <div id="new-pausa-group">
           <label class="form-label" style="font-size:11px">Pausa cache (s)</label>
           <input class="form-input" id="f-pausa-cache" placeholder="0.5" type="number" step="0.1" value="0.5" style="padding:6px 8px">
         </div>
-        <div>
+        <div id="new-hora-group">
           <label class="form-label" style="font-size:11px">Hora varredura</label>
           <input class="form-input" id="f-hora-cache" placeholder="3" type="number" min="0" max="23" value="3" style="padding:6px 8px">
         </div>
@@ -648,6 +648,7 @@ header {
 var REFRESH = 15000;
 var refreshInt = null;
 var capturingCookie = false;
+var _myRole = 'admin';
 
 function toast(msg, type='ok'){
   var el = document.getElementById('toast');
@@ -754,6 +755,7 @@ function loadMe(){
   fetch('/api/me',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
   .then(r=>r.json()).then(function(d){
     if(d.ok){
+      _myRole = d.role || 'user';
       document.getElementById('user-info').textContent = d.user + (d.role==='admin'?' (admin)':'');
       document.getElementById('btn-logout').style.display='inline-block';
       document.getElementById('btn-change-pass').style.display='inline-block';
@@ -761,11 +763,23 @@ function loadMe(){
         document.getElementById('btn-users').style.display='none';
       }
     } else {
+      _myRole = 'admin';
       document.getElementById('user-info').textContent = 'admin (local)';
     }
   }).catch(function(){
+    _myRole = 'admin';
     document.getElementById('user-info').textContent = 'admin (local)';
   });
+}
+
+function openNewProfileModal(){
+  var isAdmin = (_myRole === 'admin');
+  var adminOnlyIds = ['new-capture-box','new-port-group','new-cookie-group','new-pausa-group','new-hora-group'];
+  adminOnlyIds.forEach(function(id){
+    var el = document.getElementById(id);
+    if(el) el.style.display = isAdmin ? '' : 'none';
+  });
+  openModal('modal-new');
 }
 
 function openUsersModal(){
@@ -973,7 +987,7 @@ function renderProfiles(profiles){
       window.open('https://'+srv+'.knightfight.moonid.net','_blank');
     }
     if(action === 'cfg')     openCfgModal(name);
-    if(action === 'new')     openModal('modal-new');
+    if(action === 'new')     openNewProfileModal();
   };
 }
 
@@ -1025,7 +1039,7 @@ function startBot(name){
   loadMe();
             })
             .catch(()=>{
-              if(attempts >= 30){
+              if(attempts >= 60){
                 clearInterval(check);
                 toast(`${name} demorou para iniciar - verifique o log`,'err');
                 loadProfiles();
@@ -1282,7 +1296,10 @@ function saveProfile(){
     game_pass:      document.getElementById('f-game-pass').value,
   };
   if(!data.name){ toast('Informe um nome para o perfil','err'); return; }
-  if(!data.cookies && !data.game_user){ toast('Informe cookie OU usuário/senha do moonid.net','err'); return; }
+  if(!data.cookies && !data.game_user){
+    toast(_myRole==='admin' ? 'Informe cookie OU usuário/senha do moonid.net' : 'Informe usuário/senha do moonid.net','err');
+    return;
+  }
   if(!data.userid && !data.game_user){ toast('UserID obrigatório (ou preencha user/senha para detectar auto)','err'); return; }
 
   fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})

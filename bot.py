@@ -40,10 +40,10 @@ def _verificar_sessao(r, url=""):
         if any(k in txt_low for k in ["moonid.net/login", "password", "passwort", "forgot password"]):
             raise SessaoExpiradaError(f"Login detectado ({len(txt)} bytes) em {url}")
 def fazer_login_moonid(server, username, password):
-    """Faz login no moonid.net e retorna cookie string para o servidor especificado."""
+    """Faz login no moonid.net e retorna dict com 'cookie' e 'userid'."""
     import requests as _req
-    login_url = "https://moonid.net/account/login/"
-    game_url  = f"https://{server}.knightfight.moonid.net/"
+    login_url   = "https://moonid.net/account/login/"
+    status_url  = f"https://{server}.knightfight.moonid.net/status/"
     s = _req.Session()
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
     # GET para obter CSRF token
@@ -51,8 +51,7 @@ def fazer_login_moonid(server, username, password):
     r.raise_for_status()
     csrf = s.cookies.get("csrftoken", "")
     if not csrf:
-        from bs4 import BeautifulSoup as _BS
-        inp = _BS(r.text, "html.parser").find("input", {"name": "csrfmiddlewaretoken"})
+        inp = BeautifulSoup(r.text, "html.parser").find("input", {"name": "csrfmiddlewaretoken"})
         csrf = inp["value"] if inp else ""
     # POST credenciais
     r = s.post(login_url, data={
@@ -61,17 +60,26 @@ def fazer_login_moonid(server, username, password):
     }, headers={"Referer": login_url}, timeout=15, allow_redirects=True)
     if "login" in r.url.lower():
         raise Exception("Login falhou — usuário ou senha inválidos")
-    # Navega até o servidor do jogo para coletar cookies do game server
-    s.get(game_url, timeout=15)
-    # Extrai cookies relevantes (domínio do jogo + moonid.net)
-    game_domain = f"{server}.knightfight.moonid.net"
-    cookies_dict = {}
-    for c in s.cookies:
-        if c.domain and (game_domain in c.domain or "moonid.net" in c.domain):
-            cookies_dict[c.name] = c.value
+    # Navega até /status/ do servidor do jogo para iniciar sessão no game server
+    r2 = s.get(status_url, timeout=20, allow_redirects=True)
+    if "login" in r2.url.lower():
+        raise Exception("Sessão do jogo não iniciada — verifique usuário/senha e servidor")
+    # Coleta TODOS os cookies da sessão (moonid.net + game server)
+    cookies_dict = {c.name: c.value for c in s.cookies}
     if not cookies_dict:
-        cookies_dict = dict(s.cookies)
-    return "; ".join(f"{k}={v}" for k, v in cookies_dict.items())
+        raise Exception("Nenhum cookie capturado após login")
+    cookie_str = "; ".join(f"{k}={v}" for k, v in cookies_dict.items())
+    # Tenta extrair userid do .your_id na página de status
+    userid = ""
+    try:
+        soup2 = BeautifulSoup(r2.text, "html.parser")
+        el = soup2.find(class_="your_id")
+        if el:
+            m = re.search(r'(\d{6,})', el.get_text())
+            if m: userid = m.group(1)
+    except Exception:
+        pass
+    return {"cookie": cookie_str, "userid": userid}
 
 def renovar_cookie_auto(cfg_path="config.json"):
     """Tenta renovar o cookie usando game_user/game_pass do config. Retorna novo cookie ou None."""
@@ -85,7 +93,8 @@ def renovar_cookie_auto(cfg_path="config.json"):
         if not game_user or not game_pass:
             return None
         log.info("🔑 Tentando renovar cookie automaticamente...")
-        novo_cookie = fazer_login_moonid(server, game_user, game_pass)
+        resultado = fazer_login_moonid(server, game_user, game_pass)
+        novo_cookie = resultado["cookie"]
         cfg["cookies"] = novo_cookie
         with open(cfg_path, "w", encoding="utf-8") as f:
             _j.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -2847,9 +2856,15 @@ if __name__ == "__main__":
         print("🔑 Sem cookie — tentando login automático...")
         try:
             server_auto = cfg.get("server", "int7")
-            novo = fazer_login_moonid(server_auto, cfg["game_user"], cfg["game_pass"])
+            resultado = fazer_login_moonid(server_auto, cfg["game_user"], cfg["game_pass"])
+            novo = resultado["cookie"]
             globals()["COOKIES_RAW"] = novo
             cfg["cookies"] = novo
+            # Auto-detecta userid se ainda não está configurado
+            if resultado.get("userid") and (not cfg.get("userid") or cfg.get("userid") == "522001100"):
+                cfg["userid"] = resultado["userid"]
+                globals()["MY_USER_ID"] = resultado["userid"]
+                print(f"✓ UserID detectado: {resultado['userid']}")
             with open("config.json", "w", encoding="utf-8") as _f:
                 import json as _j2; _j2.dump(cfg, _f, indent=2, ensure_ascii=False)
             print("✓ Login automático OK!")
