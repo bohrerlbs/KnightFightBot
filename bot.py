@@ -563,8 +563,11 @@ class KFClient:
 # ═══════════════════════════════════════════
 def carregar_perfis_cache():
     if os.path.exists(PERFIS_CACHE):
-        with open(PERFIS_CACHE, encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(PERFIS_CACHE, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            log.warning("Cache de perfis corrompido — recriando.")
     return {"atualizado_em": None, "perfis": {}}
 
 def salvar_perfis_cache(cache):
