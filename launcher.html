@@ -539,6 +539,12 @@ header {
           Taverna automática quando sem pig e sem missão
         </label>
       </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-treinar-atributos" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-treinar-atributos" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Treinar atributos automaticamente (gasta gold)
+        </label>
+      </div>
     </div>
 
     <div style="margin-top:12px">
@@ -716,6 +722,7 @@ function openCfgModal(name){
       document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
+      document.getElementById('cfg-treinar-atributos').checked = !!cfg.treinar_atributos;
       document.getElementById('cfg-premium').checked   = !!cfg.premium;
       document.getElementById('cfg-horario-inicio').value = cfg.horario_inicio || '08:00';
       document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
@@ -740,6 +747,7 @@ function saveCfg(){
     hora_cache:          parseInt(document.getElementById('cfg-hora-cache').value||3),
     missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
+    treinar_atributos:   document.getElementById('cfg-treinar-atributos').checked,
     premium:         document.getElementById('cfg-premium').checked,
     horario_inicio:  document.getElementById('cfg-horario-inicio').value || '08:00',
     horario_parada:  document.getElementById('cfg-horario-parada').value || '22:00',
