@@ -1777,6 +1777,7 @@ def parsear_shop_armaduras(client):
 def comprar_armadura_barata(client):
     """
     Compra o máximo possível da armadura mais barata com o gold atual.
+    Usa o fluxo POST correto: GET confirmação → extrai campos → POST com amount=N.
     Retorna (qtd_comprada, preco_unitario, nome).
     """
     gold_atual, _ = parsear_gold_gems(client)
@@ -1792,18 +1793,43 @@ def comprar_armadura_barata(client):
     if gold_atual < preco:
         log.info(f"  Comprar armadura: gold ({gold_atual}g) < preço ({preco}g)")
         return 0, preco, item["nome"]
-    qtd = gold_atual // preco
+    qtd = min(gold_atual // preco, 999)
     log.info(f"  Comprando {qtd}x {item['nome']} @ {preco}g (gold: {gold_atual}g)...")
-    comprados = 0
-    for _ in range(qtd):
-        try:
-            client.get(item["url_compra"], fragment=False)
-            comprados += 1
-        except Exception as e:
-            log.warning(f"  Compra armadura falhou na {comprados+1}ª unidade: {e}")
-            break
-    log.info(f"  ✓ Comprou {comprados}x {item['nome']} (gastou ~{comprados * preco}g)")
-    return comprados, preco, item["nome"]
+
+    # GET página de confirmação (retorna BeautifulSoup)
+    try:
+        soup = client.get(item["url_compra"], fragment=False)
+    except Exception as e:
+        log.warning(f"  Compra armadura: erro ao carregar confirmação — {e}")
+        return 0, preco, item["nome"]
+
+    form = soup.find("form")
+    if not form:
+        log.warning("  Compra armadura: formulário de confirmação não encontrado")
+        return 0, preco, item["nome"]
+
+    # Extrai todos os campos hidden do formulário
+    campos = {}
+    for inp in form.find_all("input"):
+        name = inp.get("name")
+        value = inp.get("value", "")
+        if name:
+            campos[name] = value
+
+    # Sobrescreve amount com a quantidade calculada
+    campos["amount"] = str(qtd)
+    # Garante buy=1 (botão de confirmação)
+    campos["buy"] = "1"
+
+    # POST para BASE_URL + "/"
+    try:
+        client.post("/", data=campos, fragment=False)
+    except Exception as e:
+        log.warning(f"  Compra armadura: erro no POST — {e}")
+        return 0, preco, item["nome"]
+
+    log.info(f"  ✓ Comprou {qtd}x {item['nome']} (gastou ~{qtd * preco}g)")
+    return qtd, preco, item["nome"]
 
 
 def rotina_encerramento_noturno(client):
