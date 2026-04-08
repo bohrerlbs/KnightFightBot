@@ -1934,8 +1934,9 @@ def verificar_treinamento(client):
 
         # Coleta todos os links disponíveis com seus custos
         candidatos = []
-        links = soup.find_all("a", class_="kf-view",
+        links = soup.find_all("a",
                               href=lambda h: h and "/train/" in h and h.rstrip("/") != "/train")
+        log.debug(f"  Treinamento: {len(links)} link(s) encontrado(s) na página")
         for a in links:
             href = a.get("href", "")
             if not href or href.rstrip("/") in ("/train",):
