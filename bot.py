@@ -156,6 +156,9 @@ MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
 TAVERNA_ATIVA        = True   # pode ser sobrescrito pelo config.json
 TREINAR_ATRIBUTOS    = False  # treina atributos quando tem gold disponível
 BUILD_1MAO           = False  # se True (build 1 mão), permite treinar Agilidade; 2 mãos nunca treina Agilidade
+HORARIO_ATIVO        = False  # controle de horário de operação
+HORARIO_INICIO       = "08:00"  # hora local de início de operação
+HORARIO_PARADA       = "22:00"  # hora local de parada (compra armadura + entra taverna)
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -1666,6 +1669,214 @@ def rezar_altar(client):
         return False
 
 
+def esta_fora_horario():
+    """Retorna True se o horário atual está FORA da janela de operação configurada."""
+    if not HORARIO_ATIVO:
+        return False
+    from datetime import datetime as _dt
+    agora_local = _dt.now()
+    try:
+        h_ini, m_ini = map(int, HORARIO_INICIO.split(":"))
+        h_par, m_par = map(int, HORARIO_PARADA.split(":"))
+    except Exception:
+        return False
+    minutos_agora = agora_local.hour * 60 + agora_local.minute
+    minutos_ini   = h_ini * 60 + m_ini
+    minutos_par   = h_par * 60 + m_par
+    if minutos_ini < minutos_par:
+        return not (minutos_ini <= minutos_agora < minutos_par)
+    else:  # janela cruza meia-noite (improvável mas suportado)
+        return not (minutos_agora >= minutos_ini or minutos_agora < minutos_par)
+
+
+def calcular_horas_ate_inicio():
+    """Retorna float: horas até o próximo HORARIO_INICIO."""
+    from datetime import datetime as _dt, timedelta as _td
+    agora_local = _dt.now()
+    try:
+        h, m = map(int, HORARIO_INICIO.split(":"))
+    except Exception:
+        return 8.0
+    inicio = agora_local.replace(hour=h, minute=m, second=0, microsecond=0)
+    if inicio <= agora_local:
+        inicio += _td(days=1)
+    return (inicio - agora_local).total_seconds() / 3600
+
+
+def parsear_shop_armaduras(client):
+    """
+    Varre /shop/ruestungen/ (e páginas seguintes se existirem).
+    Retorna lista de {nome, preco, url_compra} ordenada por preço crescente.
+    Ignora itens com preço em gems/coins (edelstein/coin.png).
+    """
+    items = []
+    url = "/shop/ruestungen/"
+    visitadas = set()
+    while url and url not in visitadas:
+        visitadas.add(url)
+        try:
+            soup = client.get(url, fragment=False)
+        except Exception as e:
+            log.warning(f"Shop armaduras: erro ao carregar {url} — {e}")
+            break
+
+        # Cada item fica num bloco <tr class="mobile-cols-2">
+        for tr in soup.find_all("tr", class_="mobile-cols-2"):
+            # Busca link de compra (wac=buy)
+            link = tr.find("a", href=lambda h: h and "wac=buy" in h)
+            if not link:
+                continue
+            href = link.get("href", "")
+
+            # Busca bloco de texto com preço — procura 'goldstueck.gif' SEM 'edelstein' na mesma célula
+            td_info = tr.find("td", class_=lambda c: c and "mobile-w100" in c and "w30" in c)
+            if not td_info:
+                td_info = tr  # fallback
+            html_td = str(td_info)
+
+            # Descarta itens com preço em gems ou coins
+            if "edelstein.gif" in html_td or "coin.png" in html_td:
+                continue
+            if "goldstueck.gif" not in html_td:
+                continue
+
+            # Extrai preço: número imediatamente antes de goldstueck.gif
+            m_preco = re.search(r"([\d,\.]+)\s*&nbsp;.*?goldstueck\.gif", html_td)
+            if not m_preco:
+                continue
+            preco_str = m_preco.group(1).replace(".", "").replace(",", "")
+            if not preco_str.isdigit():
+                continue
+            preco = int(preco_str)
+
+            # Nome do item
+            b_tag = td_info.find("b") or td_info.find("strong")
+            nome = b_tag.get_text(strip=True) if b_tag else "Armadura"
+
+            # URL relativa de compra
+            buy_url = href if href.startswith("/") else "/" + href
+
+            if not any(i["url_compra"] == buy_url for i in items):
+                items.append({"nome": nome, "preco": preco, "url_compra": buy_url})
+
+        # Paginação: busca link "next" ou ">" ou "Próximo"
+        url = None
+        for a in soup.find_all("a", href=True):
+            txt = a.get_text(strip=True).lower()
+            href_a = a.get("href", "")
+            if ("page=" in href_a or "next" in txt or ">" == txt or "próximo" in txt) and "/shop/" in href_a:
+                if href_a not in visitadas:
+                    url = href_a if href_a.startswith("/") else "/" + href_a
+                    break
+
+    items.sort(key=lambda x: x["preco"])
+    log.info(f"Shop armaduras: {len(items)} itens encontrados (mais barato: {items[0]['preco']}g — {items[0]['nome']})" if items else "Shop armaduras: nenhum item encontrado")
+    return items
+
+
+def comprar_armadura_barata(client):
+    """
+    Compra o máximo possível da armadura mais barata com o gold atual.
+    Retorna (qtd_comprada, preco_unitario, nome).
+    """
+    gold_atual, _ = parsear_gold_gems(client)
+    if gold_atual <= 0:
+        log.info("  Comprar armadura: sem gold")
+        return 0, 0, ""
+    items = parsear_shop_armaduras(client)
+    if not items:
+        log.warning("  Comprar armadura: nenhum item encontrado na loja")
+        return 0, 0, ""
+    item = items[0]  # mais barato
+    preco = item["preco"]
+    if gold_atual < preco:
+        log.info(f"  Comprar armadura: gold ({gold_atual}g) < preço ({preco}g)")
+        return 0, preco, item["nome"]
+    qtd = gold_atual // preco
+    log.info(f"  Comprando {qtd}x {item['nome']} @ {preco}g (gold: {gold_atual}g)...")
+    comprados = 0
+    for _ in range(qtd):
+        try:
+            client.get(item["url_compra"], fragment=False)
+            comprados += 1
+        except Exception as e:
+            log.warning(f"  Compra armadura falhou na {comprados+1}ª unidade: {e}")
+            break
+    log.info(f"  ✓ Comprou {comprados}x {item['nome']} (gastou ~{comprados * preco}g)")
+    return comprados, preco, item["nome"]
+
+
+def rotina_encerramento_noturno(client):
+    """
+    Executada quando o horário de operação termina:
+    1. Se em taverna, espera terminar
+    2. Compra toda armadura possível com o gold
+    3. Entra na taverna em loop até horario_inicio
+    """
+    log.info(f"⏰ Horário de parada ({HORARIO_PARADA}) — iniciando encerramento noturno")
+
+    # 1. Aguarda se já estiver em taverna
+    em_tav, seg_tav = verificar_taverna_ativa(client)
+    if em_tav:
+        if seg_tav > 0:
+            log.info(f"  Já em taverna ({fmt_t(seg_tav)}) — aguardando conclusão antes de encerrar...")
+            time.sleep(seg_tav + 30)
+        sair_taverna(client)
+
+    # 2. Compra armadura com todo o gold
+    try:
+        qtd, preco, nome = comprar_armadura_barata(client)
+        if qtd > 0:
+            log.info(f"  Gold gasto em armadura: {qtd}x {nome} @ {preco}g")
+    except Exception as e:
+        log.warning(f"  Compra armadura: erro — {e}")
+
+    # 3. Entra na taverna em loop até voltar ao horário de operação
+    while esta_fora_horario():
+        horas_restantes = calcular_horas_ate_inicio()
+        log.info(f"  ⏳ {horas_restantes:.1f}h até {HORARIO_INICIO} — entrando na taverna...")
+
+        # Escolhe filter com jobs de duração mais próxima do tempo restante
+        if horas_restantes >= 10:
+            filter_id, horas_max = 4, 12
+        elif horas_restantes >= 7:
+            filter_id, horas_max = 3, 9
+        elif horas_restantes >= 4:
+            filter_id, horas_max = 2, 6
+        else:
+            filter_id, horas_max = 1, 3
+
+        jobs = parsear_taverna(client, horas_max=horas_max, filter_id=filter_id)
+        if not jobs:
+            # Tenta filter menor como fallback
+            for fb_filter, fb_max in [(3, 9), (2, 6), (1, 3)]:
+                if fb_filter < filter_id:
+                    jobs = parsear_taverna(client, horas_max=fb_max, filter_id=fb_filter)
+                    if jobs:
+                        break
+
+        if not jobs:
+            log.warning(f"  Sem jobs na taverna — dormindo 30min e tentando novamente")
+            time.sleep(1800)
+            continue
+
+        # Pega o job de maior duração disponível (para dormir o máximo)
+        melhor = max(jobs, key=lambda j: j["horas"])
+        try:
+            client.get_url(melhor["url"])
+            log.info(f"  🌙 Taverna noturna: {melhor['horas']}h aceito (+{melhor['gold']}g) — dormindo...")
+            time.sleep(melhor["horas"] * 3600)
+            # Sai da taverna para coletar gold
+            sair_taverna(client)
+            gold_pos, _ = parsear_gold_gems(client)
+            log.info(f"  Gold após taverna noturna: {gold_pos}g")
+        except Exception as e:
+            log.warning(f"  Erro na taverna noturna: {e} — tentando novamente em 5min")
+            time.sleep(300)
+
+    log.info(f"⏰ Horário de operação retomado ({HORARIO_INICIO}) — voltando ao ciclo normal")
+
+
 def verificar_treinamento(client):
     """
     Treina atributos disponíveis conforme build do personagem.
@@ -2220,16 +2431,15 @@ def loop_lento(client):
         time.sleep(INTERVALO_LENTO_SEG)
 
 
-def parsear_taverna(client, horas_max=1):
+def parsear_taverna(client, horas_max=1, filter_id=1):
     """
     Lê os jobs disponíveis na taverna usando filtro por duração.
-    filter=1 → 1-3h  (sempre usado para busca de 1h)
+    filter_id=1 → 1-3h | filter_id=2 → 4-6h | filter_id=3 → 7-9h | filter_id=4 → 10-12h
     Retorna lista de {horas, gold, url}
     """
     import re as _re
     try:
-        # Usa filtro 1-3h — garante que job de 1h aparece
-        url_taverna = "/job/?filter=1"
+        url_taverna = f"/job/?filter={filter_id}"
         soup = client.get(url_taverna, fragment=False)  # fragment=False para ter o HTML completo com a tabela de jobs
         jobs = []
         for row in soup.find_all("tr"):
@@ -2485,6 +2695,13 @@ def loop_rapido(client):
     """
     while True:
         try:
+            # ── Controle de horário de operação ──────────────────────────────
+            if esta_fora_horario():
+                log.info(f"⏰ Fora do horário de operação ({HORARIO_INICIO}–{HORARIO_PARADA}) — encerrando")
+                rotina_encerramento_noturno(client)
+                time.sleep(INTERVALO_RAPIDO_SEG)
+                continue
+
             estado = carregar_estado()
             imun = imunidade_restante(estado)
             log.info(f"\n⚡ [RÁPIDO] Imunidade: {fmt_t(imun)}")
@@ -2935,6 +3152,12 @@ if __name__ == "__main__":
         globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
     if "build_1mao" in cfg:
         globals()["BUILD_1MAO"] = bool(cfg["build_1mao"])
+    if "horario_ativo" in cfg:
+        globals()["HORARIO_ATIVO"] = bool(cfg["horario_ativo"])
+    if "horario_inicio" in cfg:
+        globals()["HORARIO_INICIO"] = str(cfg["horario_inicio"])
+    if "horario_parada" in cfg:
+        globals()["HORARIO_PARADA"] = str(cfg["horario_parada"])
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:

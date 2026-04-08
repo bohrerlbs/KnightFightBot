@@ -349,7 +349,8 @@ def save_profile(data):
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium",
                        "ranking_max", "pausa_cache", "hora_cache", "cookies",
-                       "missao_alinhamento", "taverna_ativa", "game_user", "game_pass"]:
+                       "missao_alinhamento", "taverna_ativa", "game_user", "game_pass",
+                       "horario_ativo", "horario_inicio", "horario_parada"]:
             if field in data:
                 cfg[field] = data[field]
         cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -390,6 +391,9 @@ def save_profile(data):
         "taverna_ativa":        data.get("taverna_ativa", True),
         "game_user":            data.get("game_user", ""),
         "game_pass":            data.get("game_pass", ""),
+        "horario_ativo":        data.get("horario_ativo", False),
+        "horario_inicio":       data.get("horario_inicio", "08:00"),
+        "horario_parada":       data.get("horario_parada", "22:00"),
     }
     cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     bat = f'@echo off\ncd /d "{BASE_DIR}"\npython bot.py --profile {name}\npause\n'

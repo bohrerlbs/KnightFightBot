@@ -550,6 +550,27 @@ header {
       </div>
     </div>
 
+    <div style="margin-top:12px;border-top:1px solid var(--border2);padding-top:12px">
+      <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Horario de Operacao</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div>
+          <label class="form-label" style="font-size:11px">Inicio (HH:MM)</label>
+          <input class="form-input" id="cfg-horario-inicio" type="time" placeholder="08:00" oninput="validarHorario()">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px">Parada (HH:MM)</label>
+          <input class="form-input" id="cfg-horario-parada" type="time" placeholder="22:00" oninput="validarHorario()">
+        </div>
+      </div>
+      <div id="cfg-horario-aviso" style="display:none;font-size:10px;color:#e55;margin-bottom:6px;padding:4px 6px;background:rgba(200,50,50,0.15);border-radius:3px"></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-horario-ativo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="validarHorario()">
+        <label for="cfg-horario-ativo" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Ativar — ao atingir Parada: compra armadura e entra na taverna ate Inicio
+        </label>
+      </div>
+    </div>
+
     <div style="margin-top:14px;border-top:1px solid var(--border2);padding-top:12px">
       <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🔑 Login Automático</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
@@ -660,6 +681,28 @@ function toast(msg, type='ok'){
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
+function validarHorario(){
+  var ini  = document.getElementById('cfg-horario-inicio').value;
+  var par  = document.getElementById('cfg-horario-parada').value;
+  var ativ = document.getElementById('cfg-horario-ativo').checked;
+  var aviso = document.getElementById('cfg-horario-aviso');
+  if(!ini || !par){ aviso.style.display='none'; return; }
+  var toMin = function(t){ var p=t.split(':'); return parseInt(p[0])*60+parseInt(p[1]); };
+  var mIni = toMin(ini), mPar = toMin(par);
+  var janela = mPar > mIni ? mPar - mIni : (1440 - mIni + mPar);
+  if(ativ && janela < 720){
+    aviso.textContent = 'A janela de operacao precisa ser >= 12h (atual: '+Math.floor(janela/60)+'h'+String(janela%60).padStart(2,'0')+'min)';
+    aviso.style.display = 'block';
+  } else if(ativ && janela >= 720){
+    var dormir = 1440 - janela;
+    aviso.textContent = 'OK — opera '+Math.floor(janela/60)+'h, dorme '+Math.floor(dormir/60)+'h na taverna';
+    aviso.style.display = 'block';
+    aviso.style.color = '#6c6';
+  } else {
+    aviso.style.display = 'none';
+  }
+}
+
 function openCfgModal(name){
   document.getElementById('cfg-profile-name').value = name;
   document.getElementById('cfg-name-title').textContent = name;
@@ -674,9 +717,13 @@ function openCfgModal(name){
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
       document.getElementById('cfg-premium').checked   = !!cfg.premium;
+      document.getElementById('cfg-horario-inicio').value = cfg.horario_inicio || '08:00';
+      document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
+      document.getElementById('cfg-horario-ativo').checked = !!cfg.horario_ativo;
       document.getElementById('cfg-game-user').value   = cfg.game_user || '';
       document.getElementById('cfg-game-pass').value   = cfg.game_pass ? '••••••••' : '';
       document.getElementById('cfg-game-pass').dataset.hasPass = cfg.game_pass ? '1' : '';
+      validarHorario();
     });
   openModal('modal-cfg');
 }
@@ -694,6 +741,9 @@ function saveCfg(){
     missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
     premium:         document.getElementById('cfg-premium').checked,
+    horario_inicio:  document.getElementById('cfg-horario-inicio').value || '08:00',
+    horario_parada:  document.getElementById('cfg-horario-parada').value || '22:00',
+    horario_ativo:   document.getElementById('cfg-horario-ativo').checked,
     game_user:       document.getElementById('cfg-game-user').value.trim(),
     game_pass:       (function(){
       var v = document.getElementById('cfg-game-pass').value;
