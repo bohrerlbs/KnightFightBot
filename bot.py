@@ -1703,112 +1703,61 @@ def calcular_horas_ate_inicio():
     return (inicio - agora_local).total_seconds() / 3600
 
 
-def parsear_shop_armaduras(client):
-    """
-    Varre /shop/ruestungen/ (e páginas seguintes se existirem).
-    Retorna lista de {nome, preco, url_compra} ordenada por preço crescente.
-    Ignora itens com preço em gems/coins (edelstein/coin.png).
-    """
-    items = []
-    url = "/shop/ruestungen/"
-    visitadas = set()
-    while url and url not in visitadas:
-        visitadas.add(url)
-        try:
-            soup = client.get(url, fragment=False)
-        except Exception as e:
-            log.warning(f"Shop armaduras: erro ao carregar {url} — {e}")
-            break
-
-        # Cada item fica num bloco <tr class="mobile-cols-2">
-        for tr in soup.find_all("tr", class_="mobile-cols-2"):
-            # Busca link de compra (wac=buy)
-            link = tr.find("a", href=lambda h: h and "wac=buy" in h)
-            if not link:
-                continue
-            href = link.get("href", "")
-
-            # Busca bloco de texto com preço — procura 'goldstueck.gif' SEM 'edelstein' na mesma célula
-            td_info = tr.find("td", class_=lambda c: c and "mobile-w100" in c and "w30" in c)
-            if not td_info:
-                td_info = tr  # fallback
-            html_td = str(td_info)
-
-            # Descarta itens com preço em gems ou coins
-            if "edelstein.gif" in html_td or "coin.png" in html_td:
-                continue
-            if "goldstueck.gif" not in html_td:
-                continue
-
-            # Extrai preço: número imediatamente antes de goldstueck.gif
-            m_preco = re.search(r"([\d,\.]+)\s*&nbsp;.*?goldstueck\.gif", html_td)
-            if not m_preco:
-                continue
-            preco_str = m_preco.group(1).replace(".", "").replace(",", "")
-            if not preco_str.isdigit():
-                continue
-            preco = int(preco_str)
-
-            # Nome do item
-            b_tag = td_info.find("b") or td_info.find("strong")
-            nome = b_tag.get_text(strip=True) if b_tag else "Armadura"
-
-            # URL relativa de compra
-            buy_url = href if href.startswith("/") else "/" + href
-
-            if not any(i["url_compra"] == buy_url for i in items):
-                items.append({"nome": nome, "preco": preco, "url_compra": buy_url})
-
-        # Paginação: busca link "next" ou ">" ou "Próximo"
-        url = None
-        for a in soup.find_all("a", href=True):
-            txt = a.get_text(strip=True).lower()
-            href_a = a.get("href", "")
-            if ("page=" in href_a or "next" in txt or ">" == txt or "próximo" in txt) and "/shop/" in href_a:
-                if href_a not in visitadas:
-                    url = href_a if href_a.startswith("/") else "/" + href_a
-                    break
-
-    items.sort(key=lambda x: x["preco"])
-    log.info(f"Shop armaduras: {len(items)} itens encontrados (mais barato: {items[0]['preco']}g — {items[0]['nome']})" if items else "Shop armaduras: nenhum item encontrado")
-    return items
-
-
 def comprar_armadura_barata(client):
     """
-    Compra o máximo possível da armadura mais barata com o gold atual.
-    Usa o fluxo POST correto: GET confirmação → extrai campos → POST com amount=N.
+    Compra o máximo possível da armadura disponível em /shop/ruestungen/.
+    A página já é o formulário de compra direto (não há listagem separada).
+    Extrai preço de <input id="costs_gold">, nome do texto da confirmação.
     Retorna (qtd_comprada, preco_unitario, nome).
     """
     gold_atual, _ = parsear_gold_gems(client)
     if gold_atual <= 0:
         log.info("  Comprar armadura: sem gold")
         return 0, 0, ""
-    items = parsear_shop_armaduras(client)
-    if not items:
-        log.warning("  Comprar armadura: nenhum item encontrado na loja")
-        return 0, 0, ""
-    item = items[0]  # mais barato
-    preco = item["preco"]
-    if gold_atual < preco:
-        log.info(f"  Comprar armadura: gold ({gold_atual}g) < preço ({preco}g)")
-        return 0, preco, item["nome"]
-    qtd = min(gold_atual // preco, 999)
-    log.info(f"  Comprando {qtd}x {item['nome']} @ {preco}g (gold: {gold_atual}g)...")
 
-    # GET página de confirmação (retorna BeautifulSoup)
     try:
-        soup = client.get(item["url_compra"], fragment=False)
+        soup = client.get("/shop/ruestungen/", fragment=False)
     except Exception as e:
-        log.warning(f"  Compra armadura: erro ao carregar confirmação — {e}")
-        return 0, preco, item["nome"]
+        log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
+        return 0, 0, ""
 
     form = soup.find("form")
     if not form:
-        log.warning("  Compra armadura: formulário de confirmação não encontrado")
-        return 0, preco, item["nome"]
+        log.warning("  Comprar armadura: formulário não encontrado")
+        return 0, 0, ""
 
-    # Extrai todos os campos hidden do formulário
+    # Preço unitário em gold
+    costs_el = soup.find(id="costs_gold")
+    if not costs_el:
+        log.warning("  Comprar armadura: campo costs_gold não encontrado")
+        return 0, 0, ""
+    try:
+        preco = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
+    except ValueError:
+        log.warning("  Comprar armadura: preço inválido")
+        return 0, 0, ""
+
+    if preco <= 0:
+        log.warning("  Comprar armadura: preço zero")
+        return 0, 0, ""
+
+    if gold_atual < preco:
+        log.info(f"  Comprar armadura: gold ({gold_atual}g) < preço ({preco}g)")
+        return 0, preco, ""
+
+    # Nome do item — vem no texto "purchase this armour (X)" ou "(X)?"
+    nome = "Armadura"
+    txt_pagina = soup.get_text()
+    m_nome = re.search(r"purchase this armour \(([^)]+)\)", txt_pagina)
+    if not m_nome:
+        m_nome = re.search(r"diese Rüstung \(([^)]+)\)", txt_pagina)  # fallback alemão
+    if m_nome:
+        nome = m_nome.group(1).strip()
+
+    qtd = min(gold_atual // preco, 999)
+    log.info(f"  Comprando {qtd}x {nome} @ {preco}g (gold: {gold_atual}g)...")
+
+    # Extrai todos os campos do formulário
     campos = {}
     for inp in form.find_all("input"):
         name = inp.get("name")
@@ -1816,20 +1765,17 @@ def comprar_armadura_barata(client):
         if name:
             campos[name] = value
 
-    # Sobrescreve amount com a quantidade calculada
     campos["amount"] = str(qtd)
-    # Garante buy=1 (botão de confirmação)
     campos["buy"] = "1"
 
-    # POST para BASE_URL + "/"
     try:
         client.post("/", data=campos, fragment=False)
     except Exception as e:
         log.warning(f"  Compra armadura: erro no POST — {e}")
-        return 0, preco, item["nome"]
+        return 0, preco, nome
 
-    log.info(f"  ✓ Comprou {qtd}x {item['nome']} (gastou ~{qtd * preco}g)")
-    return qtd, preco, item["nome"]
+    log.info(f"  ✓ Comprou {qtd}x {nome} (gastou ~{qtd * preco}g)")
+    return qtd, preco, nome
 
 
 def rotina_encerramento_noturno(client):
