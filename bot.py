@@ -154,6 +154,8 @@ HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
 MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
 TAVERNA_ATIVA        = True   # pode ser sobrescrito pelo config.json
+TREINAR_ATRIBUTOS    = False  # treina atributos quando tem gold disponível
+BUILD_EQUIPAMENTO    = False  # se True, permite treinar Agilidade (build com skill de equipamento)
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -1664,6 +1666,53 @@ def rezar_altar(client):
         return False
 
 
+def verificar_treinamento(client):
+    """
+    Treina atributos disponíveis conforme build do personagem.
+    - Só executa se TREINAR_ATRIBUTOS=True no config
+    - BUILD_EQUIPAMENTO=False → nunca treina Agilidade
+    - Retorna lista de atributos treinados
+    """
+    if not TREINAR_ATRIBUTOS:
+        return []
+    treinados = []
+    try:
+        soup = client.get("/train/", fragment=False)
+        # Links de treino disponíveis (quando tem gold suficiente o jogo mostra <a>, senão <span class="train-impossible">)
+        links = soup.find_all("a", class_="kf-view",
+                              href=lambda h: h and "/train/" in h and h.rstrip("/") != "/train")
+        for a in links:
+            href = a.get("href", "")
+            if not href or href.rstrip("/") in ("/train",):
+                continue
+            # Pula Agilidade se build sem equipamento
+            if "geschicklichkeit" in href and not BUILD_EQUIPAMENTO:
+                log.debug("  Treinamento: pulando Agilidade (build sem equipamento)")
+                continue
+            # Extrai custo do texto do link (ex: "Treinar (338 )")
+            texto = a.get_text(separator=" ")
+            custo_m = re.search(r"[\d.]+", texto)
+            custo = int(custo_m.group().replace(".", "")) if custo_m else 0
+            # Mapa URL → nome legível
+            nomes = {
+                "staerke": "Força", "ausdauer": "Resistência",
+                "geschicklichkeit": "Agilidade", "kampfkunst": "Arte de combate",
+                "parieren": "Bloqueio",
+            }
+            segmento = href.strip("/").split("/")[-1]
+            nome = nomes.get(segmento, segmento)
+            log.info(f"  Treinando {nome} (custo: {custo}g)...")
+            try:
+                client.get(href, fragment=False)
+                treinados.append(nome)
+                log.info(f"  ✓ {nome} treinado!")
+            except Exception as e:
+                log.warning(f"  Treinamento {nome}: erro — {e}")
+    except Exception as e:
+        log.warning(f"Treinamento: erro ao carregar página — {e}")
+    return treinados
+
+
 def verificar_raubzug(client):
     soup = client.get("/raubzug/")
     txt = soup.get_text()
@@ -2508,6 +2557,19 @@ def loop_rapido(client):
             except Exception as e:
                 log.warning(f"Altar: erro ao verificar HP — {e}", exc_info=True)
 
+            # ── Treinamento: gasta gold em atributos disponíveis ──────────────
+            try:
+                treinados = verificar_treinamento(client)
+                if treinados:
+                    log.info(f"  Treinamento concluído: {', '.join(treinados)}")
+                    # Atualiza gold após gastar em treino
+                    gold_pos, _ = parsear_gold_gems(client)
+                    if gold_pos > 0:
+                        estado["gold_atual"] = gold_pos
+                        salvar_estado(estado)
+            except Exception as e:
+                log.warning(f"Treinamento: erro no loop — {e}")
+
             pig_list = carregar_pig_list()
             gold_atual = estado.get("gold_atual", 0)
             score_min_imun = SCORE_MIN_IMUNIZACAO  # sempre usa 90% para imunizar
@@ -2863,6 +2925,10 @@ if __name__ == "__main__":
         globals()["MISSAO_ALINHAMENTO"] = cfg["missao_alinhamento"]
     if "taverna_ativa" in cfg:
         globals()["TAVERNA_ATIVA"] = bool(cfg["taverna_ativa"])
+    if "treinar_atributos" in cfg:
+        globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
+    if "build_equipamento" in cfg:
+        globals()["BUILD_EQUIPAMENTO"] = bool(cfg["build_equipamento"])
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:
