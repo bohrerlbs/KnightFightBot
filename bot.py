@@ -155,7 +155,7 @@ HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
 TAVERNA_ATIVA        = True   # pode ser sobrescrito pelo config.json
 TREINAR_ATRIBUTOS    = False  # treina atributos quando tem gold disponível
-BUILD_EQUIPAMENTO    = False  # se True, permite treinar Agilidade (build com skill de equipamento)
+BUILD_1MAO           = False  # se True (build 1 mão), permite treinar Agilidade; 2 mãos nunca treina Agilidade
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -1670,10 +1670,16 @@ def verificar_treinamento(client):
     """
     Treina atributos disponíveis conforme build do personagem.
     - Só executa se TREINAR_ATRIBUTOS=True no config
-    - BUILD_EQUIPAMENTO=False → nunca treina Agilidade
+    - Não executa se personagem estiver em missão na taverna
+    - BUILD_1MAO=False (build 2 mãos) → nunca treina Agilidade
     - Retorna lista de atributos treinados
     """
     if not TREINAR_ATRIBUTOS:
+        return []
+    # Não treina durante taverna (evita conflito)
+    em_taverna, _ = verificar_taverna_ativa(client)
+    if em_taverna:
+        log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
     treinados = []
     try:
@@ -1685,9 +1691,9 @@ def verificar_treinamento(client):
             href = a.get("href", "")
             if not href or href.rstrip("/") in ("/train",):
                 continue
-            # Pula Agilidade se build sem equipamento
-            if "geschicklichkeit" in href and not BUILD_EQUIPAMENTO:
-                log.debug("  Treinamento: pulando Agilidade (build sem equipamento)")
+            # Pula Agilidade se build 2 mãos
+            if "geschicklichkeit" in href and not BUILD_1MAO:
+                log.debug("  Treinamento: pulando Agilidade (build 2 mãos)")
                 continue
             # Extrai custo do texto do link (ex: "Treinar (338 )")
             texto = a.get_text(separator=" ")
@@ -2927,8 +2933,8 @@ if __name__ == "__main__":
         globals()["TAVERNA_ATIVA"] = bool(cfg["taverna_ativa"])
     if "treinar_atributos" in cfg:
         globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
-    if "build_equipamento" in cfg:
-        globals()["BUILD_EQUIPAMENTO"] = bool(cfg["build_equipamento"])
+    if "build_1mao" in cfg:
+        globals()["BUILD_1MAO"] = bool(cfg["build_1mao"])
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:
