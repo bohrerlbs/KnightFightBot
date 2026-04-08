@@ -2662,7 +2662,15 @@ def _taverna_1h(client):
         else:
             log.warning("  ✗ Sem alvo disponível para imunizar — entrando na taverna mesmo assim")
 
-    # Passo 2: verifica se já está em missão ativa
+    # Passo 2: gasta gold em treinamento antes de entrar na taverna
+    try:
+        treinados = verificar_treinamento(client)
+        if treinados:
+            log.info(f"  Treinamento pré-taverna: {', '.join(treinados)}")
+    except Exception as e:
+        log.warning(f"  Treinamento pré-taverna: erro — {e}")
+
+    # Passo 3: verifica se já está em missão ativa
     em_missao, seg_missao = verificar_taverna_ativa(client)
     if em_missao and seg_missao > 0:
         log.info(f"  🍺 Já em missão! Restam {fmt_t(seg_missao)} — aguardando...")
@@ -2673,7 +2681,7 @@ def _taverna_1h(client):
         atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
         log.info("  ✓ Missão concluída — retomando")
     else:
-        # Passo 3: aceitar job de 1h (ou esperar aparecer um)
+        # Passo 4: aceitar job de 1h (ou esperar aparecer um)
         ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=1)
         if ok_tab:
             log.info(f"  🍺 Taverna: job {horas_tab}h aceito (+{gold_tab}g) — dormindo {horas_tab}h")
