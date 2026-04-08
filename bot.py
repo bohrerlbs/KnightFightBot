@@ -1958,7 +1958,11 @@ def verificar_treinamento(client):
         alvo = candidatos[0]
         log.info(f"  Treinando {alvo['nome']} (custo: {alvo['custo']}g)...")
         try:
-            client.get(alvo["href"], fragment=False)
+            href_rel = alvo["href"]
+            if href_rel.startswith("http"):
+                from urllib.parse import urlparse
+                href_rel = urlparse(href_rel).path
+            client.get(href_rel, fragment=False)
             treinados.append(alvo["nome"])
             log.info(f"  ✓ {alvo['nome']} treinado!")
         except Exception as e:
@@ -2693,6 +2697,12 @@ def _taverna_1h(client):
             sair_taverna(client)
             atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
             log.info("  ✓ Job da taverna concluído — retomando")
+            try:
+                treinados = verificar_treinamento(client)
+                if treinados:
+                    log.info(f"  Treinamento pós-taverna: {', '.join(treinados)}")
+            except Exception as e:
+                log.warning(f"  Treinamento pós-taverna: erro — {e}")
         else:
             # Sem job de 1h — fica tentando a cada 1s
             log.info(f"  Sem job de 1h ({msg_tab}) — aguardando aparecer...")
@@ -2710,6 +2720,12 @@ def _taverna_1h(client):
                         sair_taverna(client)
                         atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                         log.info("  ✓ Missão concluída — retomando")
+                        try:
+                            treinados = verificar_treinamento(client)
+                            if treinados:
+                                log.info(f"  Treinamento pós-taverna: {', '.join(treinados)}")
+                        except Exception as e:
+                            log.warning(f"  Treinamento pós-taverna: erro — {e}")
                         break
                 # Tenta aceitar job a cada 30s (não a cada 1s para não spammar o servidor)
                 if _tent % 30 == 0:
@@ -2723,6 +2739,12 @@ def _taverna_1h(client):
                         sair_taverna(client)
                         atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                         log.info("  ✓ Job da taverna concluído — retomando")
+                        try:
+                            treinados = verificar_treinamento(client)
+                            if treinados:
+                                log.info(f"  Treinamento pós-taverna: {', '.join(treinados)}")
+                        except Exception as e:
+                            log.warning(f"  Treinamento pós-taverna: erro — {e}")
                         break
                     if _tent % 60 == 0:
                         log.info(f"  Aguardando job 1h... t={_tent+1}")
@@ -2951,6 +2973,12 @@ def loop_rapido(client):
                 executar_ataque(client, uid)
                 # não remove: executar_ataque já marca como "atacado" com gold/xp/resultado
                 ataque_feito = True
+                try:
+                    treinados = verificar_treinamento(client)
+                    if treinados:
+                        log.info(f"  Treinamento pós-ataque: {', '.join(treinados)}")
+                except Exception as e:
+                    log.warning(f"  Treinamento pós-ataque: erro — {e}")
                 break
 
             # Precisa imunizar e não atacou pig?
@@ -2991,6 +3019,12 @@ def loop_rapido(client):
                     if res_imun.get("status") == "executado":
                         ataque_feito = True
                         imunizou_agora = True
+                        try:
+                            treinados = verificar_treinamento(client)
+                            if treinados:
+                                log.info(f"  Treinamento pós-imunização: {', '.join(treinados)}")
+                        except Exception as e:
+                            log.warning(f"  Treinamento pós-imunização: erro — {e}")
                         break
                     else:
                         log.warning(f"  Ataque falhou ({res_imun.get('status')}) — próximo alvo...")
@@ -3002,6 +3036,13 @@ def loop_rapido(client):
             if not ataque_feito:
                 res = gerenciar_missao(client)
                 log.info(f"Missão: {res['status']}")
+                if res.get("status") == "iniciada":
+                    try:
+                        treinados = verificar_treinamento(client)
+                        if treinados:
+                            log.info(f"  Treinamento pós-missão: {', '.join(treinados)}")
+                    except Exception as e:
+                        log.warning(f"  Treinamento pós-missão: erro — {e}")
 
                 # Se missão também indisponível (cota diária ou em CD longo)
                 # → imuniza, entra na taverna 1h, dorme, sai e imuniza de novo
