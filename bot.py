@@ -1905,7 +1905,7 @@ def rotina_encerramento_noturno(client):
 
 def verificar_treinamento(client):
     """
-    Treina atributos disponíveis conforme build do personagem.
+    Treina atributos em loop: sempre a mais barata primeiro, re-verifica após cada treino.
     - Só executa se TREINAR_ATRIBUTOS=True no config
     - Não executa se personagem estiver em missão na taverna
     - BUILD_1MAO=False (build 2 mãos) → nunca treina Agilidade
@@ -1913,15 +1913,27 @@ def verificar_treinamento(client):
     """
     if not TREINAR_ATRIBUTOS:
         return []
-    # Não treina durante taverna (evita conflito)
     em_taverna, _ = verificar_taverna_ativa(client)
     if em_taverna:
         log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
+
+    nomes = {
+        "staerke": "Força", "ausdauer": "Resistência",
+        "geschicklichkeit": "Agilidade", "kampfkunst": "Arte de combate",
+        "parieren": "Bloqueio",
+    }
     treinados = []
-    try:
-        soup = client.get("/train/", fragment=False)
-        # Links de treino disponíveis (quando tem gold suficiente o jogo mostra <a>, senão <span class="train-impossible">)
+
+    while True:
+        try:
+            soup = client.get("/train/", fragment=False)
+        except Exception as e:
+            log.warning(f"Treinamento: erro ao carregar página — {e}")
+            break
+
+        # Coleta todos os links disponíveis com seus custos
+        candidatos = []
         links = soup.find_all("a", class_="kf-view",
                               href=lambda h: h and "/train/" in h and h.rstrip("/") != "/train")
         for a in links:
@@ -1930,29 +1942,28 @@ def verificar_treinamento(client):
                 continue
             # Pula Agilidade se build 2 mãos
             if "geschicklichkeit" in href and not BUILD_1MAO:
-                log.debug("  Treinamento: pulando Agilidade (build 2 mãos)")
                 continue
-            # Extrai custo do texto do link (ex: "Treinar (338 )")
             texto = a.get_text(separator=" ")
             custo_m = re.search(r"[\d.]+", texto)
             custo = int(custo_m.group().replace(".", "")) if custo_m else 0
-            # Mapa URL → nome legível
-            nomes = {
-                "staerke": "Força", "ausdauer": "Resistência",
-                "geschicklichkeit": "Agilidade", "kampfkunst": "Arte de combate",
-                "parieren": "Bloqueio",
-            }
             segmento = href.strip("/").split("/")[-1]
-            nome = nomes.get(segmento, segmento)
-            log.info(f"  Treinando {nome} (custo: {custo}g)...")
-            try:
-                client.get(href, fragment=False)
-                treinados.append(nome)
-                log.info(f"  ✓ {nome} treinado!")
-            except Exception as e:
-                log.warning(f"  Treinamento {nome}: erro — {e}")
-    except Exception as e:
-        log.warning(f"Treinamento: erro ao carregar página — {e}")
+            candidatos.append({"href": href, "custo": custo, "nome": nomes.get(segmento, segmento)})
+
+        if not candidatos:
+            break  # nenhum disponível (sem gold ou tudo no máximo)
+
+        # Treina a mais barata
+        candidatos.sort(key=lambda x: x["custo"])
+        alvo = candidatos[0]
+        log.info(f"  Treinando {alvo['nome']} (custo: {alvo['custo']}g)...")
+        try:
+            client.get(alvo["href"], fragment=False)
+            treinados.append(alvo["nome"])
+            log.info(f"  ✓ {alvo['nome']} treinado!")
+        except Exception as e:
+            log.warning(f"  Treinamento {alvo['nome']}: erro — {e}")
+            break
+
     return treinados
 
 
