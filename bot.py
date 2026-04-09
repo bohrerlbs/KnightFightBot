@@ -2712,9 +2712,16 @@ def distribuir_pontos_skill(client):
     txt = soup.get_text()
     m = re.search(r"Available skill points:\s*(\d+)", txt)
     if not m:
-        # tenta português
         m = re.search(r"Pontos de habilidade disponíveis:\s*(\d+)", txt)
     if not m:
+        m = re.search(r"Verfügbare Fertigkeitspunkte:\s*(\d+)", txt)
+    if not m:
+        m = re.search(r"Puntos de habilidad disponibles:\s*(\d+)", txt)
+    if not m:
+        # busca genérica: qualquer número após texto com "skill" ou "punkt" ou "point"
+        m = re.search(r"(?:skill|punkt|point|habilidade|habilidad)[^\d]{0,40}(\d+)", txt, re.IGNORECASE)
+    if not m:
+        log.warning(f"Skills: nenhum padrão de pontos encontrado na página /skills/ — verificar texto da página")
         return []
     pontos = int(m.group(1))
     if pontos <= 0:
