@@ -2181,6 +2181,222 @@ def tentar_comprar_pedra(client, estado):
     return False
 
 
+def verificar_alvo_anel(client, estado):
+    """
+    Determina aneis a comprar. Máximo 2 simultâneos.
+    - Lê inventário direto da página /shop/ringe/ (seção Inventory)
+    - Busca melhor anel disponível por gold (sem gemas, com buy button)
+    - Salva em estado["anel_alvo"]
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return
+
+    MAX_ANEIS = 2
+    try:
+        soup = client.get("/shop/ringe/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Anel: erro ao carregar loja — {e}")
+        return
+
+    inv = parsear_inventario(soup)
+    total_aneis = sum(inv.values())
+
+    a_comprar = max(0, MAX_ANEIS - total_aneis)
+    if a_comprar == 0:
+        if estado.get("anel_alvo"):
+            log.debug("  Anel: já temos 2 aneis — limpando alvo")
+            del estado["anel_alvo"]
+            salvar_estado(estado)
+        return
+
+    melhor = _parsear_shop_listagem(soup, "ringe")
+    if not melhor:
+        if estado.get("anel_alvo"):
+            del estado["anel_alvo"]
+            salvar_estado(estado)
+        return
+
+    gold_total = melhor["gold_necessario"] * a_comprar
+    anterior = estado.get("anel_alvo", {})
+    if anterior.get("nome") != melhor["nome"] or anterior.get("quantidade") != a_comprar:
+        log.info(f"  💍 Alvo anel: {a_comprar}x '{melhor['nome']}' @ {melhor['gold_necessario']}g = {gold_total}g total")
+
+    estado["anel_alvo"] = {
+        "nome":            melhor["nome"],
+        "gold_necessario": gold_total,
+        "gold_unitario":   melhor["gold_necessario"],
+        "url_compra":      melhor["url_compra"],
+        "quantidade":      a_comprar,
+    }
+    salvar_estado(estado)
+
+
+def tentar_comprar_anel(client, estado):
+    """
+    Compra aneis quando gold suficiente (até 2).
+    Compra um por vez em loop.
+    Retorna True se comprou algum.
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return False
+    alvo = estado.get("anel_alvo")
+    if not alvo:
+        return False
+
+    gold_atual = estado.get("gold_atual", 0)
+    if gold_atual < alvo["gold_necessario"]:
+        return False
+
+    log.info(f"  💰 Gold ({gold_atual}g) >= aneis {alvo['quantidade']}x '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
+
+    comprados = 0
+    for i in range(alvo["quantidade"]):
+        try:
+            soup = client.get(alvo["url_compra"], fragment=False)
+        except Exception as e:
+            log.warning(f"  Comprar anel #{i+1}: erro ao carregar — {e}")
+            break
+
+        form = soup.find("form")
+        if not form:
+            log.warning(f"  Comprar anel #{i+1}: formulário não encontrado")
+            break
+
+        campos = {}
+        for inp in form.find_all("input"):
+            name = inp.get("name")
+            val  = inp.get("value", "")
+            if name:
+                campos[name] = val
+        if "buy" not in campos:
+            campos["buy"] = "1"
+
+        action = form.get("action") or alvo["url_compra"]
+        if action.startswith("http"):
+            from urllib.parse import urlparse
+            action = urlparse(action).path
+        if not action or action == "#":
+            action = alvo["url_compra"]
+
+        try:
+            client.post(action, data=campos, fragment=False)
+            comprados += 1
+        except Exception as e:
+            log.warning(f"  Comprar anel #{i+1}: erro no POST — {e}")
+            break
+
+    if comprados > 0:
+        log.info(f"  ✓ Comprou {comprados}x '{alvo['nome']}'")
+        estado.pop("anel_alvo", None)
+        salvar_estado(estado)
+        verificar_alvo_anel(client, estado)
+        return True
+
+    return False
+
+
+def verificar_alvo_amuleto(client, estado):
+    """
+    Determina amuleto a comprar. Máximo 1.
+    - Lê inventário direto da página /shop/amulette/
+    - Busca melhor amuleto disponível por gold
+    - Salva em estado["amuleto_alvo"]
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return
+
+    try:
+        soup = client.get("/shop/amulette/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Amuleto: erro ao carregar loja — {e}")
+        return
+
+    inv = parsear_inventario(soup)
+    total_amuletos = sum(inv.values())
+
+    if total_amuletos >= 1:
+        if estado.get("amuleto_alvo"):
+            log.debug("  Amuleto: já temos 1 amuleto — limpando alvo")
+            del estado["amuleto_alvo"]
+            salvar_estado(estado)
+        return
+
+    melhor = _parsear_shop_listagem(soup, "amulette")
+    if not melhor:
+        if estado.get("amuleto_alvo"):
+            del estado["amuleto_alvo"]
+            salvar_estado(estado)
+        return
+
+    anterior = estado.get("amuleto_alvo", {})
+    if anterior.get("nome") != melhor["nome"]:
+        log.info(f"  📿 Alvo amuleto: '{melhor['nome']}' @ {melhor['gold_necessario']}g")
+
+    estado["amuleto_alvo"] = {
+        "nome":            melhor["nome"],
+        "gold_necessario": melhor["gold_necessario"],
+        "url_compra":      melhor["url_compra"],
+    }
+    salvar_estado(estado)
+
+
+def tentar_comprar_amuleto(client, estado):
+    """
+    Compra amuleto quando gold suficiente.
+    Retorna True se comprou.
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return False
+    alvo = estado.get("amuleto_alvo")
+    if not alvo:
+        return False
+
+    gold_atual = estado.get("gold_atual", 0)
+    if gold_atual < alvo["gold_necessario"]:
+        return False
+
+    log.info(f"  💰 Gold ({gold_atual}g) >= amuleto '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
+
+    try:
+        soup = client.get(alvo["url_compra"], fragment=False)
+    except Exception as e:
+        log.warning(f"  Comprar amuleto: erro ao carregar — {e}")
+        return False
+
+    form = soup.find("form")
+    if not form:
+        log.warning(f"  Comprar amuleto: formulário não encontrado")
+        return False
+
+    campos = {}
+    for inp in form.find_all("input"):
+        name = inp.get("name")
+        val  = inp.get("value", "")
+        if name:
+            campos[name] = val
+    if "buy" not in campos:
+        campos["buy"] = "1"
+
+    action = form.get("action") or alvo["url_compra"]
+    if action.startswith("http"):
+        from urllib.parse import urlparse
+        action = urlparse(action).path
+    if not action or action == "#":
+        action = alvo["url_compra"]
+
+    try:
+        client.post(action, data=campos, fragment=False)
+    except Exception as e:
+        log.warning(f"  Comprar amuleto: erro no POST — {e}")
+        return False
+
+    log.info(f"  ✓ Comprou '{alvo['nome']}' (gastou ~{alvo['gold_necessario']}g)")
+    estado.pop("amuleto_alvo", None)
+    salvar_estado(estado)
+    verificar_alvo_amuleto(client, estado)
+    return True
+
+
 def rotina_encerramento_noturno(client):
     """
     Executada quando o horário de operação termina:
@@ -2267,20 +2483,30 @@ def verificar_treinamento(client):
         log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
 
-    # Pausa treinamento se há um item/pedra alvo e gold insuficiente para comprá-lo
+    # Pausa treinamento se há um alvo de compra e gold insuficiente (prioridade: item > pedra > anel > amuleto)
     estado_t = carregar_estado()
     if COMPRAR_EQUIPAMENTO:
         gold_t = estado_t.get("gold_atual", 0)
-        item_alvo = estado_t.get("item_alvo")
-        pedra_alvo = estado_t.get("pedra_alvo")
-        # Calcula gold necessário total (item + pedras)
+        item_alvo    = estado_t.get("item_alvo")
+        pedra_alvo   = estado_t.get("pedra_alvo")
+        anel_alvo    = estado_t.get("anel_alvo")
+        amuleto_alvo = estado_t.get("amuleto_alvo")
+        # Reserva gold para o alvo mais prioritário ainda não atendido
         gold_necessario = 0
+        motivo = None
         if item_alvo:
-            gold_necessario += item_alvo["gold_necessario"]
-        if pedra_alvo and not item_alvo:  # só reserva gold pra pedra se item já foi comprado
-            gold_necessario += pedra_alvo["gold_necessario"]
+            gold_necessario = item_alvo["gold_necessario"]
+            motivo = item_alvo["nome"]
+        elif pedra_alvo:
+            gold_necessario = pedra_alvo["gold_necessario"]
+            motivo = pedra_alvo["nome"]
+        elif anel_alvo:
+            gold_necessario = anel_alvo["gold_necessario"]
+            motivo = f"{anel_alvo['quantidade']}x {anel_alvo['nome']}"
+        elif amuleto_alvo:
+            gold_necessario = amuleto_alvo["gold_necessario"]
+            motivo = amuleto_alvo["nome"]
         if gold_necessario > 0 and gold_t < gold_necessario:
-            motivo = item_alvo["nome"] if item_alvo else pedra_alvo["nome"]
             log.info(f"  Treinamento pausado — guardando gold para {motivo} "
                      f"({gold_t}g / {gold_necessario}g)")
             return []
@@ -2904,6 +3130,14 @@ def loop_lento(client):
                             verificar_alvo_pedra(client, carregar_estado())
                         except Exception as e:
                             log.warning(f"Alvo pedra pós-level: erro — {e}")
+                        try:
+                            verificar_alvo_anel(client, carregar_estado())
+                        except Exception as e:
+                            log.warning(f"Alvo anel pós-level: erro — {e}")
+                        try:
+                            verificar_alvo_amuleto(client, carregar_estado())
+                        except Exception as e:
+                            log.warning(f"Alvo amuleto pós-level: erro — {e}")
                 else:
                     # Recalcula scores periodicamente mesmo sem mudança de atributo
                     # (modelo pode ter melhorado com novos combates)
@@ -2945,6 +3179,14 @@ def loop_lento(client):
                 verificar_alvo_pedra(client, carregar_estado())
             except Exception as e:
                 log.warning(f"Alvo pedra loop lento: erro — {e}")
+            try:
+                verificar_alvo_anel(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo anel loop lento: erro — {e}")
+            try:
+                verificar_alvo_amuleto(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo amuleto loop lento: erro — {e}")
 
             # Ranking + pig list
             jogadores = scrape_ranking(client)
@@ -3282,6 +3524,14 @@ def loop_rapido(client):
                         tentar_comprar_pedra(client, estado)
                     except Exception as e:
                         log.warning(f"Compra pedra alvo: erro — {e}")
+                    try:
+                        tentar_comprar_anel(client, estado)
+                    except Exception as e:
+                        log.warning(f"Compra anel alvo: erro — {e}")
+                    try:
+                        tentar_comprar_amuleto(client, estado)
+                    except Exception as e:
+                        log.warning(f"Compra amuleto alvo: erro — {e}")
                 elif gold_fresh == 0 and estado.get("gold_atual", 0) > 0:
                     # Gold lido como 0 mas estado tinha valor — não sobrescreve sem confirmar
                     log.debug(f"Gold lido como 0 (estado={estado.get('gold_atual')}g) — aguardando confirmação")
@@ -3910,6 +4160,14 @@ if __name__ == "__main__":
                 verificar_alvo_pedra(client, carregar_estado())
             except Exception as e:
                 log.warning(f"Alvo pedra startup: erro — {e}")
+            try:
+                verificar_alvo_anel(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo anel startup: erro — {e}")
+            try:
+                verificar_alvo_amuleto(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo amuleto startup: erro — {e}")
 
             log.info("Background: coletando ranking inicial...")
             try:
