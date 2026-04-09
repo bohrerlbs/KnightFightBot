@@ -155,7 +155,9 @@ HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 MISSAO_ALINHAMENTO   = "bem"  # "bem", "mal", ou "alternado"
 TAVERNA_ATIVA        = True   # pode ser sobrescrito pelo config.json
 TREINAR_ATRIBUTOS    = False  # treina atributos quando tem gold disponível
-BUILD_1MAO           = False  # se True (build 1 mão), permite treinar Agilidade; 2 mãos nunca treina Agilidade
+BUILD_1MAO           = False  # derivado de BUILD_TIPO automaticamente (não alterar manualmente)
+DISTRIBUIR_SKILLS    = False  # distribui pontos de skill ao subir de level
+BUILD_TIPO           = "2h"   # "1h" ou "2h" — define como distribuir skills e se treina Agilidade
 HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (compra armadura + entra taverna)
@@ -1918,6 +1920,70 @@ def verificar_treinamento(client):
     return treinados
 
 
+def distribuir_pontos_skill(client):
+    """
+    Distribui pontos de skill disponíveis em /skills/ conforme BUILD_TIPO.
+    - 2h: todos os pontos em zweihand
+    - 1h: minimiza diferença entre einhand e ruestung (empate → ruestung)
+    Não tem CD — pode ser chamado a qualquer momento, inclusive durante taverna.
+    """
+    if not DISTRIBUIR_SKILLS:
+        return []
+    try:
+        soup = client.get("/skills/", fragment=False)
+    except Exception as e:
+        log.warning(f"Skills: erro ao carregar página — {e}")
+        return []
+
+    txt = soup.get_text()
+    m = re.search(r"Available skill points:\s*(\d+)", txt)
+    if not m:
+        # tenta português
+        m = re.search(r"Pontos de habilidade disponíveis:\s*(\d+)", txt)
+    if not m:
+        return []
+    pontos = int(m.group(1))
+    if pontos <= 0:
+        return []
+
+    log.info(f"  Skills: {pontos} ponto(s) disponível(eis) — build {BUILD_TIPO}")
+    distribuidos = []
+
+    if BUILD_TIPO == "2h":
+        for _ in range(pontos):
+            try:
+                client.get("/skills/zweihand/", fragment=False)
+                distribuidos.append("zweihand")
+            except Exception as e:
+                log.warning(f"  Skills zweihand: erro — {e}")
+                break
+    else:  # 1h
+        # Lê valores atuais
+        e_el = soup.find(id="c-einhand")
+        r_el = soup.find(id="c-ruestung")
+        einhand  = int(e_el.get("data-skill", 0)) if e_el else 0
+        ruestung = int(r_el.get("data-skill", 0)) if r_el else 0
+
+        for _ in range(pontos):
+            # Dá ponto ao mais baixo; empate → ruestung (cobre armor + shield)
+            if einhand < ruestung:
+                url, nome = "/skills/einhand/", "einhand"
+                einhand += 1
+            else:
+                url, nome = "/skills/ruestung/", "ruestung"
+                ruestung += 1
+            try:
+                client.get(url, fragment=False)
+                distribuidos.append(nome)
+            except Exception as e:
+                log.warning(f"  Skills {nome}: erro — {e}")
+                break
+
+    if distribuidos:
+        log.info(f"  ✓ Skills distribuídas: {', '.join(distribuidos)}")
+    return distribuidos
+
+
 def verificar_raubzug(client):
     soup = client.get("/raubzug/")
     txt = soup.get_text()
@@ -2372,6 +2438,12 @@ def loop_lento(client):
                     for k in stats_chave:
                         estado[f"_last_{k}"] = stats_agora[k]
                     salvar_estado(estado)
+                    # Subiu de level → distribui pontos de skill imediatamente
+                    if stats_agora["level"] != stats_antes["level"]:
+                        try:
+                            distribuir_pontos_skill(client)
+                        except Exception as e:
+                            log.warning(f"Skills pós-level: erro — {e}")
                 else:
                     # Recalcula scores periodicamente mesmo sem mudança de atributo
                     # (modelo pode ter melhorado com novos combates)
@@ -2399,6 +2471,12 @@ def loop_lento(client):
                 # Fallback: se passou 25h sem atualizar (perdeu a janela), atualiza imediatamente
                 log.warning(f"Cache de perfis com +25h sem atualizar — forçando varredura agora...")
                 coletar_perfis_cache(client)
+
+            # Distribui pontos de skill pendentes (fallback horário)
+            try:
+                distribuir_pontos_skill(client)
+            except Exception as e:
+                log.warning(f"Skills loop lento: erro — {e}")
 
             # Ranking + pig list
             jogadores = scrape_ranking(client)
@@ -3183,8 +3261,15 @@ if __name__ == "__main__":
         globals()["TAVERNA_ATIVA"] = bool(cfg["taverna_ativa"])
     if "treinar_atributos" in cfg:
         globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
-    if "build_1mao" in cfg:
+    if "distribuir_skills" in cfg:
+        globals()["DISTRIBUIR_SKILLS"] = bool(cfg["distribuir_skills"])
+    if "build_tipo" in cfg:
+        globals()["BUILD_TIPO"] = str(cfg["build_tipo"])
+        globals()["BUILD_1MAO"] = (str(cfg["build_tipo"]) == "1h")
+    elif "build_1mao" in cfg:
+        # backward compat: build_1mao antigo sem build_tipo
         globals()["BUILD_1MAO"] = bool(cfg["build_1mao"])
+        globals()["BUILD_TIPO"] = "1h" if cfg["build_1mao"] else "2h"
     if "horario_ativo" in cfg:
         globals()["HORARIO_ATIVO"] = bool(cfg["horario_ativo"])
     if "horario_inicio" in cfg:
@@ -3333,6 +3418,12 @@ if __name__ == "__main__":
 
         # ── Ranking e cache rodam em background sem bloquear ──
         def inicializar_background():
+            # Distribui pontos de skill pendentes ao iniciar
+            try:
+                distribuir_pontos_skill(client)
+            except Exception as e:
+                log.warning(f"Skills startup: erro — {e}")
+
             log.info("Background: coletando ranking inicial...")
             try:
                 j = scrape_ranking(client)

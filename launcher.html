@@ -545,6 +545,18 @@ header {
           Treinar atributos automaticamente (gasta gold)
         </label>
       </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-distribuir-skills" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="toggleBuildTipo()">
+        <label for="cfg-distribuir-skills" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Distribuir pontos de skill ao subir de level
+        </label>
+      </div>
+      <div id="cfg-build-tipo-wrap" style="margin-top:6px;margin-left:24px;display:none">
+        <select id="cfg-build-tipo" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px;cursor:pointer">
+          <option value="2h">2 mãos — todos os pontos em Duas mãos</option>
+          <option value="1h">1 mão — divide entre Uma mão e Armadura</option>
+        </select>
+      </div>
     </div>
 
     <div style="margin-top:12px">
@@ -687,6 +699,11 @@ function toast(msg, type='ok'){
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
+function toggleBuildTipo(){
+  var wrap = document.getElementById('cfg-build-tipo-wrap');
+  wrap.style.display = document.getElementById('cfg-distribuir-skills').checked ? '' : 'none';
+}
+
 function validarHorario(){
   var ini  = document.getElementById('cfg-horario-inicio').value;
   var par  = document.getElementById('cfg-horario-parada').value;
@@ -723,6 +740,9 @@ function openCfgModal(name){
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
       document.getElementById('cfg-treinar-atributos').checked = !!cfg.treinar_atributos;
+      document.getElementById('cfg-distribuir-skills').checked = !!cfg.distribuir_skills;
+      document.getElementById('cfg-build-tipo').value = cfg.build_tipo || '2h';
+      toggleBuildTipo();
       document.getElementById('cfg-premium').checked   = !!cfg.premium;
       document.getElementById('cfg-horario-inicio').value = cfg.horario_inicio || '08:00';
       document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
@@ -748,6 +768,8 @@ function saveCfg(){
     missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
     treinar_atributos:   document.getElementById('cfg-treinar-atributos').checked,
+    distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
+    build_tipo:          document.getElementById('cfg-build-tipo').value,
     premium:         document.getElementById('cfg-premium').checked,
     horario_inicio:  document.getElementById('cfg-horario-inicio').value || '08:00',
     horario_parada:  document.getElementById('cfg-horario-parada').value || '22:00',
