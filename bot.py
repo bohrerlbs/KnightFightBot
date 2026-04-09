@@ -1977,6 +1977,12 @@ def tentar_comprar_item_alvo(client, estado):
     salvar_estado(estado)
     # Re-escaneia lojas — o item recém-comprado já vai aparecer no inventário
     verificar_alvo_equipamento(client, estado)
+    # Equipa se for arma ou escudo (não equipa armadura barata de banco de gold)
+    if alvo.get("categoria") in ("waffen", "schilde"):
+        try:
+            equipar_melhor_item(client)
+        except Exception as e:
+            log.warning(f"  Auto-equipar pós-compra: erro — {e}")
     return True
 
 
@@ -2290,6 +2296,10 @@ def tentar_comprar_anel(client, estado):
         estado.pop("anel_alvo", None)
         salvar_estado(estado)
         verificar_alvo_anel(client, estado)
+        try:
+            equipar_melhor_item(client)
+        except Exception as e:
+            log.warning(f"  Auto-equipar anel: erro — {e}")
         return True
 
     return False
@@ -2394,7 +2404,126 @@ def tentar_comprar_amuleto(client, estado):
     estado.pop("amuleto_alvo", None)
     salvar_estado(estado)
     verificar_alvo_amuleto(client, estado)
+    equipar_melhor_item(client)
     return True
+
+
+def equipar_melhor_item(client):
+    """
+    Visita /landsitz/ e equipa itens do inventário que sejam melhores que os
+    atualmente equipados (comparação por requisito máximo de skill/level).
+    Chamado após compra de arma, escudo, anel ou amuleto.
+    """
+    try:
+        soup = client.get("/landsitz/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Equipar: erro ao carregar /landsitz/ — {e}")
+        return
+
+    # Localiza seção inventário
+    inv_bg = None
+    for boxtop in soup.find_all("div", class_="box-top"):
+        t = boxtop.get_text().strip().lower()
+        if "inventár" in t or "inventor" in t:
+            inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
+            break
+    if not inv_bg:
+        return
+
+    def parse_tier(tr_elem):
+        """Maior N em linhas de requisito do item (Condição/Condition/Requirement - X: N)."""
+        span = tr_elem.find("span", style=lambda s: s and "font-size" in s)
+        if not span:
+            return 0
+        nums = re.findall(
+            r"(?:Condi[çc][ãa]o|Condition|Requirement|Voraussetzung)\s*-\s*[^:]+:\s*(\d+)",
+            span.get_text(), re.IGNORECASE
+        )
+        return max((int(n) for n in nums), default=0)
+
+    def slot_de_href(href):
+        if "wid=" in href and "uwid" not in href:  return "weapon"
+        if "sid=" in href and "usid" not in href:  return "shield"
+        if "armid=" in href:                        return "armor"
+        if "rid=" in href:                          return "ring"
+        if "aid=" in href:                          return "amulet"
+        return None
+
+    # Monta mapa nome → tier de todos os itens do inventário
+    tier_map = {}
+    for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
+        strong = tr.find("strong")
+        if strong:
+            tier_map[strong.get_text(strip=True)] = parse_tier(tr)
+
+    # Coleta itens equipados por slot via #equipped-items
+    equipped_div = soup.find("div", id="equipped-items")
+    tiers_equipados = {}  # slot → [tier, ...]
+    if equipped_div:
+        for span in equipped_div.find_all("span", attrs={"data-href": True}):
+            data_href = span.get("data-href", "")
+            data_tip  = span.get("data-tooltip", "")
+            nome_m = re.search(r"<b[^>]*>([^<]+)</b>", data_tip)
+            if not nome_m:
+                continue
+            nome_eq = BeautifulSoup(nome_m.group(1), "html.parser").get_text(strip=True)
+
+            if   "uwid=" in data_href:  slot = "weapon"
+            elif "usid=" in data_href:  slot = "shield"
+            elif "armid=" in data_href: slot = "armor"
+            elif "rid="   in data_href: slot = "ring"
+            elif "aid="   in data_href: slot = "amulet"
+            else:                       continue
+
+            tiers_equipados.setdefault(slot, []).append(tier_map.get(nome_eq, 0))
+
+    # Percorre itens não equipados com botão Equip
+    for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
+        tr_txt = tr.get_text()
+        if "equipped" in tr_txt.lower() or "equipado" in tr_txt.lower():
+            continue
+
+        equip_a = tr.find("a", href=lambda h: h and "/landsitz/?" in h
+                           and "uwid" not in h and "usid" not in h and "wac" not in h)
+        if not equip_a:
+            continue
+
+        strong = tr.find("strong")
+        if not strong:
+            continue
+        nome = strong.get_text(strip=True)
+
+        href = equip_a["href"]
+        slot = slot_de_href(href)
+        if not slot:
+            continue
+
+        tier_novo = parse_tier(tr)
+        tiers_eq  = tiers_equipados.get(slot, [])
+
+        if slot == "ring":
+            deve_equipar = len(tiers_eq) < 2 or tier_novo > (min(tiers_eq) if tiers_eq else -1)
+        elif not tiers_eq:
+            deve_equipar = True
+        else:
+            deve_equipar = tier_novo > min(tiers_eq)
+
+        if not deve_equipar:
+            log.debug(f"  Equipar: '{nome}' (tier {tier_novo}) não é melhor que {tiers_eq} — skip")
+            continue
+
+        from urllib.parse import urlparse
+        url = urlparse(href).path if href.startswith("http") else href
+        log.info(f"  Equipando '{nome}' (tier {tier_novo} > {tiers_eq}, slot {slot})")
+        try:
+            client.get(url, fragment=False)
+            log.info(f"  ✓ Equipado: '{nome}'")
+            # Atualiza estado local para iterações seguintes (e.g. 2 aneis)
+            tiers_equipados.setdefault(slot, []).append(tier_novo)
+            if slot != "ring":
+                tiers_equipados[slot] = [tier_novo]
+        except Exception as e:
+            log.warning(f"  Equipar '{nome}': erro — {e}")
 
 
 def rotina_encerramento_noturno(client):
