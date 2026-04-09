@@ -1814,11 +1814,18 @@ def _parsear_shop_listagem(soup, tipo):
             if m:
                 preco = int(m.group(1).replace(".", ""))
 
-        # Nome: primeira célula td
+        # Nome: tag <strong> ou <b> da td de info (class "t"), não da td com o botão
         nome = "Item"
-        tds = tr.find_all("td")
-        if tds:
-            nome = re.sub(r"\s+", " ", tds[0].get_text(separator=" ", strip=True)).strip()[:80]
+        strong = tr.find("strong") or tr.find("b")
+        if strong:
+            nome = strong.get_text(strip=True)[:80]
+        else:
+            info_td = tr.find("td", class_=lambda c: c and "t" in (c if isinstance(c, str) else " ".join(c)).split())
+            if not info_td:
+                tds = tr.find_all("td")
+                info_td = tds[1] if len(tds) > 1 else (tds[0] if tds else None)
+            if info_td:
+                nome = re.sub(r"\s+", " ", info_td.get_text(separator=" ", strip=True)).strip()[:80]
 
         url_compra = buy_a["href"]
         # Normaliza para path relativo
@@ -2712,14 +2719,20 @@ def distribuir_pontos_skill(client):
     txt = soup.get_text()
     m = re.search(r"Available skill points:\s*(\d+)", txt)
     if not m:
-        m = re.search(r"Pontos de habilidade disponíveis:\s*(\d+)", txt)
+        m = re.search(r"Skillpoints disponíveis:\s*(\d+)", txt)          # PT (int4, pt4...)
     if not m:
-        m = re.search(r"Verfügbare Fertigkeitspunkte:\s*(\d+)", txt)
+        m = re.search(r"Pontos de habilidade disponíveis:\s*(\d+)", txt) # PT alternativo
     if not m:
-        m = re.search(r"Puntos de habilidad disponibles:\s*(\d+)", txt)
+        m = re.search(r"Verfügbare Fertigkeitspunkte:\s*(\d+)", txt)     # DE
+    if not m:
+        m = re.search(r"Puntos de habilidad disponibles:\s*(\d+)", txt)  # ES
+    if not m:
+        m = re.search(r"Skillpunten beschikbaar:\s*(\d+)", txt)          # NL
+    if not m:
+        m = re.search(r"Disponibili punti abilità:\s*(\d+)", txt)        # IT
     if not m:
         # busca genérica: qualquer número após texto com "skill" ou "punkt" ou "point"
-        m = re.search(r"(?:skill|punkt|point|habilidade|habilidad)[^\d]{0,40}(\d+)", txt, re.IGNORECASE)
+        m = re.search(r"(?:Skillpoints?|skill points?|Fertigkeitspunkte|punti abilità)[^\d]{0,30}(\d+)", txt, re.IGNORECASE)
     if not m:
         log.warning(f"Skills: nenhum padrão de pontos encontrado na página /skills/ — verificar texto da página")
         return []
