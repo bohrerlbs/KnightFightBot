@@ -1980,6 +1980,207 @@ def tentar_comprar_item_alvo(client, estado):
     return True
 
 
+def parsear_ferreiro(client):
+    """
+    Lê a página do ferreiro (/upgrade/) para a arma no inventário.
+    Conta engastes: <a class="tooltip"> em .weapon-sockel — com imagem de pedra = preenchido.
+    Retorna dict ou None.
+    """
+    try:
+        r = client.session.get(BASE_URL + "/status/", timeout=15)
+        soup_s = BeautifulSoup(r.text, "html.parser")
+    except Exception as e:
+        log.warning(f"  Ferreiro: erro ao ler /status/ — {e}")
+        return None
+
+    # Busca link /upgrade/ na seção de inventário
+    upgrade_href = None
+    for boxtop in soup_s.find_all("div", class_="box-top"):
+        if "inventory" in boxtop.get_text().lower() or "inventar" in boxtop.get_text().lower():
+            boxbg = boxtop.find_next_sibling("div", class_="box-bg")
+            if boxbg:
+                for a in boxbg.find_all("a", href=True):
+                    if "/upgrade/" in a["href"]:
+                        upgrade_href = a["href"]
+                        break
+            break
+
+    if not upgrade_href:
+        return None
+
+    if upgrade_href.startswith("http"):
+        from urllib.parse import urlparse, parse_qs as _pqs
+        _p = urlparse(upgrade_href)
+        upgrade_href = _p.path + ("?" + _p.query if _p.query else "")
+
+    try:
+        soup_f = client.get(upgrade_href, fragment=False)
+    except Exception as e:
+        log.warning(f"  Ferreiro: erro ao carregar página — {e}")
+        return None
+
+    sockel_td = soup_f.find("td", class_="weapon-sockel")
+    if not sockel_td:
+        return None
+
+    todos_slots = sockel_td.find_all("a", class_="tooltip")
+    engastes_total = len(todos_slots)
+
+    # Imagens de pedras conhecidas
+    _pedras_imgs = {"eis_s", "feuer_s", "drachen_s", "schatten_s", "heilig_s"}
+    preenchidos = sum(
+        1 for a in todos_slots
+        if a.find("img") and any(p in a.find("img").get("src", "") for p in _pedras_imgs)
+    )
+    vazios = engastes_total - preenchidos
+
+    from urllib.parse import parse_qs, urlparse
+    params = parse_qs(urlparse(upgrade_href).query)
+    wid      = int(params.get("wid",      [0])[0])
+    waffenid = int(params.get("waffenid", [0])[0])
+
+    return {
+        "url_ferreiro":       upgrade_href,
+        "wid":                wid,
+        "waffenid":           waffenid,
+        "engastes_total":     engastes_total,
+        "engastes_preenchidos": preenchidos,
+        "engastes_vazios":    vazios,
+    }
+
+
+def verificar_alvo_pedra(client, estado):
+    """
+    Verifica engastes vazios na arma e determina pedras a comprar.
+    - Conta engastes vazios via ferreiro
+    - Desconta pedras já no inventário
+    - Busca melhor pedra por gold em /shop/steine/ (sem gemas, com buy button)
+    - Salva em estado["pedra_alvo"]
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return
+
+    info = parsear_ferreiro(client)
+    if not info or info["engastes_vazios"] == 0:
+        if estado.get("pedra_alvo"):
+            log.debug("  Pedra: sem engastes vazios — limpando alvo")
+            del estado["pedra_alvo"]
+            salvar_estado(estado)
+        return
+
+    engastes_vazios = info["engastes_vazios"]
+
+    # Inventário atual
+    try:
+        r_s = client.session.get(BASE_URL + "/status/", timeout=15)
+        inv = parsear_inventario(BeautifulSoup(r_s.text, "html.parser"))
+    except Exception as e:
+        log.warning(f"  Pedra: erro ao ler inventário — {e}")
+        inv = {}
+
+    # Melhor pedra disponível por gold
+    try:
+        soup_shop = client.get("/shop/steine/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Pedra: erro ao carregar loja — {e}")
+        return
+
+    melhor = _parsear_shop_listagem(soup_shop, "steine")
+    if not melhor:
+        log.debug("  Pedra: nenhuma disponível por gold na loja")
+        return
+
+    no_inv    = inv.get(melhor["nome"], 0)
+    a_comprar = max(0, engastes_vazios - no_inv)
+
+    if a_comprar == 0:
+        log.info(f"  Pedra: {no_inv}x '{melhor['nome']}' no inventário — pronto para inserir ({engastes_vazios} engaste(s) vazio(s))")
+        if estado.get("pedra_alvo"):
+            del estado["pedra_alvo"]
+            salvar_estado(estado)
+        return
+
+    gold_total = melhor["gold_necessario"] * a_comprar
+    anterior   = estado.get("pedra_alvo", {})
+    if anterior.get("nome") != melhor["nome"] or anterior.get("quantidade") != a_comprar:
+        log.info(f"  💎 Alvo pedra: {a_comprar}x '{melhor['nome']}' @ {melhor['gold_necessario']}g = {gold_total}g total")
+
+    estado["pedra_alvo"] = {
+        "nome":            melhor["nome"],
+        "gold_necessario": gold_total,
+        "gold_unitario":   melhor["gold_necessario"],
+        "url_compra":      melhor["url_compra"],
+        "quantidade":      a_comprar,
+        "wid":             info["wid"],
+        "waffenid":        info["waffenid"],
+    }
+    salvar_estado(estado)
+
+
+def tentar_comprar_pedra(client, estado):
+    """
+    Compra pedras de alma quando gold suficiente.
+    Compra uma por vez em loop (a loja geralmente não tem campo de quantidade).
+    Retorna True se comprou alguma.
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return False
+    alvo = estado.get("pedra_alvo")
+    if not alvo:
+        return False
+
+    gold_atual = estado.get("gold_atual", 0)
+    if gold_atual < alvo["gold_necessario"]:
+        return False
+
+    log.info(f"  💰 Gold ({gold_atual}g) >= pedras {alvo['quantidade']}x '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
+
+    compradas = 0
+    for i in range(alvo["quantidade"]):
+        try:
+            soup = client.get(alvo["url_compra"], fragment=False)
+        except Exception as e:
+            log.warning(f"  Comprar pedra #{i+1}: erro ao carregar — {e}")
+            break
+
+        form = soup.find("form")
+        if not form:
+            log.warning(f"  Comprar pedra #{i+1}: formulário não encontrado")
+            break
+
+        campos = {}
+        for inp in form.find_all("input"):
+            name = inp.get("name")
+            val  = inp.get("value", "")
+            if name:
+                campos[name] = val
+        if "buy" not in campos:
+            campos["buy"] = "1"
+
+        action = form.get("action") or alvo["url_compra"]
+        if action.startswith("http"):
+            from urllib.parse import urlparse
+            action = urlparse(action).path
+        if not action or action == "#":
+            action = alvo["url_compra"]
+
+        try:
+            client.post(action, data=campos, fragment=False)
+            compradas += 1
+        except Exception as e:
+            log.warning(f"  Comprar pedra #{i+1}: erro no POST — {e}")
+            break
+
+    if compradas > 0:
+        log.info(f"  ✓ Comprou {compradas}x '{alvo['nome']}'")
+        estado.pop("pedra_alvo", None)
+        salvar_estado(estado)
+        verificar_alvo_pedra(client, estado)
+        return True
+
+    return False
+
+
 def rotina_encerramento_noturno(client):
     """
     Executada quando o horário de operação termina:
@@ -2066,14 +2267,22 @@ def verificar_treinamento(client):
         log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
 
-    # Pausa treinamento se há um item alvo e gold insuficiente para comprá-lo
+    # Pausa treinamento se há um item/pedra alvo e gold insuficiente para comprá-lo
     estado_t = carregar_estado()
-    item_alvo = estado_t.get("item_alvo") if COMPRAR_EQUIPAMENTO else None
-    if item_alvo:
+    if COMPRAR_EQUIPAMENTO:
         gold_t = estado_t.get("gold_atual", 0)
-        if gold_t < item_alvo["gold_necessario"]:
-            log.info(f"  Treinamento pausado — guardando gold para {item_alvo['nome']} "
-                     f"({gold_t}g / {item_alvo['gold_necessario']}g)")
+        item_alvo = estado_t.get("item_alvo")
+        pedra_alvo = estado_t.get("pedra_alvo")
+        # Calcula gold necessário total (item + pedras)
+        gold_necessario = 0
+        if item_alvo:
+            gold_necessario += item_alvo["gold_necessario"]
+        if pedra_alvo and not item_alvo:  # só reserva gold pra pedra se item já foi comprado
+            gold_necessario += pedra_alvo["gold_necessario"]
+        if gold_necessario > 0 and gold_t < gold_necessario:
+            motivo = item_alvo["nome"] if item_alvo else pedra_alvo["nome"]
+            log.info(f"  Treinamento pausado — guardando gold para {motivo} "
+                     f"({gold_t}g / {gold_necessario}g)")
             return []
 
     nomes = {
@@ -2329,12 +2538,12 @@ def gerenciar_missao(client, dry_run=False):
 # ═══════════════════════════════════════════
 def parsear_inventario(soup):
     """
-    Extrai nomes dos itens do inventário da página /status/.
+    Extrai itens do inventário da página /status/.
     Localiza a seção 'Inventory' (box-top) → box-bg seguinte → <tr class="mobile-cols-2">.
-    Nome do item fica em <strong> (com ou sem <span class="seltenheit1"> interno).
-    Retorna set de nomes em strip().
+    Nome em <strong>, quantidade em "N item(s) in your inventory." no texto do td.
+    Retorna dict {nome: qtd}. Compatível com 'if nome in inventario'.
     """
-    nomes = set()
+    result = {}
     for boxtop in soup.find_all("div", class_="box-top"):
         txt = boxtop.get_text().strip().lower()
         if "inventory" in txt or "inventar" in txt:
@@ -2343,12 +2552,21 @@ def parsear_inventario(soup):
                 break
             for tr in boxbg.find_all("tr", class_="mobile-cols-2"):
                 strong = tr.find("strong")
-                if strong:
-                    nome = strong.get_text(strip=True)
-                    if nome:
-                        nomes.add(nome)
+                if not strong:
+                    continue
+                nome = strong.get_text(strip=True)
+                if not nome:
+                    continue
+                # Extrai quantidade do texto do td ("N item(s) in your inventory.")
+                qtd = 1
+                td = strong.find_parent("td")
+                if td:
+                    m = re.search(r"(\d+)\s+item", td.get_text(), re.IGNORECASE)
+                    if m:
+                        qtd = int(m.group(1))
+                result[nome] = result.get(nome, 0) + qtd
             break
-    return nomes
+    return result
 
 
 def parsear_gold_gems(client):
@@ -2682,6 +2900,10 @@ def loop_lento(client):
                             verificar_alvo_equipamento(client, carregar_estado())
                         except Exception as e:
                             log.warning(f"Alvo equipamento pós-level: erro — {e}")
+                        try:
+                            verificar_alvo_pedra(client, carregar_estado())
+                        except Exception as e:
+                            log.warning(f"Alvo pedra pós-level: erro — {e}")
                 else:
                     # Recalcula scores periodicamente mesmo sem mudança de atributo
                     # (modelo pode ter melhorado com novos combates)
@@ -2719,6 +2941,10 @@ def loop_lento(client):
                 verificar_alvo_equipamento(client, carregar_estado())
             except Exception as e:
                 log.warning(f"Alvo equipamento loop lento: erro — {e}")
+            try:
+                verificar_alvo_pedra(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo pedra loop lento: erro — {e}")
 
             # Ranking + pig list
             jogadores = scrape_ranking(client)
@@ -3047,11 +3273,15 @@ def loop_rapido(client):
                     # Só salva se conseguiu ler gold positivo (evita falso 0 por erro de parsing)
                     estado["gold_atual"] = gold_fresh
                     salvar_estado(estado)
-                    # Verifica se acumulou gold suficiente para comprar item alvo
+                    # Verifica se acumulou gold suficiente para comprar item/pedra alvo
                     try:
                         tentar_comprar_item_alvo(client, estado)
                     except Exception as e:
                         log.warning(f"Compra item alvo: erro — {e}")
+                    try:
+                        tentar_comprar_pedra(client, estado)
+                    except Exception as e:
+                        log.warning(f"Compra pedra alvo: erro — {e}")
                 elif gold_fresh == 0 and estado.get("gold_atual", 0) > 0:
                     # Gold lido como 0 mas estado tinha valor — não sobrescreve sem confirmar
                     log.debug(f"Gold lido como 0 (estado={estado.get('gold_atual')}g) — aguardando confirmação")
@@ -3676,6 +3906,10 @@ if __name__ == "__main__":
                 verificar_alvo_equipamento(client, carregar_estado())
             except Exception as e:
                 log.warning(f"Alvo equipamento startup: erro — {e}")
+            try:
+                verificar_alvo_pedra(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo pedra startup: erro — {e}")
 
             log.info("Background: coletando ranking inicial...")
             try:
