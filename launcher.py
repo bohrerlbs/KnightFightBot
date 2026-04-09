@@ -349,7 +349,9 @@ def save_profile(data):
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium",
                        "ranking_max", "pausa_cache", "hora_cache", "cookies",
-                       "missao_alinhamento", "taverna_ativa", "treinar_atributos", "game_user", "game_pass",
+                       "missao_alinhamento", "taverna_ativa", "treinar_atributos",
+                       "distribuir_skills", "build_tipo", "comprar_equipamento",
+                       "game_user", "game_pass",
                        "horario_ativo", "horario_inicio", "horario_parada"]:
             if field in data:
                 cfg[field] = data[field]
@@ -390,6 +392,9 @@ def save_profile(data):
         "missao_alinhamento":   data.get("missao_alinhamento", "alternado"),
         "taverna_ativa":        data.get("taverna_ativa", True),
         "treinar_atributos":    data.get("treinar_atributos", False),
+        "distribuir_skills":    data.get("distribuir_skills", False),
+        "build_tipo":           data.get("build_tipo", "2h"),
+        "comprar_equipamento":  data.get("comprar_equipamento", False),
         "game_user":            data.get("game_user", ""),
         "game_pass":            data.get("game_pass", ""),
         "horario_ativo":        data.get("horario_ativo", False),

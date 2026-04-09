@@ -533,31 +533,33 @@ header {
           <option value="alternado">↕ Alternado (bem/mal a cada missão)</option>
         </select>
       </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+    </div>
+    <div style="margin-top:6px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="cfg-taverna-ativa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="cfg-taverna-ativa" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Taverna automática quando sem pig e sem missão
         </label>
       </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="cfg-treinar-atributos" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="cfg-treinar-atributos" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Treinar atributos automaticamente (gasta gold)
         </label>
       </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="cfg-distribuir-skills" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="toggleBuildTipo()">
         <label for="cfg-distribuir-skills" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Distribuir pontos de skill ao subir de level
         </label>
       </div>
-      <div id="cfg-build-tipo-wrap" style="margin-top:6px;margin-left:24px;display:none">
+      <div id="cfg-build-tipo-wrap" style="margin-left:24px;display:none">
         <select id="cfg-build-tipo" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px;cursor:pointer">
-          <option value="2h">2 mãos — todos os pontos em Duas mãos</option>
-          <option value="1h">1 mão — divide entre Uma mão e Armadura</option>
+          <option value="2h">2 mãos</option>
+          <option value="1h">1 mão</option>
         </select>
       </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="cfg-comprar-equipamento" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="cfg-comprar-equipamento" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Comprar próximo equipamento ao acumular gold
