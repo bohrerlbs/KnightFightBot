@@ -2107,10 +2107,11 @@ def verificar_alvo_pedra(client, estado):
     a_comprar = max(0, engastes_vazios - no_inv)
 
     if a_comprar == 0:
-        log.info(f"  Pedra: {no_inv}x '{melhor['nome']}' no inventário — pronto para inserir ({engastes_vazios} engaste(s) vazio(s))")
+        log.info(f"  Pedra: {no_inv}x '{melhor['nome']}' no inventário — inserindo ({engastes_vazios} engaste(s) vazio(s))")
         if estado.get("pedra_alvo"):
             del estado["pedra_alvo"]
             salvar_estado(estado)
+        inserir_pedra_na_arma(client, {"wid": info["wid"], "waffenid": info["waffenid"]})
         return
 
     gold_total = melhor["gold_necessario"] * a_comprar
@@ -2188,10 +2189,105 @@ def tentar_comprar_pedra(client, estado):
         log.info(f"  ✓ Comprou {compradas}x '{alvo['nome']}'")
         estado.pop("pedra_alvo", None)
         salvar_estado(estado)
+        # Tenta inserir imediatamente
+        inserir_pedra_na_arma(client, alvo)
         verificar_alvo_pedra(client, estado)
         return True
 
     return False
+
+
+def inserir_pedra_na_arma(client, alvo):
+    """
+    Insere pedra de alma na arma após compra.
+    Carrega página do ferreiro, encontra seção Inventário,
+    e executa a ação de inserção (form POST ou link GET).
+    Retorna True se inseriu com sucesso.
+    """
+    wid      = alvo.get("wid")
+    waffenid = alvo.get("waffenid")
+    if not wid or not waffenid:
+        log.warning("  Inserir pedra: wid/waffenid ausente no alvo")
+        return False
+
+    url_ferreiro = f"/upgrade/?waffenid={waffenid}&wid={wid}"
+
+    # Pode precisar de até N tentativas (uma por engaste vazio)
+    for tentativa in range(1, 5):
+        try:
+            soup = client.get(url_ferreiro, fragment=False)
+        except Exception as e:
+            log.warning(f"  Inserir pedra: erro ao carregar ferreiro — {e}")
+            return False
+
+        # Encontra seção Inventário na página do ferreiro
+        inv_bg = None
+        for boxtop in soup.find_all("div", class_="box-top"):
+            if any(k in boxtop.get_text().lower() for k in ["inventar", "inventor", "inventory"]):
+                inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
+                break
+
+        if not inv_bg:
+            log.debug("  Inserir pedra: seção inventário não encontrada na página do ferreiro")
+            return False
+
+        txt_inv = inv_bg.get_text(strip=True)
+        if any(k in txt_inv.lower() for k in ["nenhum", "keine", "no item", "kein"]):
+            log.debug(f"  Inserir pedra: nenhuma pedra no inventário do ferreiro (tentativa {tentativa})")
+            return False
+
+        # Caso 1: Formulário na seção inventário
+        form = inv_bg.find("form")
+        if form:
+            campos = {}
+            for inp in form.find_all("input"):
+                n = inp.get("name")
+                v = inp.get("value", "")
+                if n:
+                    campos[n] = v
+            # Também trata radio buttons — seleciona o primeiro disponível
+            for radio in form.find_all("input", type="radio"):
+                n = radio.get("name")
+                v = radio.get("value", "")
+                if n and n not in campos:
+                    campos[n] = v
+            action = form.get("action") or url_ferreiro
+            if action.startswith("http"):
+                from urllib.parse import urlparse as _up
+                _parsed = _up(action)
+                action = _parsed.path + ("?" + _parsed.query if _parsed.query else "")
+            try:
+                client.post(action, data=campos, fragment=False)
+                log.info(f"  💎 Pedra inserida na arma (tentativa {tentativa})")
+                continue  # verifica se há mais engastes vazios
+            except Exception as e:
+                log.warning(f"  Inserir pedra: erro no POST — {e}")
+                return False
+
+        # Caso 2: Link de inserção na seção inventário
+        _insert_kw = ["setstone", "einsetzen", "insert", "wac=set", "sockel", "stein"]
+        link = inv_bg.find("a", href=lambda h: h and any(k in h.lower() for k in _insert_kw))
+        if not link:
+            # qualquer link que não seja navegação principal
+            link = inv_bg.find("a", href=lambda h: h and "/upgrade/" in h)
+        if link:
+            href = link["href"]
+            if href.startswith("http"):
+                from urllib.parse import urlparse as _up
+                _p = _up(href)
+                href = _p.path + ("?" + _p.query if _p.query else "")
+            try:
+                client.get(href, fragment=False)
+                log.info(f"  💎 Pedra inserida na arma via link (tentativa {tentativa})")
+                continue
+            except Exception as e:
+                log.warning(f"  Inserir pedra: erro no GET link — {e}")
+                return False
+
+        log.warning(f"  Inserir pedra: mecanismo de inserção não reconhecido. HTML: {inv_bg.prettify()[:400]}")
+        return False
+
+    return True
 
 
 def verificar_alvo_anel(client, estado):
