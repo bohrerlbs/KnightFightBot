@@ -1844,6 +1844,8 @@ def verificar_alvo_equipamento(client, estado):
         paginas.insert(1, ("/shop/schilde/", "schilde"))
 
     candidatos = []
+    # Itens já comprados (waffen/schilde) que ainda não foram equipados — não recomprar
+    ja_comprados = set(estado.get("itens_comprados", []))
 
     for url_loja, tipo in paginas:
         try:
@@ -1870,12 +1872,16 @@ def verificar_alvo_equipamento(client, estado):
                 m_nome = re.search(r"diese Rüstung \(([^)]+)\)", txt)
             if m_nome:
                 nome = m_nome.group(1).strip()
+            # Armadura é consumível — não verifica ja_comprados
             candidatos.append({"nome": nome, "gold_necessario": preco,
                                 "url_compra": url_loja, "categoria": tipo})
         else:
             alvo = _parsear_shop_listagem(soup, tipo)
             if alvo:
-                candidatos.append(alvo)
+                if alvo["nome"] in ja_comprados:
+                    log.debug(f"  Loja {tipo}: '{alvo['nome']}' já comprado — pulando")
+                else:
+                    candidatos.append(alvo)
 
     if not candidatos:
         if estado.get("item_alvo"):
@@ -1957,6 +1963,11 @@ def tentar_comprar_item_alvo(client, estado):
 
     log.info(f"  ✓ Comprou {alvo['nome']} (gastou ~{alvo['gold_necessario']}g)")
     estado.pop("item_alvo", None)
+    # Registra waffen/schilde como comprados para não recomprar até equipar
+    lista = estado.get("itens_comprados", [])
+    if alvo["nome"] not in lista:
+        lista.append(alvo["nome"])
+    estado["itens_comprados"] = lista
     salvar_estado(estado)
     verificar_alvo_equipamento(client, estado)
     return True
