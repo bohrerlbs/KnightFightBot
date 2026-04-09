@@ -158,6 +158,7 @@ TREINAR_ATRIBUTOS    = False  # treina atributos quando tem gold disponível
 BUILD_1MAO           = False  # derivado de BUILD_TIPO automaticamente (não alterar manualmente)
 DISTRIBUIR_SKILLS    = False  # distribui pontos de skill ao subir de level
 BUILD_TIPO           = "2h"   # "1h" ou "2h" — define como distribuir skills e se treina Agilidade
+COMPRAR_EQUIPAMENTO  = False  # compra próximo equip quando acumula gold suficiente
 HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (compra armadura + entra taverna)
@@ -1836,6 +1837,8 @@ def verificar_alvo_equipamento(client, estado):
     - 2h: verifica waffen + ruestungen
     - 1h: verifica waffen + schilde + ruestungen
     """
+    if not COMPRAR_EQUIPAMENTO:
+        return
     paginas = [("/shop/waffen/", "waffen"), ("/shop/ruestungen/", "ruestungen")]
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
@@ -1897,6 +1900,8 @@ def tentar_comprar_item_alvo(client, estado):
     - waffen/schilde: GET buy URL → extrai form → POST
     Retorna True se comprou algo.
     """
+    if not COMPRAR_EQUIPAMENTO:
+        return False
     alvo = estado.get("item_alvo")
     if not alvo:
         return False
@@ -2045,7 +2050,7 @@ def verificar_treinamento(client):
 
     # Pausa treinamento se há um item alvo e gold insuficiente para comprá-lo
     estado_t = carregar_estado()
-    item_alvo = estado_t.get("item_alvo")
+    item_alvo = estado_t.get("item_alvo") if COMPRAR_EQUIPAMENTO else None
     if item_alvo:
         gold_t = estado_t.get("gold_atual", 0)
         if gold_t < item_alvo["gold_necessario"]:
@@ -3463,6 +3468,8 @@ if __name__ == "__main__":
         globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
     if "distribuir_skills" in cfg:
         globals()["DISTRIBUIR_SKILLS"] = bool(cfg["distribuir_skills"])
+    if "comprar_equipamento" in cfg:
+        globals()["COMPRAR_EQUIPAMENTO"] = bool(cfg["comprar_equipamento"])
     if "build_tipo" in cfg:
         globals()["BUILD_TIPO"] = str(cfg["build_tipo"])
         globals()["BUILD_1MAO"] = (str(cfg["build_tipo"]) == "1h")

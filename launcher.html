@@ -557,6 +557,12 @@ header {
           <option value="1h">1 mão — divide entre Uma mão e Armadura</option>
         </select>
       </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-comprar-equipamento" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-comprar-equipamento" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Comprar próximo equipamento ao acumular gold
+        </label>
+      </div>
     </div>
 
     <div style="margin-top:12px">
@@ -743,6 +749,7 @@ function openCfgModal(name){
       document.getElementById('cfg-distribuir-skills').checked = !!cfg.distribuir_skills;
       document.getElementById('cfg-build-tipo').value = cfg.build_tipo || '2h';
       toggleBuildTipo();
+      document.getElementById('cfg-comprar-equipamento').checked = !!cfg.comprar_equipamento;
       document.getElementById('cfg-premium').checked   = !!cfg.premium;
       document.getElementById('cfg-horario-inicio').value = cfg.horario_inicio || '08:00';
       document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
@@ -770,6 +777,7 @@ function saveCfg(){
     treinar_atributos:   document.getElementById('cfg-treinar-atributos').checked,
     distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
     build_tipo:          document.getElementById('cfg-build-tipo').value,
+    comprar_equipamento: document.getElementById('cfg-comprar-equipamento').checked,
     premium:         document.getElementById('cfg-premium').checked,
     horario_inicio:  document.getElementById('cfg-horario-inicio').value || '08:00',
     horario_parada:  document.getElementById('cfg-horario-parada').value || '22:00',
