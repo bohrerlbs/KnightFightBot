@@ -1843,9 +1843,18 @@ def verificar_alvo_equipamento(client, estado):
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
 
+    # Busca inventário atual para não recomprar item já possuído
+    inventario = set()
+    try:
+        r_status = client.session.get(BASE_URL + "/status/", timeout=15)
+        soup_status = BeautifulSoup(r_status.text, "html.parser")
+        inventario = parsear_inventario(soup_status)
+        if inventario:
+            log.debug(f"  Inventário: {', '.join(sorted(inventario))}")
+    except Exception as e:
+        log.warning(f"  Alvo equipamento: erro ao ler inventário — {e}")
+
     candidatos = []
-    # Itens já comprados (waffen/schilde) que ainda não foram equipados — não recomprar
-    ja_comprados = set(estado.get("itens_comprados", []))
 
     for url_loja, tipo in paginas:
         try:
@@ -1872,14 +1881,16 @@ def verificar_alvo_equipamento(client, estado):
                 m_nome = re.search(r"diese Rüstung \(([^)]+)\)", txt)
             if m_nome:
                 nome = m_nome.group(1).strip()
-            # Armadura é consumível — não verifica ja_comprados
+            if nome in inventario:
+                log.debug(f"  Loja ruestungen: '{nome}' já no inventário — pulando")
+                continue
             candidatos.append({"nome": nome, "gold_necessario": preco,
                                 "url_compra": url_loja, "categoria": tipo})
         else:
             alvo = _parsear_shop_listagem(soup, tipo)
             if alvo:
-                if alvo["nome"] in ja_comprados:
-                    log.debug(f"  Loja {tipo}: '{alvo['nome']}' já comprado — pulando")
+                if alvo["nome"] in inventario:
+                    log.debug(f"  Loja {tipo}: '{alvo['nome']}' já no inventário — pulando")
                 else:
                     candidatos.append(alvo)
 
@@ -1963,12 +1974,8 @@ def tentar_comprar_item_alvo(client, estado):
 
     log.info(f"  ✓ Comprou {alvo['nome']} (gastou ~{alvo['gold_necessario']}g)")
     estado.pop("item_alvo", None)
-    # Registra waffen/schilde como comprados para não recomprar até equipar
-    lista = estado.get("itens_comprados", [])
-    if alvo["nome"] not in lista:
-        lista.append(alvo["nome"])
-    estado["itens_comprados"] = lista
     salvar_estado(estado)
+    # Re-escaneia lojas — o item recém-comprado já vai aparecer no inventário
     verificar_alvo_equipamento(client, estado)
     return True
 
@@ -2320,6 +2327,30 @@ def gerenciar_missao(client, dry_run=False):
 # ═══════════════════════════════════════════
 # STATUS DO PERSONAGEM
 # ═══════════════════════════════════════════
+def parsear_inventario(soup):
+    """
+    Extrai nomes dos itens do inventário da página /status/.
+    Localiza a seção 'Inventory' (box-top) → box-bg seguinte → <tr class="mobile-cols-2">.
+    Nome do item fica em <strong> (com ou sem <span class="seltenheit1"> interno).
+    Retorna set de nomes em strip().
+    """
+    nomes = set()
+    for boxtop in soup.find_all("div", class_="box-top"):
+        txt = boxtop.get_text().strip().lower()
+        if "inventory" in txt or "inventar" in txt:
+            boxbg = boxtop.find_next_sibling("div", class_="box-bg")
+            if not boxbg:
+                break
+            for tr in boxbg.find_all("tr", class_="mobile-cols-2"):
+                strong = tr.find("strong")
+                if strong:
+                    nome = strong.get_text(strip=True)
+                    if nome:
+                        nomes.add(nome)
+            break
+    return nomes
+
+
 def parsear_gold_gems(client):
     """
     Gold e pedras ficam no HTML completo (sem ?fragment=1).
