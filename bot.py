@@ -1780,6 +1780,183 @@ def comprar_armadura_barata(client):
     return qtd, preco, nome
 
 
+def _parsear_shop_listagem(soup, tipo):
+    """
+    Analisa página de listagem de loja (/shop/waffen/ ou /shop/schilde/).
+    Retorna dict {nome, gold_necessario, url_compra, categoria} para o PRIMEIRO item
+    com skill atendida (tem link wac=buy) e preço em gold (não gema).
+    """
+    for tr in soup.find_all("tr", class_="mobile-cols-2"):
+        # Precisa de link de compra (skill OK)
+        buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+        if not buy_a:
+            continue
+        # Precisa ter goldstueck (preço em gold)
+        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+            continue
+        # Não pode ter preço em gema
+        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+            continue
+
+        # Extrai preço: procura número na span que contém goldstueck
+        preco = 0
+        for span in tr.find_all("span"):
+            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            m = re.search(r"[\d.]+", span.get_text())
+            if m:
+                preco = int(m.group().replace(".", ""))
+                break
+        # Fallback: primeiro número do tr
+        if preco == 0:
+            m = re.search(r"\b(\d[\d.]+)\b", tr.get_text())
+            if m:
+                preco = int(m.group(1).replace(".", ""))
+
+        # Nome: primeira célula td
+        nome = "Item"
+        tds = tr.find_all("td")
+        if tds:
+            nome = re.sub(r"\s+", " ", tds[0].get_text(separator=" ", strip=True)).strip()[:80]
+
+        url_compra = buy_a["href"]
+        # Normaliza para path relativo
+        if url_compra.startswith("http"):
+            from urllib.parse import urlparse
+            url_compra = urlparse(url_compra).path
+        return {"nome": nome, "gold_necessario": preco, "url_compra": url_compra, "categoria": tipo}
+
+    return None
+
+
+def verificar_alvo_equipamento(client, estado):
+    """
+    Varre as lojas relevantes e determina o próximo item a comprar.
+    Salva em estado["item_alvo"] o item mais barato disponível com skill atendida + preço gold.
+    - 2h: verifica waffen + ruestungen
+    - 1h: verifica waffen + schilde + ruestungen
+    """
+    paginas = [("/shop/waffen/", "waffen"), ("/shop/ruestungen/", "ruestungen")]
+    if BUILD_TIPO == "1h":
+        paginas.insert(1, ("/shop/schilde/", "schilde"))
+
+    candidatos = []
+
+    for url_loja, tipo in paginas:
+        try:
+            soup = client.get(url_loja, fragment=False)
+        except Exception as e:
+            log.warning(f"  Loja {tipo}: erro ao carregar — {e}")
+            continue
+
+        if tipo == "ruestungen":
+            # Armor: vai direto para o form de compra — pega preço e nome
+            costs_el = soup.find(id="costs_gold")
+            if not costs_el:
+                continue
+            try:
+                preco = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
+            except ValueError:
+                continue
+            if preco <= 0:
+                continue
+            nome = "Armadura"
+            txt = soup.get_text()
+            m_nome = re.search(r"purchase this armour \(([^)]+)\)", txt)
+            if not m_nome:
+                m_nome = re.search(r"diese Rüstung \(([^)]+)\)", txt)
+            if m_nome:
+                nome = m_nome.group(1).strip()
+            candidatos.append({"nome": nome, "gold_necessario": preco,
+                                "url_compra": url_loja, "categoria": tipo})
+        else:
+            alvo = _parsear_shop_listagem(soup, tipo)
+            if alvo:
+                candidatos.append(alvo)
+
+    if not candidatos:
+        if estado.get("item_alvo"):
+            log.info("  Alvo de equipamento: nenhum disponível — limpando")
+            del estado["item_alvo"]
+            salvar_estado(estado)
+        return
+
+    # Prefere o mais barato (acumula mais rápido)
+    melhor = min(candidatos, key=lambda x: x["gold_necessario"])
+    alvo_anterior = estado.get("item_alvo")
+    if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
+        log.info(f"  🎯 Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g ({melhor['categoria']})")
+    estado["item_alvo"] = melhor
+    salvar_estado(estado)
+
+
+def tentar_comprar_item_alvo(client, estado):
+    """
+    Compra o item_alvo se gold suficiente.
+    - ruestungen: delega para comprar_armadura_barata
+    - waffen/schilde: GET buy URL → extrai form → POST
+    Retorna True se comprou algo.
+    """
+    alvo = estado.get("item_alvo")
+    if not alvo:
+        return False
+
+    gold_atual = estado.get("gold_atual", 0)
+    if gold_atual < alvo["gold_necessario"]:
+        return False
+
+    log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} ({alvo['gold_necessario']}g) — comprando!")
+
+    if alvo.get("categoria") == "ruestungen":
+        qtd, preco, nome = comprar_armadura_barata(client)
+        if qtd > 0:
+            estado.pop("item_alvo", None)
+            salvar_estado(estado)
+            verificar_alvo_equipamento(client, estado)
+            return True
+        return False
+
+    # waffen ou schilde
+    try:
+        soup = client.get(alvo["url_compra"], fragment=False)
+    except Exception as e:
+        log.warning(f"  Comprar {alvo['nome']}: erro ao carregar — {e}")
+        return False
+
+    form = soup.find("form")
+    if not form:
+        log.warning(f"  Comprar {alvo['nome']}: formulário não encontrado")
+        return False
+
+    campos = {}
+    for inp in form.find_all("input"):
+        name = inp.get("name")
+        val  = inp.get("value", "")
+        if name:
+            campos[name] = val
+    if "buy" not in campos:
+        campos["buy"] = "1"
+
+    action = form.get("action") or alvo["url_compra"]
+    if action.startswith("http"):
+        from urllib.parse import urlparse
+        action = urlparse(action).path
+    if not action or action == "#":
+        action = alvo["url_compra"]
+
+    try:
+        client.post(action, data=campos, fragment=False)
+    except Exception as e:
+        log.warning(f"  Comprar {alvo['nome']}: erro no POST — {e}")
+        return False
+
+    log.info(f"  ✓ Comprou {alvo['nome']} (gastou ~{alvo['gold_necessario']}g)")
+    estado.pop("item_alvo", None)
+    salvar_estado(estado)
+    verificar_alvo_equipamento(client, estado)
+    return True
+
+
 def rotina_encerramento_noturno(client):
     """
     Executada quando o horário de operação termina:
@@ -1865,6 +2042,16 @@ def verificar_treinamento(client):
     if em_taverna:
         log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
+
+    # Pausa treinamento se há um item alvo e gold insuficiente para comprá-lo
+    estado_t = carregar_estado()
+    item_alvo = estado_t.get("item_alvo")
+    if item_alvo:
+        gold_t = estado_t.get("gold_atual", 0)
+        if gold_t < item_alvo["gold_necessario"]:
+            log.info(f"  Treinamento pausado — guardando gold para {item_alvo['nome']} "
+                     f"({gold_t}g / {item_alvo['gold_necessario']}g)")
+            return []
 
     nomes = {
         "staerke": "Força", "ausdauer": "Resistência",
@@ -2444,6 +2631,10 @@ def loop_lento(client):
                             distribuir_pontos_skill(client)
                         except Exception as e:
                             log.warning(f"Skills pós-level: erro — {e}")
+                        try:
+                            verificar_alvo_equipamento(client, carregar_estado())
+                        except Exception as e:
+                            log.warning(f"Alvo equipamento pós-level: erro — {e}")
                 else:
                     # Recalcula scores periodicamente mesmo sem mudança de atributo
                     # (modelo pode ter melhorado com novos combates)
@@ -2477,6 +2668,10 @@ def loop_lento(client):
                 distribuir_pontos_skill(client)
             except Exception as e:
                 log.warning(f"Skills loop lento: erro — {e}")
+            try:
+                verificar_alvo_equipamento(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo equipamento loop lento: erro — {e}")
 
             # Ranking + pig list
             jogadores = scrape_ranking(client)
@@ -2805,6 +3000,11 @@ def loop_rapido(client):
                     # Só salva se conseguiu ler gold positivo (evita falso 0 por erro de parsing)
                     estado["gold_atual"] = gold_fresh
                     salvar_estado(estado)
+                    # Verifica se acumulou gold suficiente para comprar item alvo
+                    try:
+                        tentar_comprar_item_alvo(client, estado)
+                    except Exception as e:
+                        log.warning(f"Compra item alvo: erro — {e}")
                 elif gold_fresh == 0 and estado.get("gold_atual", 0) > 0:
                     # Gold lido como 0 mas estado tinha valor — não sobrescreve sem confirmar
                     log.debug(f"Gold lido como 0 (estado={estado.get('gold_atual')}g) — aguardando confirmação")
@@ -3423,6 +3623,10 @@ if __name__ == "__main__":
                 distribuir_pontos_skill(client)
             except Exception as e:
                 log.warning(f"Skills startup: erro — {e}")
+            try:
+                verificar_alvo_equipamento(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Alvo equipamento startup: erro — {e}")
 
             log.info("Background: coletando ranking inicial...")
             try:
