@@ -1979,6 +1979,23 @@ def _parsear_shop_todos_itens(soup, tipo):
                 from urllib.parse import urlparse
                 url_compra = urlparse(url_compra).path
 
+        # Verifica venda — item no inventário tem sell link e "Item value: N"
+        sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+        url_venda = None
+        gold_venda = 0
+        equipado = False
+        if sell_a:
+            url_venda = sell_a["href"]
+            if url_venda.startswith("http"):
+                from urllib.parse import urlparse as _up
+                url_venda = _up(url_venda).path + ("?" + _up(sell_a["href"]).query if _up(sell_a["href"]).query else "")
+            m_val = re.search(r"[Ii]tem\s+value[:\s]+(\d[\d.,]+)", tr_text)
+            if not m_val:
+                m_val = re.search(r"[Ww]ert[:\s]+(\d[\d.,]+)", tr_text)  # DE
+            if m_val:
+                gold_venda = int(m_val.group(1).replace(".", "").replace(",", ""))
+            equipado = bool(re.search(r"equipped|ausger[üu]stet|equipado", tr_text, re.IGNORECASE))
+
         itens.append({
             "nome": nome,
             "gold": gold,
@@ -1987,6 +2004,9 @@ def _parsear_shop_todos_itens(soup, tipo):
             "req_level": req_level,
             "pode_comprar": pode_comprar,
             "url_compra": url_compra,
+            "url_venda": url_venda,
+            "gold_venda": gold_venda,
+            "equipado": equipado,
             "categoria": tipo,
         })
 
@@ -2047,23 +2067,39 @@ def verificar_alvo_equipamento(client, estado):
             continue
 
         todos = _parsear_shop_todos_itens(soup, tipo)
+
+        # Item equipado atualmente nesta categoria (para abater no custo de troca)
+        item_eq = next((i for i in todos if i.get("equipado")), None)
+        gold_venda_eq = item_eq["gold_venda"] if item_eq else 0
+        url_venda_eq  = item_eq["url_venda"]  if item_eq else None
+        if item_eq and gold_venda_eq:
+            log.debug(f"  Loja {tipo}: item equipado '{item_eq['nome']}' vale {gold_venda_eq}g na venda")
+
         for item in todos:
-            if item["nome"] in inventario:
+            if item["nome"] in inventario and not item.get("equipado"):
                 log.debug(f"  Loja {tipo}: '{item['nome']}' já no inventário — pulando")
                 continue
             if item["pode_comprar"]:
+                # Custo líquido: preço do novo menos o que recebemos vendendo o atual
+                gold_liquido = max(0, item["gold"] - gold_venda_eq)
                 candidatos.append({
                     "nome": item["nome"],
-                    "gold_necessario": item["gold"],
+                    "gold_necessario": gold_liquido,
+                    "gold_bruto": item["gold"],
+                    "gold_venda_atual": gold_venda_eq,
                     "url_compra": item["url_compra"],
+                    "url_venda_atual": url_venda_eq,
                     "categoria": tipo,
                 })
             elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
                 # Bloqueado por skill conhecida (ignora alignment, level, etc.)
                 sk_atual = skill_atual(item["req_skill_tipo"])
+                gold_liquido = max(0, item["gold"] - gold_venda_eq)
                 bloqueados.append({
                     "nome": item["nome"],
-                    "gold_necessario": item["gold"],
+                    "gold_necessario": gold_liquido,
+                    "gold_bruto": item["gold"],
+                    "gold_venda_atual": gold_venda_eq,
                     "categoria": tipo,
                     "req_skill_tipo": item["req_skill_tipo"],
                     "req_skill_valor": item["req_skill_valor"],
@@ -2120,6 +2156,55 @@ def publicar_dashboard_equipamento(estado):
     })
 
 
+def vender_item_atual(client, url_venda):
+    """
+    Vende 1 unidade do item atual na loja.
+    url_venda: path relativo como /shop/sell/?waren=waffen&waffenid=X&wid=Y
+    Retorna gold_recebido (int) ou 0 em caso de erro.
+    """
+    try:
+        soup = client.get(url_venda, fragment=False)
+    except Exception as e:
+        log.warning(f"  Vender item: erro ao carregar página — {e}")
+        return 0
+
+    form = soup.find("form")
+    if not form:
+        log.warning("  Vender item: formulário não encontrado")
+        return 0
+
+    campos = {}
+    for inp in form.find_all("input"):
+        n = inp.get("name")
+        if n:
+            campos[n] = inp.get("value", "")
+    campos["sell"] = "1"
+    campos["amount"] = "1"
+
+    costs_el = form.find("input", {"name": "costs"})
+    gold_recebido = 0
+    if costs_el:
+        try:
+            gold_recebido = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
+        except ValueError:
+            pass
+
+    action = form.get("action") or "/"
+    if action.startswith("http"):
+        from urllib.parse import urlparse as _up
+        action = _up(action).path
+    if not action or action == "#":
+        action = "/"
+
+    try:
+        client.post(action, data=campos, fragment=False)
+        log.info(f"  ✓ Item vendido — recebeu {gold_recebido}g")
+        return gold_recebido
+    except Exception as e:
+        log.warning(f"  Vender item: erro no POST — {e}")
+        return 0
+
+
 def _esta_bloqueado_por_missao(soup):
     """Retorna True se a página está bloqueada por missão ativa (não mostra loja)."""
     txt = soup.get_text(" ", strip=True).lower()
@@ -2131,10 +2216,9 @@ def _esta_bloqueado_por_missao(soup):
 
 def tentar_comprar_item_alvo(client, estado):
     """
-    Compra o item_alvo se gold suficiente.
-    - ruestungen: delega para comprar_armadura_barata
-    - waffen/schilde: GET buy URL → extrai form → POST
-    Retorna True se comprou algo.
+    Compra o item_alvo se gold suficiente (gold_necessario = gold_bruto - gold_venda_atual).
+    Se gold_atual < gold_bruto mas >= gold_necessario, vende item atual primeiro.
+    Funciona para waffen, schilde e ruestungen. Retorna True se comprou algo.
     """
     if not COMPRAR_EQUIPAMENTO:
         return False
@@ -2146,7 +2230,21 @@ def tentar_comprar_item_alvo(client, estado):
     if gold_atual < alvo["gold_necessario"]:
         return False
 
-    log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} ({alvo['gold_necessario']}g) — comprando!")
+    gold_bruto = alvo.get("gold_bruto", alvo["gold_necessario"])
+    url_venda_atual = alvo.get("url_venda_atual")
+    log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} (liquido {alvo['gold_necessario']}g, bruto {gold_bruto}g) — comprando!")
+
+    # Vende item atual se necessário para completar o gold bruto
+    if url_venda_atual and gold_atual < gold_bruto:
+        log.info(f"  Vendendo item atual para completar gold ({gold_atual}g < {gold_bruto}g)...")
+        gold_recebido = vender_item_atual(client, url_venda_atual)
+        if gold_recebido == 0:
+            log.warning(f"  Venda falhou — abortando compra de {alvo['nome']}")
+            return False
+        gold_atual += gold_recebido
+        if gold_atual < gold_bruto:
+            log.warning(f"  Após venda gold ({gold_atual}g) ainda insuficiente para {alvo['nome']} ({gold_bruto}g) — abortando")
+            return False
 
     # Carrega página da URL de compra (funciona para waffen, schilde e ruestungen)
     try:
@@ -2189,7 +2287,7 @@ def tentar_comprar_item_alvo(client, estado):
         log.warning(f"  Comprar {alvo['nome']}: erro no POST — {e}")
         return False
 
-    log.info(f"  ✓ Comprou {alvo['nome']} (gastou ~{alvo['gold_necessario']}g)")
+    log.info(f"  ✓ Comprou {alvo['nome']} (bruto {gold_bruto}g, liquido {alvo['gold_necessario']}g)")
     estado.pop("item_alvo", None)
     salvar_estado(estado)
     # Re-escaneia lojas
