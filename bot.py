@@ -2093,6 +2093,9 @@ def verificar_alvo_equipamento(client, estado):
                     continue  # 1h build ignora armas 2h
 
             if item["pode_comprar"]:
+                # Item já equipado — não é upgrade, pula
+                if item.get("equipado"):
+                    continue
                 # Custo líquido: preço do novo menos o que recebemos vendendo o atual
                 gold_liquido = max(0, item["gold"] - gold_venda_eq)
                 candidatos.append({
@@ -2119,22 +2122,34 @@ def verificar_alvo_equipamento(client, estado):
                     "req_skill_atual": sk_atual,
                 })
 
-    # Determina item_alvo (mais barato comprável)
+    # Determina item_alvo — MELHOR item disponível (maior gold_bruto) por categoria
+    # Lógica: o item mais caro com skill atendida = o mais poderoso que o personagem pode usar
     if not candidatos:
         if not algum_shop_acessivel:
             # Todos os shops bloqueados por missão — preserva estado anterior
             log.debug("  Alvo equipamento: todos shops bloqueados — mantendo item_alvo anterior")
             return
         if estado.get("item_alvo"):
-            log.info("  Alvo de equipamento: nenhum disponível — limpando")
+            log.info("  Alvo de equipamento: nenhum disponível (já usa o melhor) — limpando")
             del estado["item_alvo"]
             salvar_estado(estado)
         melhor = None
     else:
-        melhor = min(candidatos, key=lambda x: x["gold_necessario"])
+        # Por categoria, pega o melhor (mais caro); depois escolhe o melhor global
+        melhor_por_cat = {}
+        for c in candidatos:
+            cat = c["categoria"]
+            if cat not in melhor_por_cat or c["gold_bruto"] > melhor_por_cat[cat]["gold_bruto"]:
+                melhor_por_cat[cat] = c
+        # Prioridade: arma > escudo > armadura (sempre há só 1 slot de cada)
+        # Pega o que tem maior custo bruto entre os melhores de cada categoria
+        melhor = max(melhor_por_cat.values(), key=lambda x: x["gold_bruto"])
         alvo_anterior = estado.get("item_alvo")
         if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
-            log.info(f"  Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g ({melhor['categoria']})")
+            log.info(
+                f"  Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g líquido "
+                f"({melhor['gold_bruto']}g bruto, cat={melhor['categoria']})"
+            )
         estado["item_alvo"] = melhor
 
     # Determina item_proximo (bloqueado por skill com menor req_skill_valor acima do atual)
@@ -3361,6 +3376,12 @@ def distribuir_pontos_skill(client):
 
     if distribuidos:
         log.info(f"  ✓ Skills distribuídas: {', '.join(distribuidos)}")
+        # Novas skills podem desbloquear itens — re-escaneia lojas imediatamente
+        if COMPRAR_EQUIPAMENTO:
+            try:
+                verificar_alvo_equipamento(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"  Re-scan lojas pós-skill: erro — {e}")
     return distribuidos
 
 
