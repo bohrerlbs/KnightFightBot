@@ -2259,7 +2259,15 @@ def tentar_comprar_item_alvo(client, estado):
 
     form = soup.find("form")
     if not form:
-        log.warning(f"  Comprar {alvo['nome']}: formulário não encontrado")
+        trecho = soup.get_text(" ", strip=True)[:200]
+        log.warning(f"  Comprar {alvo['nome']}: formulário não encontrado — limpando alvo para re-scan. Página: {trecho!r}")
+        estado.pop("item_alvo", None)
+        salvar_estado(estado)
+        # Força re-scan na próxima iteração
+        try:
+            verificar_alvo_equipamento(client, estado)
+        except Exception:
+            pass
         return False
 
     campos = {}
@@ -2793,7 +2801,14 @@ def tentar_comprar_anel(client, estado):
 
         form = soup.find("form")
         if not form:
-            log.warning(f"  Comprar anel #{i+1}: formulário não encontrado")
+            trecho = soup.get_text(" ", strip=True)[:200]
+            log.warning(f"  Comprar anel #{i+1}: formulário não encontrado — limpando alvo. Página: {trecho!r}")
+            estado.pop("anel_alvo", None)
+            salvar_estado(estado)
+            try:
+                verificar_alvo_anel(client, estado)
+            except Exception:
+                pass
             break
 
         campos = {}
@@ -2908,7 +2923,14 @@ def tentar_comprar_amuleto(client, estado):
 
     form = soup.find("form")
     if not form:
-        log.warning(f"  Comprar amuleto: formulário não encontrado")
+        trecho = soup.get_text(" ", strip=True)[:200]
+        log.warning(f"  Comprar amuleto: formulário não encontrado — limpando alvo. Página: {trecho!r}")
+        estado.pop("amuleto_alvo", None)
+        salvar_estado(estado)
+        try:
+            verificar_alvo_amuleto(client, estado)
+        except Exception:
+            pass
         return False
 
     campos = {}
@@ -3145,32 +3167,31 @@ def verificar_treinamento(client):
         log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
 
-    # Pausa treinamento se há um alvo de compra e gold insuficiente (prioridade: item > pedra > anel > amuleto)
+    # Reserva gold para o alvo mais prioritário ainda não atendido
     estado_t = carregar_estado()
+    gold_reservado = 0  # gold mínimo a manter na conta (não gastar em treino)
+    motivo_reserva = None
     if COMPRAR_EQUIPAMENTO:
         gold_t = estado_t.get("gold_atual", 0)
         item_alvo    = estado_t.get("item_alvo")
         pedra_alvo   = estado_t.get("pedra_alvo")
         anel_alvo    = estado_t.get("anel_alvo")
         amuleto_alvo = estado_t.get("amuleto_alvo")
-        # Reserva gold para o alvo mais prioritário ainda não atendido
-        gold_necessario = 0
-        motivo = None
         if item_alvo:
-            gold_necessario = item_alvo["gold_necessario"]
-            motivo = item_alvo["nome"]
+            gold_reservado = item_alvo.get("gold_bruto", item_alvo["gold_necessario"])
+            motivo_reserva = item_alvo["nome"]
         elif pedra_alvo:
-            gold_necessario = pedra_alvo["gold_necessario"]
-            motivo = pedra_alvo["nome"]
+            gold_reservado = pedra_alvo["gold_necessario"]
+            motivo_reserva = pedra_alvo["nome"]
         elif anel_alvo:
-            gold_necessario = anel_alvo["gold_necessario"]
-            motivo = f"{anel_alvo['quantidade']}x {anel_alvo['nome']}"
+            gold_reservado = anel_alvo["gold_necessario"]
+            motivo_reserva = f"{anel_alvo['quantidade']}x {anel_alvo['nome']}"
         elif amuleto_alvo:
-            gold_necessario = amuleto_alvo["gold_necessario"]
-            motivo = amuleto_alvo["nome"]
-        if gold_necessario > 0 and gold_t < gold_necessario:
-            log.info(f"  Treinamento pausado — guardando gold para {motivo} "
-                     f"({gold_t}g / {gold_necessario}g)")
+            gold_reservado = amuleto_alvo["gold_necessario"]
+            motivo_reserva = amuleto_alvo["nome"]
+        if gold_reservado > 0 and gold_t < gold_reservado:
+            log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
+                     f"({gold_t}g / {gold_reservado}g)")
             return []
 
     nomes = {
@@ -3179,6 +3200,7 @@ def verificar_treinamento(client):
         "parieren": "Bloqueio",
     }
     treinados = []
+    gold_disponivel = estado_t.get("gold_atual", 0)  # rastreia gold restante ao longo das iterações
 
     while True:
         try:
@@ -3208,9 +3230,16 @@ def verificar_treinamento(client):
         if not candidatos:
             break  # nenhum disponível (sem gold ou tudo no máximo)
 
-        # Treina a mais barata
+        # Treina a mais barata que não consuma gold abaixo do reservado para compras
         candidatos.sort(key=lambda x: x["custo"])
+        if gold_reservado > 0:
+            candidatos = [c for c in candidatos if (gold_disponivel - c["custo"]) >= gold_reservado]
+            if not candidatos:
+                log.info(f"  Treinamento pausado — custo consumiria gold reservado para {motivo_reserva} "
+                         f"({gold_disponivel}g disponível, reservado {gold_reservado}g)")
+                break
         alvo = candidatos[0]
+        gold_disponivel -= alvo["custo"]
         log.info(f"  Treinando {alvo['nome']} (custo: {alvo['custo']}g)...")
         try:
             href_rel = alvo["href"]
