@@ -2029,10 +2029,10 @@ def verificar_alvo_equipamento(client, estado):
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
 
-    # Skills atuais do personagem
-    sk_2maos   = estado.get("sk_2maos", 0)
-    sk_1mao    = estado.get("sk_1mao", 0)
-    sk_armadura = estado.get("sk_armadura", 0)
+    # Skills atuais do personagem (MY_STATS é atualizado pelo parsear_status em cada ciclo)
+    sk_2maos    = MY_STATS.get("sk_2maos", 0)
+    sk_1mao     = MY_STATS.get("sk_1mao", 0)
+    sk_armadura = MY_STATS.get("sk_armadura", 0)
 
     def skill_atual(sk_tipo):
         if sk_tipo == "zweihand":
@@ -2057,6 +2057,7 @@ def verificar_alvo_equipamento(client, estado):
     candidatos = []   # pode comprar agora (tem buy link), não está no inv
     bloqueados = []   # não tem buy link, bloqueado por skill
 
+    algum_shop_acessivel = False
     for url_loja, tipo in paginas:
         try:
             soup = client.get(url_loja, fragment=False)
@@ -2068,6 +2069,7 @@ def verificar_alvo_equipamento(client, estado):
             log.debug(f"  Loja {tipo}: bloqueada por missão ativa — pulando scan")
             continue
 
+        algum_shop_acessivel = True
         todos = _parsear_shop_todos_itens(soup, tipo)
 
         # Item equipado atualmente nesta categoria (para abater no custo de troca)
@@ -2081,6 +2083,15 @@ def verificar_alvo_equipamento(client, estado):
             if item["nome"] in inventario and not item.get("equipado"):
                 log.debug(f"  Loja {tipo}: '{item['nome']}' já no inventário — pulando")
                 continue
+
+            # Para a loja de armas: filtra por tipo relevante ao build
+            # req_skill_tipo=None → arma básica sem req, vale para qualquer build
+            if tipo == "waffen" and item["req_skill_tipo"] is not None:
+                if BUILD_TIPO == "2h" and item["req_skill_tipo"] == "einhand":
+                    continue  # 2h build ignora armas 1h
+                if BUILD_TIPO == "1h" and item["req_skill_tipo"] == "zweihand":
+                    continue  # 1h build ignora armas 2h
+
             if item["pode_comprar"]:
                 # Custo líquido: preço do novo menos o que recebemos vendendo o atual
                 gold_liquido = max(0, item["gold"] - gold_venda_eq)
@@ -2110,6 +2121,10 @@ def verificar_alvo_equipamento(client, estado):
 
     # Determina item_alvo (mais barato comprável)
     if not candidatos:
+        if not algum_shop_acessivel:
+            # Todos os shops bloqueados por missão — preserva estado anterior
+            log.debug("  Alvo equipamento: todos shops bloqueados — mantendo item_alvo anterior")
+            return
         if estado.get("item_alvo"):
             log.info("  Alvo de equipamento: nenhum disponível — limpando")
             del estado["item_alvo"]
@@ -2125,6 +2140,12 @@ def verificar_alvo_equipamento(client, estado):
     # Determina item_proximo (bloqueado por skill com menor req_skill_valor acima do atual)
     proximo = None
     if bloqueados:
+        # Filtra por skill relevante ao build (2h: zweihand+ruestung; 1h: einhand+ruestung)
+        if BUILD_TIPO == "2h":
+            sk_relevantes = {"zweihand", "ruestung"}
+        else:
+            sk_relevantes = {"einhand", "ruestung"}
+        bloqueados = [b for b in bloqueados if b["req_skill_tipo"] in sk_relevantes]
         # Filtra apenas itens cujo req_skill_valor é acima do skill atual
         bloqueados_validos = [b for b in bloqueados if b["req_skill_valor"] > b["req_skill_atual"]]
         if bloqueados_validos:
