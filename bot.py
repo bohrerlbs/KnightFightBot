@@ -1719,25 +1719,57 @@ def comprar_armadura_barata(client):
         return 0, 0, ""
 
     try:
-        soup = client.get("/shop/ruestungen/", fragment=False)
+        soup_list = client.get("/shop/ruestungen/", fragment=False)
     except Exception as e:
         log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
         return 0, 0, ""
 
-    if _esta_bloqueado_por_missao(soup):
+    if _esta_bloqueado_por_missao(soup_list):
         log.debug("  Comprar armadura: bloqueado por missão ativa")
         return 0, 0, ""
 
-    form = soup.find("form")
-    if not form:
-        log.warning("  Comprar armadura: formulário não encontrado")
+    # Encontra o buy link mais barato disponível
+    buy_a = None
+    melhor_preco = 999999
+    for tr in soup_list.find_all("tr", class_="mobile-cols-2"):
+        a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+        if not a:
+            continue
+        # Extrai preço da listagem para escolher o mais barato
+        span_gold = None
+        for span in tr.find_all("span"):
+            if span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                span_gold = span; break
+        preco_list = 0
+        if span_gold:
+            m = re.search(r"[\d.]+", span_gold.get_text())
+            if m:
+                preco_list = int(m.group().replace(".", ""))
+        if preco_list < melhor_preco:
+            melhor_preco = preco_list
+            buy_a = a
+
+    if not buy_a:
+        log.info("  Comprar armadura: nenhuma armadura disponível na loja")
         return 0, 0, ""
 
-    # Preço unitário em gold
-    costs_el = soup.find(id="costs_gold")
-    if not costs_el:
-        log.warning("  Comprar armadura: campo costs_gold não encontrado")
+    # Segue buy link para página de confirmação
+    buy_url = buy_a["href"]
+    if buy_url.startswith("http"):
+        from urllib.parse import urlparse as _up
+        buy_url = _up(buy_url).path + ("?" + _up(buy_a["href"]).query if _up(buy_a["href"]).query else "")
+    try:
+        soup = client.get(buy_url, fragment=False)
+    except Exception as e:
+        log.warning(f"  Comprar armadura: erro ao carregar confirmação — {e}")
         return 0, 0, ""
+
+    form = soup.find("form")
+    costs_el = soup.find(id="costs_gold")
+    if not form or not costs_el:
+        log.warning("  Comprar armadura: formulário/costs_gold não encontrado na confirmação")
+        return 0, 0, ""
+
     try:
         preco = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
     except ValueError:
@@ -1752,31 +1784,35 @@ def comprar_armadura_barata(client):
         log.info(f"  Comprar armadura: gold ({gold_atual}g) < preço ({preco}g)")
         return 0, preco, ""
 
-    # Nome do item — vem no texto "purchase this armour (X)" ou "(X)?"
+    # Nome do item
     nome = "Armadura"
     txt_pagina = soup.get_text()
-    m_nome = re.search(r"purchase this armour \(([^)]+)\)", txt_pagina)
-    if not m_nome:
-        m_nome = re.search(r"diese Rüstung \(([^)]+)\)", txt_pagina)  # fallback alemão
-    if m_nome:
-        nome = m_nome.group(1).strip()
+    for pat in [r"purchase this armour \(([^)]+)\)", r"diese Rüstung \(([^)]+)\)",
+                r"armadura \(([^)]+)\)", r"armure \(([^)]+)\)"]:
+        m_nome = re.search(pat, txt_pagina, re.IGNORECASE)
+        if m_nome:
+            nome = m_nome.group(1).strip(); break
 
     qtd = min(gold_atual // preco, 999)
     log.info(f"  Comprando {qtd}x {nome} @ {preco}g (gold: {gold_atual}g)...")
 
-    # Extrai todos os campos do formulário
     campos = {}
     for inp in form.find_all("input"):
-        name = inp.get("name")
-        value = inp.get("value", "")
-        if name:
-            campos[name] = value
-
+        n = inp.get("name")
+        if n:
+            campos[n] = inp.get("value", "")
     campos["amount"] = str(qtd)
     campos["buy"] = "1"
 
+    action = form.get("action") or buy_url
+    if action.startswith("http"):
+        from urllib.parse import urlparse as _up2
+        action = _up2(action).path
+    if not action or action == "#":
+        action = buy_url
+
     try:
-        client.post("/", data=campos, fragment=False)
+        client.post(action, data=campos, fragment=False)
     except Exception as e:
         log.warning(f"  Compra armadura: erro no POST — {e}")
         return 0, preco, nome
@@ -1850,18 +1886,19 @@ def _parsear_shop_todos_itens(soup, tipo):
     """
     # Mapeamento de variantes de texto para tipo de skill interno
     _SKILL_MAP = [
-        # PT — "Skills de duas mãos", "Arma de 2 mãos", etc.
+        # PT — "Skills de duas mãos", "Skills de armadura", etc.
         (r"duas m[aã]os", "zweihand"),
         (r"arma de 2 m[aã]os", "zweihand"),
         (r"uma m[aã]o", "einhand"),
         (r"arma de 1 m[aã]o", "einhand"),
         (r"espada", "einhand"),
+        (r"skills de armadura", "ruestung"),
         (r"armadura", "ruestung"),
         # DE
         (r"zweihand", "zweihand"),
         (r"einhand", "einhand"),
         (r"r[uü]stung", "ruestung"),
-        # EN — "Two-hander-skills", "One-hander-skills", "Armour"
+        # EN — "Two-hander skills", "One-hander skills", "Armour skills"
         (r"two.?hand", "zweihand"),
         (r"one.?hand", "einhand"),
         (r"armou?r", "ruestung"),
@@ -2009,53 +2046,29 @@ def verificar_alvo_equipamento(client, estado):
             log.debug(f"  Loja {tipo}: bloqueada por missão ativa — pulando scan")
             continue
 
-        if tipo == "ruestungen":
-            # Armor: vai direto para o form de compra — pega preço e nome
-            costs_el = soup.find(id="costs_gold")
-            if not costs_el:
+        todos = _parsear_shop_todos_itens(soup, tipo)
+        for item in todos:
+            if item["nome"] in inventario:
+                log.debug(f"  Loja {tipo}: '{item['nome']}' já no inventário — pulando")
                 continue
-            try:
-                preco = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
-            except ValueError:
-                continue
-            if preco <= 0:
-                continue
-            nome = "Armadura"
-            txt = soup.get_text()
-            m_nome = re.search(r"purchase this armour \(([^)]+)\)", txt)
-            if not m_nome:
-                m_nome = re.search(r"diese Rüstung \(([^)]+)\)", txt)
-            if m_nome:
-                nome = m_nome.group(1).strip()
-            if nome in inventario:
-                log.debug(f"  Loja ruestungen: '{nome}' já no inventário — pulando")
-                continue
-            candidatos.append({"nome": nome, "gold_necessario": preco,
-                                "url_compra": url_loja, "categoria": tipo})
-        else:
-            todos = _parsear_shop_todos_itens(soup, tipo)
-            for item in todos:
-                if item["nome"] in inventario:
-                    log.debug(f"  Loja {tipo}: '{item['nome']}' já no inventário — pulando")
-                    continue
-                if item["pode_comprar"]:
-                    candidatos.append({
-                        "nome": item["nome"],
-                        "gold_necessario": item["gold"],
-                        "url_compra": item["url_compra"],
-                        "categoria": tipo,
-                    })
-                elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
-                    # Bloqueado por skill conhecida (ignora alignment, level, etc.)
-                    sk_atual = skill_atual(item["req_skill_tipo"])
-                    bloqueados.append({
-                        "nome": item["nome"],
-                        "gold_necessario": item["gold"],
-                        "categoria": tipo,
-                        "req_skill_tipo": item["req_skill_tipo"],
-                        "req_skill_valor": item["req_skill_valor"],
-                        "req_skill_atual": sk_atual,
-                    })
+            if item["pode_comprar"]:
+                candidatos.append({
+                    "nome": item["nome"],
+                    "gold_necessario": item["gold"],
+                    "url_compra": item["url_compra"],
+                    "categoria": tipo,
+                })
+            elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
+                # Bloqueado por skill conhecida (ignora alignment, level, etc.)
+                sk_atual = skill_atual(item["req_skill_tipo"])
+                bloqueados.append({
+                    "nome": item["nome"],
+                    "gold_necessario": item["gold"],
+                    "categoria": tipo,
+                    "req_skill_tipo": item["req_skill_tipo"],
+                    "req_skill_valor": item["req_skill_valor"],
+                    "req_skill_atual": sk_atual,
+                })
 
     # Determina item_alvo (mais barato comprável)
     if not candidatos:
@@ -2135,16 +2148,7 @@ def tentar_comprar_item_alvo(client, estado):
 
     log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} ({alvo['gold_necessario']}g) — comprando!")
 
-    if alvo.get("categoria") == "ruestungen":
-        qtd, preco, nome = comprar_armadura_barata(client)
-        if qtd > 0:
-            estado.pop("item_alvo", None)
-            salvar_estado(estado)
-            verificar_alvo_equipamento(client, estado)
-            return True
-        return False
-
-    # waffen ou schilde
+    # Carrega página da URL de compra (funciona para waffen, schilde e ruestungen)
     try:
         soup = client.get(alvo["url_compra"], fragment=False)
     except Exception as e:
@@ -2169,6 +2173,19 @@ def tentar_comprar_item_alvo(client, estado):
     if "buy" not in campos:
         campos["buy"] = "1"
 
+    # Armadura: verifica preço real no formulário e compra máximo possível
+    if alvo.get("categoria") == "ruestungen":
+        costs_el = soup.find(id="costs_gold")
+        if costs_el:
+            try:
+                preco_real = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
+                if preco_real > 0:
+                    qtd = min(gold_atual // preco_real, 999)
+                    campos["amount"] = str(qtd)
+                    log.info(f"  Armadura: comprando {qtd}x @ {preco_real}g cada")
+            except ValueError:
+                pass
+
     action = form.get("action") or alvo["url_compra"]
     if action.startswith("http"):
         from urllib.parse import urlparse
@@ -2185,9 +2202,9 @@ def tentar_comprar_item_alvo(client, estado):
     log.info(f"  ✓ Comprou {alvo['nome']} (gastou ~{alvo['gold_necessario']}g)")
     estado.pop("item_alvo", None)
     salvar_estado(estado)
-    # Re-escaneia lojas — o item recém-comprado já vai aparecer no inventário
+    # Re-escaneia lojas
     verificar_alvo_equipamento(client, estado)
-    # Equipa se for arma ou escudo (não equipa armadura barata de banco de gold)
+    # Equipa arma/escudo; armadura não precisa equipar (vai pro inventário de defesa)
     if alvo.get("categoria") in ("waffen", "schilde"):
         try:
             equipar_melhor_item(client)
