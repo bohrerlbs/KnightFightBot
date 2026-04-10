@@ -1850,21 +1850,25 @@ def _parsear_shop_todos_itens(soup, tipo):
     """
     # Mapeamento de variantes de texto para tipo de skill interno
     _SKILL_MAP = [
-        # PT
+        # PT — "Skills de duas mãos", "Arma de 2 mãos", etc.
+        (r"duas m[aã]os", "zweihand"),
         (r"arma de 2 m[aã]os", "zweihand"),
-        (r"arma de duas m[aã]os", "zweihand"),
-        (r"espada", "einhand"),
+        (r"uma m[aã]o", "einhand"),
         (r"arma de 1 m[aã]o", "einhand"),
-        (r"arma de uma m[aã]o", "einhand"),
+        (r"espada", "einhand"),
         (r"armadura", "ruestung"),
         # DE
         (r"zweihand", "zweihand"),
         (r"einhand", "einhand"),
         (r"r[uü]stung", "ruestung"),
-        # EN
+        # EN — "Two-hander-skills", "One-hander-skills", "Armour"
         (r"two.?hand", "zweihand"),
         (r"one.?hand", "einhand"),
         (r"armou?r", "ruestung"),
+        # ES
+        (r"dos manos", "zweihand"),
+        (r"una mano", "einhand"),
+        (r"armadura", "ruestung"),
     ]
 
     itens = []
@@ -1915,9 +1919,9 @@ def _parsear_shop_todos_itens(soup, tipo):
             req_level = int(m_lv.group(1))
 
         # Skill requirement
-        # Procura padrão "Condição - <NOME_SKILL>: <VALOR>" ou "Voraussetzung - <SKILL>: <VALOR>"
+        # Padrão: "Condição - Skill: N" / "Requirement - Skill: N" / "Voraussetzung - Skill: N"
         m_sk = re.search(
-            r"(?:condi[çc][aã]o|voraussetzung|condition|requisito)\s*[-–]\s*([^:]+):\s*(\d+)",
+            r"(?:condi[çc][aã]o|requirement|voraussetzung|condition|requisito|pr[eé]requis)\s*[-–]\s*([^:]+):\s*(\d+)",
             tr_text, re.IGNORECASE
         )
         if m_sk:
@@ -2001,6 +2005,10 @@ def verificar_alvo_equipamento(client, estado):
             log.warning(f"  Loja {tipo}: erro ao carregar — {e}")
             continue
 
+        if _esta_bloqueado_por_missao(soup):
+            log.debug(f"  Loja {tipo}: bloqueada por missão ativa — pulando scan")
+            continue
+
         if tipo == "ruestungen":
             # Armor: vai direto para o form de compra — pega preço e nome
             costs_el = soup.find(id="costs_gold")
@@ -2037,9 +2045,9 @@ def verificar_alvo_equipamento(client, estado):
                         "url_compra": item["url_compra"],
                         "categoria": tipo,
                     })
-                elif item["req_skill_valor"] > 0:
-                    # Bloqueado por skill: registra com skill atual para referência
-                    sk_atual = skill_atual(item["req_skill_tipo"]) if item["req_skill_tipo"] else 0
+                elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
+                    # Bloqueado por skill conhecida (ignora alignment, level, etc.)
+                    sk_atual = skill_atual(item["req_skill_tipo"])
                     bloqueados.append({
                         "nome": item["nome"],
                         "gold_necessario": item["gold"],
@@ -3034,14 +3042,9 @@ def verificar_treinamento(client):
         # Reserva gold para o alvo mais prioritário ainda não atendido
         gold_necessario = 0
         motivo = None
-        item_proximo = estado_t.get("item_proximo")
         if item_alvo:
             gold_necessario = item_alvo["gold_necessario"]
             motivo = item_alvo["nome"]
-        elif item_proximo:
-            gold_necessario = item_proximo.get("gold_necessario", 0)
-            motivo = (f"próximo: {item_proximo.get('nome','?')} "
-                      f"(skill {item_proximo.get('req_skill_atual',0)}/{item_proximo.get('req_skill_valor',0)})")
         elif pedra_alvo:
             gold_necessario = pedra_alvo["gold_necessario"]
             motivo = pedra_alvo["nome"]
