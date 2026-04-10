@@ -1868,10 +1868,11 @@ def _parsear_shop_listagem(soup, tipo):
                 nome = re.sub(r"\s+", " ", info_td.get_text(separator=" ", strip=True)).strip()[:80]
 
         url_compra = buy_a["href"]
-        # Normaliza para path relativo
+        # Normaliza para path relativo preservando query string
         if url_compra.startswith("http"):
-            from urllib.parse import urlparse
-            url_compra = urlparse(url_compra).path
+            from urllib.parse import urlparse as _up
+            _p = _up(url_compra)
+            url_compra = _p.path + ("?" + _p.query if _p.query else "")
         return {"nome": nome, "gold_necessario": preco, "url_compra": url_compra, "categoria": tipo}
 
     return None
@@ -1976,8 +1977,9 @@ def _parsear_shop_todos_itens(soup, tipo):
         if buy_a:
             url_compra = buy_a["href"]
             if url_compra.startswith("http"):
-                from urllib.parse import urlparse
-                url_compra = urlparse(url_compra).path
+                from urllib.parse import urlparse as _up2
+                _p2 = _up2(url_compra)
+                url_compra = _p2.path + ("?" + _p2.query if _p2.query else "")
 
         # Verifica venda — item no inventário tem sell link e "Item value: N"
         sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
@@ -2735,8 +2737,16 @@ def verificar_alvo_anel(client, estado):
         log.warning(f"  Anel: erro ao carregar loja — {e}")
         return
 
+    # Conta aneis: inventário + equipados (sell link na listagem = item próprio)
     inv = parsear_inventario(soup)
-    total_aneis = sum(inv.values())
+    aneis_inv = sum(inv.values())
+    # Aneis equipados aparecem na listagem com link de venda (/shop/sell/)
+    aneis_equipados = sum(
+        1 for tr in soup.find_all("tr", class_="mobile-cols-2")
+        if tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+    )
+    total_aneis = aneis_inv + aneis_equipados
+    log.debug(f"  Anel: {aneis_equipados} equipados + {aneis_inv} inventário = {total_aneis} total")
 
     a_comprar = max(0, MAX_ANEIS - total_aneis)
     if a_comprar == 0:
@@ -2864,8 +2874,15 @@ def verificar_alvo_amuleto(client, estado):
         log.warning(f"  Amuleto: erro ao carregar loja — {e}")
         return
 
+    # Conta amuletos: inventário + equipado (sell link na listagem = item próprio)
     inv = parsear_inventario(soup)
-    total_amuletos = sum(inv.values())
+    amuletos_inv = sum(inv.values())
+    amuletos_equipados = sum(
+        1 for tr in soup.find_all("tr", class_="mobile-cols-2")
+        if tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+    )
+    total_amuletos = amuletos_inv + amuletos_equipados
+    log.debug(f"  Amuleto: {amuletos_equipados} equipados + {amuletos_inv} inventário = {total_amuletos} total")
 
     if total_amuletos >= 1:
         if estado.get("amuleto_alvo"):
@@ -3167,9 +3184,9 @@ def verificar_treinamento(client):
         log.debug("  Treinamento: pulando — personagem em missão na taverna")
         return []
 
-    # Reserva gold para o alvo mais prioritário ainda não atendido
+    # Pausa treinamento se há um alvo de compra e gold insuficiente (prioridade: item > pedra > anel > amuleto)
     estado_t = carregar_estado()
-    gold_reservado = 0  # gold mínimo a manter na conta (não gastar em treino)
+    gold_reservado = 0
     motivo_reserva = None
     if COMPRAR_EQUIPAMENTO:
         gold_t = estado_t.get("gold_atual", 0)
@@ -3189,6 +3206,7 @@ def verificar_treinamento(client):
         elif amuleto_alvo:
             gold_reservado = amuleto_alvo["gold_necessario"]
             motivo_reserva = amuleto_alvo["nome"]
+        # Pausa só se gold atual já está abaixo do reservado (não pode comprar o alvo)
         if gold_reservado > 0 and gold_t < gold_reservado:
             log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
                      f"({gold_t}g / {gold_reservado}g)")
@@ -3200,7 +3218,6 @@ def verificar_treinamento(client):
         "parieren": "Bloqueio",
     }
     treinados = []
-    gold_disponivel = estado_t.get("gold_atual", 0)  # rastreia gold restante ao longo das iterações
 
     while True:
         try:
@@ -3230,16 +3247,9 @@ def verificar_treinamento(client):
         if not candidatos:
             break  # nenhum disponível (sem gold ou tudo no máximo)
 
-        # Treina a mais barata que não consuma gold abaixo do reservado para compras
+        # Treina a mais barata
         candidatos.sort(key=lambda x: x["custo"])
-        if gold_reservado > 0:
-            candidatos = [c for c in candidatos if (gold_disponivel - c["custo"]) >= gold_reservado]
-            if not candidatos:
-                log.info(f"  Treinamento pausado — custo consumiria gold reservado para {motivo_reserva} "
-                         f"({gold_disponivel}g disponível, reservado {gold_reservado}g)")
-                break
         alvo = candidatos[0]
-        gold_disponivel -= alvo["custo"]
         log.info(f"  Treinando {alvo['nome']} (custo: {alvo['custo']}g)...")
         try:
             href_rel = alvo["href"]
