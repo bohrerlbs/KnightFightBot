@@ -465,12 +465,6 @@ header {
           <input class="form-input" id="f-gold-xp" placeholder="500" type="number" value="500" style="padding:6px 8px">
         </div>
       </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="f-premium" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
-        <label for="f-premium" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
-          Conta <strong style="color:var(--gold)">Premium</strong> — cooldown 5min + missao 2h/dia
-        </label>
-      </div>
       <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
         <div>
           <label class="form-label" style="font-size:11px">Varrer ranking (max)</label>
@@ -574,15 +568,6 @@ header {
         <input type="checkbox" id="cfg-comprar-equipamento" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="cfg-comprar-equipamento" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Comprar próximo equipamento ao acumular gold
-        </label>
-      </div>
-    </div>
-
-    <div style="margin-top:12px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="cfg-premium" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
-        <label for="cfg-premium" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
-          Conta <strong style="color:var(--gold)">Premium</strong> — cooldown 5min + missao 2h/dia
         </label>
       </div>
     </div>
@@ -763,7 +748,6 @@ function openCfgModal(name){
       document.getElementById('cfg-build-tipo').value = cfg.build_tipo || '2h';
       toggleBuildTipo();
       document.getElementById('cfg-comprar-equipamento').checked = !!cfg.comprar_equipamento;
-      document.getElementById('cfg-premium').checked   = !!cfg.premium;
       document.getElementById('cfg-horario-inicio').value = cfg.horario_inicio || '08:00';
       document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
       document.getElementById('cfg-horario-ativo').checked = !!cfg.horario_ativo;
@@ -791,7 +775,6 @@ function saveCfg(){
     distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
     build_tipo:          document.getElementById('cfg-build-tipo').value,
     comprar_equipamento: document.getElementById('cfg-comprar-equipamento').checked,
-    premium:         document.getElementById('cfg-premium').checked,
     horario_inicio:  document.getElementById('cfg-horario-inicio').value || '08:00',
     horario_parada:  document.getElementById('cfg-horario-parada').value || '22:00',
     horario_ativo:   document.getElementById('cfg-horario-ativo').checked,
@@ -1445,7 +1428,6 @@ function saveProfile(){
     gold_min_pig:   parseInt(document.getElementById('f-gold-min').value||50),
     perda_xp_max:   parseInt(document.getElementById('f-xp-max').value||0),
     gold_ignorar_xp:parseInt(document.getElementById('f-gold-xp').value||500),
-    premium:        document.getElementById('f-premium').checked,
     ranking_max:    parseInt(document.getElementById('f-ranking-max').value||500),
     pausa_cache:    parseFloat(document.getElementById('f-pausa-cache').value||0.5),
     hora_cache:          parseInt(document.getElementById('f-hora-cache').value||3),

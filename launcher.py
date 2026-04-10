@@ -353,7 +353,7 @@ def save_profile(data):
     # Modo patch: só atualiza campos específicos sem recriar perfil
     if data.get("_patch") and cfg_path.exists():
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp", "premium",
+        for field in ["gold_min_pig", "perda_xp_max", "gold_ignorar_xp",
                        "ranking_max", "pausa_cache", "hora_cache", "cookies",
                        "missao_alinhamento", "taverna_ativa", "treinar_atributos",
                        "distribuir_skills", "build_tipo", "comprar_equipamento",
@@ -391,7 +391,6 @@ def save_profile(data):
         "gold_min_pig":    data.get("gold_min_pig", 50),
         "perda_xp_max":    data.get("perda_xp_max", 0),
         "gold_ignorar_xp": data.get("gold_ignorar_xp", 500),
-        "premium":         data.get("premium", False),
         "ranking_max":     data.get("ranking_max", 500),
         "pausa_cache":          data.get("pausa_cache", 0.5),
         "hora_cache":           data.get("hora_cache", 3),

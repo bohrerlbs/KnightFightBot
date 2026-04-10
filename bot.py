@@ -3325,9 +3325,15 @@ def verificar_raubzug(client):
             log.info("Missão concluída — pronta para nova ação")
         break
 
-    m2 = re.search(r"Already used:\s*(\d+)\s*minutes", txt)
+    # Tenta detectar "Already used: X of Y minutes" (total diário visível)
+    m2 = re.search(r"Already used:\s*(\d+)\s*of\s*(\d+)\s*min", txt, re.IGNORECASE)
     if m2:
         resultado["minutos_usados_hoje"] = int(m2.group(1))
+        resultado["minutos_limite_dia"]  = int(m2.group(2))
+    else:
+        m2b = re.search(r"Already used:\s*(\d+)\s*minutes", txt, re.IGNORECASE)
+        if m2b:
+            resultado["minutos_usados_hoje"] = int(m2b.group(1))
 
     # Detecta cota diária esgotada
     frases_cota = [
@@ -3347,20 +3353,26 @@ def verificar_raubzug(client):
             resultado["tempo_reset"] = m3.group(1)
             log.info(f"  Reset em: {m3.group(1)}")
 
-    # Verifica se o form de missão está disponível (tem select jagdzeit)
+    # Verifica se o form de missão está disponível e detecta minutos disponíveis
     missao_disponivel = False
     for form in soup.find_all("form"):
         if form.find("input", {"name": "ac", "value": "raubzug"}) and \
            form.find("input", {"name": "sac", "value": "mission"}):
             inp = form.find("input", {"name": "csrftoken"})
             if inp: resultado["csrf_missao"] = inp.get("value", "")
-            # Se tem o select de tempo, missão realmente disponível
-            if form.find("select", {"name": "jagdzeit"}):
+            # Detecta max minutos disponíveis pelo maior option do select jagdzeit
+            sel = form.find("select", {"name": "jagdzeit"})
+            if sel:
                 missao_disponivel = True
+                opcoes = [int(o.get("value")) for o in sel.find_all("option")
+                          if o.get("value", "").isdigit()]
+                if opcoes:
+                    resultado["minutos_disponiveis"] = max(opcoes)
             break
 
     if not missao_disponivel and not resultado.get("cota_diaria") and resultado["livre"]:
         log.debug("Form de missão sem select jagdzeit — cota pode estar esgotada")
+        resultado["minutos_disponiveis"] = 0
 
     return resultado
 
@@ -3369,7 +3381,6 @@ def verificar_raubzug(client):
 # ═══════════════════════════════════════════
 def gerenciar_missao(client, dry_run=False):
     estado = carregar_estado()
-    limite_min = 120 if IS_PREMIUM else 60
 
     rv = verificar_raubzug(client)
 
@@ -3383,11 +3394,25 @@ def gerenciar_missao(client, dry_run=False):
         log.info(f"Em CD — livre às {fim:%H:%M:%S}")
         return {"status": "em_cd", "termina_em": fim.isoformat(), "segundos": rv["segundos_cd"]}
 
-    minutos_usados = rv["minutos_usados_hoje"] or estado.get("minutos_missao_hoje", 0)
-    minutos_rest = limite_min - minutos_usados
+    # Detecta limite diário da página (sem IS_PREMIUM hardcoded)
+    minutos_usados    = rv["minutos_usados_hoje"] or estado.get("minutos_missao_hoje", 0)
+    minutos_disponiveis = rv.get("minutos_disponiveis")  # max option do select jagdzeit
+
+    if minutos_disponiveis is not None:
+        # Página mostra o que resta → limit = usados + disponíveis
+        limite_min = minutos_usados + minutos_disponiveis
+        minutos_rest = minutos_disponiveis
+    elif rv.get("minutos_limite_dia"):
+        # Página mostra "X of Y minutes"
+        limite_min = rv["minutos_limite_dia"]
+        minutos_rest = limite_min - minutos_usados
+    else:
+        # Fallback: se form não tem select, cota esgotada
+        log.info("Cota diária atingida (form sem jagdzeit disponível)")
+        return {"status": "cota_diaria", "minutos_usados": minutos_usados}
 
     if minutos_rest <= 0:
-        log.info(f"Cota diária atingida ({limite_min}min)")
+        log.info(f"Cota diária atingida ({minutos_usados}/{limite_min}min)")
         return {"status": "cota_diaria", "minutos_usados": minutos_usados}
 
     jagdzeit = 10
@@ -3399,7 +3424,7 @@ def gerenciar_missao(client, dry_run=False):
     else:  # "alternado"
         gesinnung = "1" if estado.get("missoes_hoje", 0) % 2 == 0 else "2"
     label_alin = {"1": "bem ✓", "2": "mal ✗"}.get(gesinnung, "?")
-    log.info(f"Missão: {jagdzeit}min | {label_alin} | usados={minutos_usados}/{limite_min}min")
+    log.info(f"Missão: {jagdzeit}min | {label_alin} | usados={minutos_usados}/{limite_min}min disponíveis={minutos_disponiveis}")
 
     if dry_run:
         return {"status": "dry_run", "jagdzeit": jagdzeit, "minutos_rest": minutos_rest}
@@ -3411,9 +3436,9 @@ def gerenciar_missao(client, dry_run=False):
     if r.status_code == 403:
         log.warning("403 na missão — verificando se cota esgotada...")
         rv2 = verificar_raubzug(client)
-        # Verifica se realmente ainda tem missão disponível
-        min_usados2 = rv2.get("minutos_usados_hoje", 0) or estado.get("minutos_missao_hoje", 0)
-        if min_usados2 >= limite_min:
+        # Se page não tem mais form disponível, cota esgotada
+        if rv2.get("minutos_disponiveis") == 0 or not rv2.get("csrf_missao"):
+            min_usados2 = rv2.get("minutos_usados_hoje", 0) or minutos_usados
             log.info(f"Cota diária confirmada pelo servidor ({min_usados2}/{limite_min}min)")
             return {"status": "cota_diaria", "minutos_usados": min_usados2}
         # Tenta uma vez mais com CSRF novo
@@ -3421,7 +3446,7 @@ def gerenciar_missao(client, dry_run=False):
         r = client.session.post(BASE_URL + "/raubzug/", data=data, timeout=15)
         if r.status_code == 403:
             log.warning("403 persistente — assumindo cota esgotada")
-            return {"status": "cota_diaria", "minutos_usados": min_usados2}
+            return {"status": "cota_diaria", "minutos_usados": minutos_usados}
     r.raise_for_status()
 
     estado["minutos_missao_hoje"] = minutos_usados + jagdzeit
@@ -3735,20 +3760,12 @@ def recarregar_config():
             ("gold_min_pig",    "GOLD_MIN_PIG",    int),
             ("perda_xp_max",    "PERDA_XP_MAX",    int),
             ("gold_ignorar_xp", "GOLD_IGNORAR_XP", int),
-            ("premium",         "IS_PREMIUM",       bool),
         ]:
             if field in cfg:
                 novo = cast(cfg[field])
                 if globals().get(key) != novo:
                     changed.append(f"{key}: {globals().get(key)} -> {novo}")
                     globals()[key] = novo
-        if "premium" in cfg:
-            novo_cd = 300 if globals()["IS_PREMIUM"] else 900
-            novo_h  = 2   if globals()["IS_PREMIUM"] else 1
-            if globals().get("COOLDOWN_ATAQUE_SEG") != novo_cd:
-                globals()["COOLDOWN_ATAQUE_SEG"] = novo_cd
-                globals()["HORAS_MISSAO_DIA"]    = novo_h
-                changed.append(f"COOLDOWN={novo_cd}s MISSAO={novo_h}h")
         if changed:
             log.info(f"Config recarregada: {', '.join(changed)}")
     except Exception as e:
@@ -4214,8 +4231,8 @@ def loop_rapido(client):
                 pass
 
             rv = verificar_raubzug(client)
-            estado["cooldown_seg"] = COOLDOWN_ATAQUE_SEG  # para dashboard saber se é premium
-            estado["is_premium"]  = IS_PREMIUM
+            if rv["segundos_cd"] > 0:
+                estado["cooldown_seg"] = rv["segundos_cd"]
             atualizar_ciclo_file("estado", estado)
 
             if not rv["livre"] and rv["segundos_cd"] > 0:
@@ -4671,10 +4688,6 @@ if __name__ == "__main__":
         globals()["DASHBOARD_PORT"] = int(args.port or cfg["port"])
 
     # Novas configs opcionais
-    if cfg.get("premium") is not None:
-        globals()["IS_PREMIUM"] = bool(cfg["premium"])
-        globals()["COOLDOWN_ATAQUE_SEG"] = 300 if IS_PREMIUM else 900
-        globals()["HORAS_MISSAO_DIA"]    = 2   if IS_PREMIUM else 1
     if cfg.get("ranking_max") is not None:
         globals()["RANKING_MAX_PLAYERS"] = int(cfg["ranking_max"])
     if cfg.get("pausa_cache") is not None:
