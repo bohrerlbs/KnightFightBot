@@ -2173,18 +2173,8 @@ def tentar_comprar_item_alvo(client, estado):
     if "buy" not in campos:
         campos["buy"] = "1"
 
-    # Armadura: verifica preço real no formulário e compra máximo possível
-    if alvo.get("categoria") == "ruestungen":
-        costs_el = soup.find(id="costs_gold")
-        if costs_el:
-            try:
-                preco_real = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
-                if preco_real > 0:
-                    qtd = min(gold_atual // preco_real, 999)
-                    campos["amount"] = str(qtd)
-                    log.info(f"  Armadura: comprando {qtd}x @ {preco_real}g cada")
-            except ValueError:
-                pass
+    # Garante amount=1 para todos os itens via item_alvo
+    campos["amount"] = "1"
 
     action = form.get("action") or alvo["url_compra"]
     if action.startswith("http"):
