@@ -127,7 +127,7 @@ def get_profiles():
             else:
                 cfg["_bg_running"] = False
             cfg["_log_tail"] = get_log_tail(d.name, 5)
-            # Lê status_bot do ciclo para taverna countdown
+            # Lê status_bot e equipamento do ciclo para taverna countdown e dashboard
             ciclo_path = d / "ultimo_ciclo.json"
             if ciclo_path.exists():
                 try:
@@ -137,6 +137,9 @@ def get_profiles():
                     cfg["_taverna_horas"] = sb.get("taverna_horas")
                     cfg["_taverna_gold"]  = sb.get("taverna_gold")
                     cfg["_motivo"]        = sb.get("motivo", "ok")
+                    eq = ciclo.get("equipamento", {})
+                    cfg["_item_alvo"]    = eq.get("item_alvo")
+                    cfg["_item_proximo"] = eq.get("item_proximo")
                 except:
                     pass
             profiles.append(cfg)

@@ -1841,10 +1841,122 @@ def _parsear_shop_listagem(soup, tipo):
     return None
 
 
+def _parsear_shop_todos_itens(soup, tipo):
+    """
+    Analisa página de listagem de loja e retorna TODOS os itens (com e sem buy link).
+    Cada item é um dict com:
+      nome, gold, req_skill_tipo, req_skill_valor, req_level,
+      pode_comprar, url_compra, categoria
+    """
+    # Mapeamento de variantes de texto para tipo de skill interno
+    _SKILL_MAP = [
+        # PT
+        (r"arma de 2 m[aã]os", "zweihand"),
+        (r"arma de duas m[aã]os", "zweihand"),
+        (r"espada", "einhand"),
+        (r"arma de 1 m[aã]o", "einhand"),
+        (r"arma de uma m[aã]o", "einhand"),
+        (r"armadura", "ruestung"),
+        # DE
+        (r"zweihand", "zweihand"),
+        (r"einhand", "einhand"),
+        (r"r[uü]stung", "ruestung"),
+        # EN
+        (r"two.?hand", "zweihand"),
+        (r"one.?hand", "einhand"),
+        (r"armou?r", "ruestung"),
+    ]
+
+    itens = []
+    for tr in soup.find_all("tr", class_="mobile-cols-2"):
+        # Verifica se tem preço em gold
+        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+            continue
+        # Pula itens que custam gema
+        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+            continue
+
+        # Extrai preço
+        gold = 0
+        for span in tr.find_all("span"):
+            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            m = re.search(r"[\d.]+", span.get_text())
+            if m:
+                gold = int(m.group().replace(".", ""))
+                break
+        if gold == 0:
+            m = re.search(r"\b(\d[\d.]+)\b", tr.get_text())
+            if m:
+                gold = int(m.group(1).replace(".", ""))
+
+        # Extrai nome
+        nome = "Item"
+        strong = tr.find("strong") or tr.find("b")
+        if strong:
+            nome = strong.get_text(strip=True)[:80]
+        else:
+            info_td = tr.find("td", class_=lambda c: c and "t" in (c if isinstance(c, str) else " ".join(c)).split())
+            if not info_td:
+                tds = tr.find_all("td")
+                info_td = tds[1] if len(tds) > 1 else (tds[0] if tds else None)
+            if info_td:
+                nome = re.sub(r"\s+", " ", info_td.get_text(separator=" ", strip=True)).strip()[:80]
+
+        # Extrai requisitos do texto do TR
+        tr_text = tr.get_text(separator=" ", strip=True)
+        req_skill_tipo = None
+        req_skill_valor = 0
+        req_level = 0
+
+        # Level requirement
+        m_lv = re.search(r"(?:level|nível|stufe)\s*[:\-]?\s*(\d+)", tr_text, re.IGNORECASE)
+        if m_lv:
+            req_level = int(m_lv.group(1))
+
+        # Skill requirement
+        # Procura padrão "Condição - <NOME_SKILL>: <VALOR>" ou "Voraussetzung - <SKILL>: <VALOR>"
+        m_sk = re.search(
+            r"(?:condi[çc][aã]o|voraussetzung|condition|requisito)\s*[-–]\s*([^:]+):\s*(\d+)",
+            tr_text, re.IGNORECASE
+        )
+        if m_sk:
+            skill_txt = m_sk.group(1).strip()
+            req_skill_valor = int(m_sk.group(2))
+            for pattern, sk_tipo in _SKILL_MAP:
+                if re.search(pattern, skill_txt, re.IGNORECASE):
+                    req_skill_tipo = sk_tipo
+                    break
+
+        # Verifica compra
+        buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+        pode_comprar = buy_a is not None
+        url_compra = None
+        if buy_a:
+            url_compra = buy_a["href"]
+            if url_compra.startswith("http"):
+                from urllib.parse import urlparse
+                url_compra = urlparse(url_compra).path
+
+        itens.append({
+            "nome": nome,
+            "gold": gold,
+            "req_skill_tipo": req_skill_tipo,
+            "req_skill_valor": req_skill_valor,
+            "req_level": req_level,
+            "pode_comprar": pode_comprar,
+            "url_compra": url_compra,
+            "categoria": tipo,
+        })
+
+    return itens
+
+
 def verificar_alvo_equipamento(client, estado):
     """
     Varre as lojas relevantes e determina o próximo item a comprar.
     Salva em estado["item_alvo"] o item mais barato disponível com skill atendida + preço gold.
+    Salva em estado["item_proximo"] o item bloqueado por skill com menor req_skill_valor acima do atual.
     - 2h: verifica waffen + ruestungen
     - 1h: verifica waffen + schilde + ruestungen
     """
@@ -1853,6 +1965,20 @@ def verificar_alvo_equipamento(client, estado):
     paginas = [("/shop/waffen/", "waffen"), ("/shop/ruestungen/", "ruestungen")]
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
+
+    # Skills atuais do personagem
+    sk_2maos   = estado.get("sk_2maos", 0)
+    sk_1mao    = estado.get("sk_1mao", 0)
+    sk_armadura = estado.get("sk_armadura", 0)
+
+    def skill_atual(sk_tipo):
+        if sk_tipo == "zweihand":
+            return sk_2maos
+        if sk_tipo == "einhand":
+            return sk_1mao
+        if sk_tipo == "ruestung":
+            return sk_armadura
+        return 0
 
     # Busca inventário atual para não recomprar item já possuído
     inventario = set()
@@ -1865,7 +1991,8 @@ def verificar_alvo_equipamento(client, estado):
     except Exception as e:
         log.warning(f"  Alvo equipamento: erro ao ler inventário — {e}")
 
-    candidatos = []
+    candidatos = []   # pode comprar agora (tem buy link), não está no inv
+    bloqueados = []   # não tem buy link, bloqueado por skill
 
     for url_loja, tipo in paginas:
         try:
@@ -1898,27 +2025,72 @@ def verificar_alvo_equipamento(client, estado):
             candidatos.append({"nome": nome, "gold_necessario": preco,
                                 "url_compra": url_loja, "categoria": tipo})
         else:
-            alvo = _parsear_shop_listagem(soup, tipo)
-            if alvo:
-                if alvo["nome"] in inventario:
-                    log.debug(f"  Loja {tipo}: '{alvo['nome']}' já no inventário — pulando")
-                else:
-                    candidatos.append(alvo)
+            todos = _parsear_shop_todos_itens(soup, tipo)
+            for item in todos:
+                if item["nome"] in inventario:
+                    log.debug(f"  Loja {tipo}: '{item['nome']}' já no inventário — pulando")
+                    continue
+                if item["pode_comprar"]:
+                    candidatos.append({
+                        "nome": item["nome"],
+                        "gold_necessario": item["gold"],
+                        "url_compra": item["url_compra"],
+                        "categoria": tipo,
+                    })
+                elif item["req_skill_valor"] > 0:
+                    # Bloqueado por skill: registra com skill atual para referência
+                    sk_atual = skill_atual(item["req_skill_tipo"]) if item["req_skill_tipo"] else 0
+                    bloqueados.append({
+                        "nome": item["nome"],
+                        "gold_necessario": item["gold"],
+                        "categoria": tipo,
+                        "req_skill_tipo": item["req_skill_tipo"],
+                        "req_skill_valor": item["req_skill_valor"],
+                        "req_skill_atual": sk_atual,
+                    })
 
+    # Determina item_alvo (mais barato comprável)
     if not candidatos:
         if estado.get("item_alvo"):
             log.info("  Alvo de equipamento: nenhum disponível — limpando")
             del estado["item_alvo"]
             salvar_estado(estado)
-        return
+        melhor = None
+    else:
+        melhor = min(candidatos, key=lambda x: x["gold_necessario"])
+        alvo_anterior = estado.get("item_alvo")
+        if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
+            log.info(f"  Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g ({melhor['categoria']})")
+        estado["item_alvo"] = melhor
 
-    # Prefere o mais barato (acumula mais rápido)
-    melhor = min(candidatos, key=lambda x: x["gold_necessario"])
-    alvo_anterior = estado.get("item_alvo")
-    if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
-        log.info(f"  🎯 Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g ({melhor['categoria']})")
-    estado["item_alvo"] = melhor
+    # Determina item_proximo (bloqueado por skill com menor req_skill_valor acima do atual)
+    proximo = None
+    if bloqueados:
+        # Filtra apenas itens cujo req_skill_valor é acima do skill atual
+        bloqueados_validos = [b for b in bloqueados if b["req_skill_valor"] > b["req_skill_atual"]]
+        if bloqueados_validos:
+            proximo = min(bloqueados_validos, key=lambda x: x["req_skill_valor"])
+            ant_prox = estado.get("item_proximo")
+            if not ant_prox or ant_prox.get("nome") != proximo["nome"]:
+                log.info(
+                    f"  Proximo (skill): {proximo['nome']} @ {proximo['gold_necessario']}g "
+                    f"({proximo['req_skill_tipo']} {proximo['req_skill_atual']}/{proximo['req_skill_valor']})"
+                )
+            estado["item_proximo"] = proximo
+        else:
+            if estado.get("item_proximo"):
+                del estado["item_proximo"]
+    else:
+        if estado.get("item_proximo"):
+            del estado["item_proximo"]
+
     salvar_estado(estado)
+
+    # Atualiza ciclo_file para o dashboard
+    atualizar_ciclo_file("equipamento", {
+        "item_alvo": melhor,
+        "item_proximo": proximo,
+    })
 
 
 def _esta_bloqueado_por_missao(soup):
@@ -2862,9 +3034,14 @@ def verificar_treinamento(client):
         # Reserva gold para o alvo mais prioritário ainda não atendido
         gold_necessario = 0
         motivo = None
+        item_proximo = estado_t.get("item_proximo")
         if item_alvo:
             gold_necessario = item_alvo["gold_necessario"]
             motivo = item_alvo["nome"]
+        elif item_proximo:
+            gold_necessario = item_proximo.get("gold_necessario", 0)
+            motivo = (f"próximo: {item_proximo.get('nome','?')} "
+                      f"(skill {item_proximo.get('req_skill_atual',0)}/{item_proximo.get('req_skill_valor',0)})")
         elif pedra_alvo:
             gold_necessario = pedra_alvo["gold_necessario"]
             motivo = pedra_alvo["nome"]

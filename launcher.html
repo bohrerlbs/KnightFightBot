@@ -277,6 +277,16 @@ header {
 .taverna-badge{background:linear-gradient(135deg,#2a1f0a,#3d2e10);border:1px solid #8a6b2a;color:#e8c96a;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;}
 .taverna-icon{font-size:14px;}
 .taverna-timer{font-weight:500;font-size:12px;color:#ffd97d;margin-left:auto;}
+
+/* Planejamento de Equipamento */
+.equip-section{border-top:1px solid var(--border);margin-top:8px;padding-top:8px;}
+.equip-label{font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.equip-row{display:flex;align-items:flex-start;gap:6px;padding:4px 0;font-size:11px;}
+.equip-tag{font-size:9px;text-transform:uppercase;letter-spacing:1px;padding:1px 5px;border-radius:2px;flex-shrink:0;margin-top:1px;}
+.equip-tag-gold{background:rgba(200,148,58,0.15);color:var(--gold);border:1px solid rgba(200,148,58,0.3);}
+.equip-tag-skill{background:rgba(100,60,180,0.15);color:#b090f0;border:1px solid rgba(100,60,180,0.3);}
+.equip-item-name{color:var(--text);flex:1;}
+.equip-item-info{color:var(--muted);font-size:10px;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -1044,6 +1054,34 @@ function renderProfiles(profiles){
     html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'" data-name="'+name+'">Dashboard BG</button>';
     html += '</div>';
     html += '</div>';
+
+    // Planejamento de Equipamento
+    var itemAlvo    = p._item_alvo    || null;
+    var itemProximo = p._item_proximo || null;
+    if(itemAlvo || itemProximo){
+      html += '<div class="equip-section">';
+      html += '<div class="equip-label">Equipamento</div>';
+      if(itemAlvo){
+        var catAlvo = itemAlvo.categoria || '';
+        html += '<div class="equip-row">';
+        html += '<span class="equip-tag equip-tag-gold">Gold</span>';
+        html += '<span class="equip-item-name">'+itemAlvo.nome+'</span>';
+        html += '<span class="equip-item-info">'+itemAlvo.gold_necessario+'g &middot; '+catAlvo+'</span>';
+        html += '</div>';
+      }
+      if(itemProximo){
+        var skAtual = itemProximo.req_skill_atual || 0;
+        var skReq   = itemProximo.req_skill_valor || 0;
+        var skTipo  = itemProximo.req_skill_tipo  || '';
+        html += '<div class="equip-row">';
+        html += '<span class="equip-tag equip-tag-skill">Skill</span>';
+        html += '<span class="equip-item-name">'+itemProximo.nome+'</span>';
+        html += '<span class="equip-item-info">'+itemProximo.gold_necessario+'g &middot; '+skTipo+' '+skAtual+'/'+skReq+'</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
     html += '</div>';
     html += '</div>';
   });
