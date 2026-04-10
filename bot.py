@@ -4000,6 +4000,18 @@ def loop_rapido(client):
             ataque_feito = False
             imunizou_agora = False  # True se o ataque foi para imunizar (não pig)
 
+            # ── Gold insuficiente para qualquer ataque (< 5g) ─────────────────
+            # Ataque PvP custa 5g, missão de campo custa 10g. Taverna é gratuita.
+            if gold_atual < 5:
+                log.warning(f"⚠ Gold {gold_atual}g < 5g — sem gold para ataques → imunizando e taverna")
+                # Tenta imunizar apenas se encontrar alvo (não custa gold, é um ataque mas o custo real é mínimo)
+                # Na verdade ataque custa 5g → com < 5g não pode imunizar também
+                # Vai direto para taverna para gerar gold
+                if TAVERNA_ATIVA:
+                    _taverna_1h(client)
+                time.sleep(INTERVALO_RAPIDO_SEG)
+                continue
+
             # Tenta atacar pig (confirmados primeiro)
             pigs = sorted(pig_list.items(),
                 key=lambda x: (0 if x[1]["categoria"] == "PIG_CONFIRMADO" else 1,
@@ -4164,40 +4176,54 @@ def loop_rapido(client):
                         alvo = None
                         continue  # tenta próximo no loop
 
-            # Nada pra atacar → missão
+            # Nada pra atacar → missão (requer ≥ 10g) ou taverna
             if not ataque_feito:
-                res = gerenciar_missao(client)
-                log.info(f"Missão: {res['status']}")
-                if res.get("status") == "iniciada":
-                    try:
-                        treinados = verificar_treinamento(client)
-                        if treinados:
-                            log.info(f"  Treinamento pós-missão: {', '.join(treinados)}")
-                    except Exception as e:
-                        log.warning(f"  Treinamento pós-missão: erro — {e}")
+                if gold_atual < 10:
+                    log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo → taverna")
+                    if TAVERNA_ATIVA:
+                        _taverna_1h(client)
+                    else:
+                        log.info("  Taverna desativada — aguardando próximo ciclo")
+                else:
+                    res = gerenciar_missao(client)
+                    log.info(f"Missão: {res['status']}")
+                    if res.get("status") == "iniciada":
+                        try:
+                            treinados = verificar_treinamento(client)
+                            if treinados:
+                                log.info(f"  Treinamento pós-missão: {', '.join(treinados)}")
+                        except Exception as e:
+                            log.warning(f"  Treinamento pós-missão: erro — {e}")
 
-                # Se missão também indisponível (cota diária ou em CD longo)
-                # → imuniza, entra na taverna 1h, dorme, sai e imuniza de novo
-                if res.get("status") in ("cota_diaria",) or (
-                    res.get("status") == "em_cd" and res.get("segundos", 0) > 1800
-                ):
-                    if TAVERNA_ATIVA:
-                        _taverna_1h(client)
-                    else:
-                        log.info("  Taverna desativada — aguardando próximo ciclo")
+                    # Se missão também indisponível (cota diária ou em CD longo)
+                    # → imuniza, entra na taverna 1h, dorme, sai e imuniza de novo
+                    if res.get("status") in ("cota_diaria",) or (
+                        res.get("status") == "em_cd" and res.get("segundos", 0) > 1800
+                    ):
+                        if TAVERNA_ATIVA:
+                            _taverna_1h(client)
+                        else:
+                            log.info("  Taverna desativada — aguardando próximo ciclo")
             elif imunizou_agora:
-                # Acabou de imunizar — verifica se tem missão disponível
-                # Se não tiver, vai direto para taverna sem esperar CD de ataque
-                res_check = gerenciar_missao(client)
-                log.info(f"Pós-imunização — Missão: {res_check['status']}")
-                if res_check.get("status") in ("cota_diaria",) or (
-                    res_check.get("status") == "em_cd" and res_check.get("segundos", 0) > 1800
-                ):
+                # Acabou de imunizar — verifica se tem missão disponível (requer ≥ 10g)
+                # Se não tiver (ou gold insuficiente), vai para taverna sem esperar CD
+                if gold_atual < 10:
+                    log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão → taverna")
                     if TAVERNA_ATIVA:
-                        log.info("  Sem missão após imunizar — entrando na taverna sem esperar CD")
                         _taverna_1h(client)
                     else:
                         log.info("  Taverna desativada — aguardando próximo ciclo")
+                else:
+                    res_check = gerenciar_missao(client)
+                    log.info(f"Pós-imunização — Missão: {res_check['status']}")
+                    if res_check.get("status") in ("cota_diaria",) or (
+                        res_check.get("status") == "em_cd" and res_check.get("segundos", 0) > 1800
+                    ):
+                        if TAVERNA_ATIVA:
+                            log.info("  Sem missão após imunizar — entrando na taverna sem esperar CD")
+                            _taverna_1h(client)
+                        else:
+                            log.info("  Taverna desativada — aguardando próximo ciclo")
 
         except SessaoExpiradaError as e:
             log.error(f"🔒 COOKIE VENCIDO: {e}")
