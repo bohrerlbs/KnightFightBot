@@ -2093,11 +2093,17 @@ def verificar_alvo_equipamento(client, estado):
             del estado["item_proximo"]
 
     salvar_estado(estado)
+    publicar_dashboard_equipamento(estado)
 
-    # Atualiza ciclo_file para o dashboard
+
+def publicar_dashboard_equipamento(estado):
+    """Publica todos os alvos de compra no ciclo_file para o dashboard do launcher."""
     atualizar_ciclo_file("equipamento", {
-        "item_alvo": melhor,
-        "item_proximo": proximo,
+        "item_alvo":    estado.get("item_alvo"),
+        "item_proximo": estado.get("item_proximo"),
+        "pedra_alvo":   estado.get("pedra_alvo"),
+        "anel_alvo":    estado.get("anel_alvo"),
+        "amuleto_alvo": estado.get("amuleto_alvo"),
     })
 
 
@@ -2391,6 +2397,7 @@ def verificar_alvo_pedra(client, estado):
         "waffenid":        info["waffenid"],
     }
     salvar_estado(estado)
+    publicar_dashboard_equipamento(estado)
 
 
 def tentar_comprar_pedra(client, estado):
@@ -2646,6 +2653,7 @@ def verificar_alvo_anel(client, estado):
         "quantidade":      a_comprar,
     }
     salvar_estado(estado)
+    publicar_dashboard_equipamento(estado)
 
 
 def tentar_comprar_anel(client, estado):
@@ -2763,6 +2771,7 @@ def verificar_alvo_amuleto(client, estado):
         "url_compra":      melhor["url_compra"],
     }
     salvar_estado(estado)
+    publicar_dashboard_equipamento(estado)
 
 
 def tentar_comprar_amuleto(client, estado):

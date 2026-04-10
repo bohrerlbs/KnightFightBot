@@ -140,6 +140,9 @@ def get_profiles():
                     eq = ciclo.get("equipamento", {})
                     cfg["_item_alvo"]    = eq.get("item_alvo")
                     cfg["_item_proximo"] = eq.get("item_proximo")
+                    cfg["_pedra_alvo"]   = eq.get("pedra_alvo")
+                    cfg["_anel_alvo"]    = eq.get("anel_alvo")
+                    cfg["_amuleto_alvo"] = eq.get("amuleto_alvo")
                 except:
                     pass
             profiles.append(cfg)

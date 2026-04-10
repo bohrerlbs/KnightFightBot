@@ -285,6 +285,7 @@ header {
 .equip-tag{font-size:9px;text-transform:uppercase;letter-spacing:1px;padding:1px 5px;border-radius:2px;flex-shrink:0;margin-top:1px;}
 .equip-tag-gold{background:rgba(200,148,58,0.15);color:var(--gold);border:1px solid rgba(200,148,58,0.3);}
 .equip-tag-skill{background:rgba(100,60,180,0.15);color:#b090f0;border:1px solid rgba(100,60,180,0.3);}
+.equip-tag-gem{background:rgba(60,180,120,0.15);color:#70e0a0;border:1px solid rgba(60,180,120,0.3);}
 .equip-item-name{color:var(--text);flex:1;}
 .equip-item-info{color:var(--muted);font-size:10px;white-space:nowrap;}
 </style>
@@ -1058,25 +1059,54 @@ function renderProfiles(profiles){
     // Planejamento de Equipamento
     var itemAlvo    = p._item_alvo    || null;
     var itemProximo = p._item_proximo || null;
-    if(itemAlvo || itemProximo){
+    var pedraAlvo   = p._pedra_alvo   || null;
+    var anelAlvo    = p._anel_alvo    || null;
+    var amuletoAlvo = p._amuleto_alvo || null;
+    if(itemAlvo || itemProximo || pedraAlvo || anelAlvo || amuletoAlvo){
       html += '<div class="equip-section">';
-      html += '<div class="equip-label">Equipamento</div>';
+      html += '<div class="equip-label">Compras planejadas</div>';
       if(itemAlvo){
-        var catAlvo = itemAlvo.categoria || '';
+        var catMap = {waffen:'arma',schilde:'escudo',ruestungen:'armadura'};
+        var catAlvo = catMap[itemAlvo.categoria] || itemAlvo.categoria || '';
         html += '<div class="equip-row">';
-        html += '<span class="equip-tag equip-tag-gold">Gold</span>';
+        html += '<span class="equip-tag equip-tag-gold">'+catAlvo+'</span>';
         html += '<span class="equip-item-name">'+itemAlvo.nome+'</span>';
-        html += '<span class="equip-item-info">'+itemAlvo.gold_necessario+'g &middot; '+catAlvo+'</span>';
+        html += '<span class="equip-item-info">'+itemAlvo.gold_necessario+'g</span>';
         html += '</div>';
       }
       if(itemProximo){
         var skAtual = itemProximo.req_skill_atual || 0;
         var skReq   = itemProximo.req_skill_valor || 0;
-        var skTipo  = itemProximo.req_skill_tipo  || '';
+        var skTipo  = itemProximo.req_skill_tipo  || '?';
+        var catMap2 = {waffen:'arma',schilde:'escudo',ruestungen:'armadura'};
+        var catPrx  = catMap2[itemProximo.categoria] || itemProximo.categoria || '';
         html += '<div class="equip-row">';
-        html += '<span class="equip-tag equip-tag-skill">Skill</span>';
+        html += '<span class="equip-tag equip-tag-skill">'+catPrx+' skill</span>';
         html += '<span class="equip-item-name">'+itemProximo.nome+'</span>';
         html += '<span class="equip-item-info">'+itemProximo.gold_necessario+'g &middot; '+skTipo+' '+skAtual+'/'+skReq+'</span>';
+        html += '</div>';
+      }
+      if(pedraAlvo){
+        var qtdP = pedraAlvo.quantidade > 1 ? pedraAlvo.quantidade+'x ' : '';
+        html += '<div class="equip-row">';
+        html += '<span class="equip-tag equip-tag-gem">pedra</span>';
+        html += '<span class="equip-item-name">'+qtdP+pedraAlvo.nome+'</span>';
+        html += '<span class="equip-item-info">'+pedraAlvo.gold_necessario+'g</span>';
+        html += '</div>';
+      }
+      if(anelAlvo){
+        var qtdA = anelAlvo.quantidade > 1 ? anelAlvo.quantidade+'x ' : '';
+        html += '<div class="equip-row">';
+        html += '<span class="equip-tag equip-tag-gem">anel</span>';
+        html += '<span class="equip-item-name">'+qtdA+anelAlvo.nome+'</span>';
+        html += '<span class="equip-item-info">'+anelAlvo.gold_necessario+'g</span>';
+        html += '</div>';
+      }
+      if(amuletoAlvo){
+        html += '<div class="equip-row">';
+        html += '<span class="equip-tag equip-tag-gem">amuleto</span>';
+        html += '<span class="equip-item-name">'+amuletoAlvo.nome+'</span>';
+        html += '<span class="equip-item-info">'+amuletoAlvo.gold_necessario+'g</span>';
         html += '</div>';
       }
       html += '</div>';
