@@ -1724,6 +1724,10 @@ def comprar_armadura_barata(client):
         log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
         return 0, 0, ""
 
+    if _esta_bloqueado_por_missao(soup):
+        log.debug("  Comprar armadura: bloqueado por missão ativa")
+        return 0, 0, ""
+
     form = soup.find("form")
     if not form:
         log.warning("  Comprar armadura: formulário não encontrado")
@@ -1917,6 +1921,15 @@ def verificar_alvo_equipamento(client, estado):
     salvar_estado(estado)
 
 
+def _esta_bloqueado_por_missao(soup):
+    """Retorna True se a página está bloqueada por missão ativa (não mostra loja)."""
+    txt = soup.get_text(" ", strip=True).lower()
+    return any(k in txt for k in [
+        "out on an assignment", "still out on", "ainda em serviço",
+        "canceljob", "auf einem auftrag", "en una misi",
+    ])
+
+
 def tentar_comprar_item_alvo(client, estado):
     """
     Compra o item_alvo se gold suficiente.
@@ -1950,6 +1963,10 @@ def tentar_comprar_item_alvo(client, estado):
         soup = client.get(alvo["url_compra"], fragment=False)
     except Exception as e:
         log.warning(f"  Comprar {alvo['nome']}: erro ao carregar — {e}")
+        return False
+
+    if _esta_bloqueado_por_missao(soup):
+        log.debug(f"  Comprar {alvo['nome']}: bloqueado por missão ativa")
         return False
 
     form = soup.find("form")
@@ -2242,6 +2259,10 @@ def tentar_comprar_pedra(client, estado):
             log.warning(f"  Comprar pedra #{i+1}: erro ao carregar — {e}")
             break
 
+        if _esta_bloqueado_por_missao(soup):
+            log.debug(f"  Comprar pedra #{i+1}: bloqueado por missão ativa")
+            break
+
         form = soup.find("form")
         if not form:
             log.warning(f"  Comprar pedra #{i+1}: formulário não encontrado")
@@ -2473,6 +2494,10 @@ def tentar_comprar_anel(client, estado):
             log.warning(f"  Comprar anel #{i+1}: erro ao carregar — {e}")
             break
 
+        if _esta_bloqueado_por_missao(soup):
+            log.debug(f"  Comprar anel #{i+1}: bloqueado por missão ativa")
+            break
+
         form = soup.find("form")
         if not form:
             log.warning(f"  Comprar anel #{i+1}: formulário não encontrado")
@@ -2581,6 +2606,10 @@ def tentar_comprar_amuleto(client, estado):
         soup = client.get(alvo["url_compra"], fragment=False)
     except Exception as e:
         log.warning(f"  Comprar amuleto: erro ao carregar — {e}")
+        return False
+
+    if _esta_bloqueado_por_missao(soup):
+        log.debug("  Comprar amuleto: bloqueado por missão ativa")
         return False
 
     form = soup.find("form")
