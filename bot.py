@@ -2062,12 +2062,72 @@ def parsear_ferreiro(client):
     }
 
 
+def _parsear_pedra_bloqueada(soup):
+    """
+    Encontra a melhor pedra de alma com preço em gold mesmo sem botão de compra
+    (quando o personagem não tem gold suficiente, o jogo oculta o botão Buy).
+    Retorna dict compatível com _parsear_shop_listagem mas com url_compra=None.
+    """
+    melhor = None
+    for tr in soup.find_all("tr"):
+        # Deve ser uma linha de item (não de cabeçalho/rodapé)
+        tds = tr.find_all("td")
+        if len(tds) < 2:
+            continue
+        # Não pode ter buy link (seria pego por _parsear_shop_listagem)
+        if tr.find("a", href=lambda h: h and "wac=buy" in h):
+            continue
+        # Precisa ter goldstueck (preço em gold)
+        gold_img = tr.find("img", src=lambda s: s and "goldstueck.gif" in s)
+        if not gold_img:
+            continue
+        # Não pode ter preço em gema
+        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+            continue
+
+        # Extrai preço — busca número antes do goldstueck
+        preco = 0
+        for span in tr.find_all("span"):
+            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            m = re.search(r"[\d.]+", span.get_text())
+            if m:
+                preco = int(m.group().replace(".", ""))
+                break
+        if preco == 0:
+            # fallback: número mais próximo do goldstueck no texto do tr
+            txt_tr = tr.get_text(" ")
+            m = re.search(r"(\d[\d.]*)\s*$", txt_tr.split("goldstueck")[0] if "goldstueck" in txt_tr else "")
+            if m:
+                preco = int(m.group(1).replace(".", ""))
+        if preco <= 0:
+            continue
+
+        # Nome
+        nome = "Item"
+        strong = tr.find("strong") or tr.find("b")
+        if strong:
+            nome = strong.get_text(strip=True)[:80]
+        else:
+            for td in tds[1:]:
+                t = td.get_text(strip=True)
+                if t and len(t) > 3:
+                    nome = t[:80]
+                    break
+
+        if melhor is None or preco < melhor["gold_necessario"]:
+            melhor = {"nome": nome, "gold_necessario": preco, "url_compra": None, "categoria": "steine"}
+
+    return melhor
+
+
 def verificar_alvo_pedra(client, estado):
     """
     Verifica engastes vazios na arma e determina pedras a comprar.
     - Conta engastes vazios via ferreiro
     - Desconta pedras já no inventário
     - Busca melhor pedra por gold em /shop/steine/ (sem gemas, com buy button)
+    - Fallback: pedra bloqueada por gold insuficiente (sem buy button ainda)
     - Salva em estado["pedra_alvo"]
     """
     if not COMPRAR_EQUIPAMENTO:
@@ -2091,7 +2151,7 @@ def verificar_alvo_pedra(client, estado):
         log.warning(f"  Pedra: erro ao ler inventário — {e}")
         inv = {}
 
-    # Melhor pedra disponível por gold
+    # Melhor pedra disponível por gold (com buy button = já comprável)
     try:
         soup_shop = client.get("/shop/steine/", fragment=False)
     except Exception as e:
@@ -2100,8 +2160,13 @@ def verificar_alvo_pedra(client, estado):
 
     melhor = _parsear_shop_listagem(soup_shop, "steine")
     if not melhor:
-        log.debug("  Pedra: nenhuma disponível por gold na loja")
-        return
+        # Fallback: pedra com preço gold mas sem buy link (gold insuficiente por ora)
+        melhor = _parsear_pedra_bloqueada(soup_shop)
+        if melhor:
+            log.info(f"  Pedra: '{melhor['nome']}' @ {melhor['gold_necessario']}g ainda bloqueada (gold insuficiente) — salvando meta")
+        else:
+            log.debug("  Pedra: nenhuma pedra de alma com preço gold encontrada na loja")
+            return
 
     no_inv    = inv.get(melhor["nome"], 0)
     a_comprar = max(0, engastes_vazios - no_inv)
@@ -2123,7 +2188,7 @@ def verificar_alvo_pedra(client, estado):
         "nome":            melhor["nome"],
         "gold_necessario": gold_total,
         "gold_unitario":   melhor["gold_necessario"],
-        "url_compra":      melhor["url_compra"],
+        "url_compra":      melhor.get("url_compra"),  # pode ser None se ainda bloqueada
         "quantidade":      a_comprar,
         "wid":             info["wid"],
         "waffenid":        info["waffenid"],
@@ -2134,7 +2199,7 @@ def verificar_alvo_pedra(client, estado):
 def tentar_comprar_pedra(client, estado):
     """
     Compra pedras de alma quando gold suficiente.
-    Compra uma por vez em loop (a loja geralmente não tem campo de quantidade).
+    Fluxo: GET página de confirmação → POST (Continue) → POST se houver 2ª confirmação (Accept).
     Retorna True se comprou alguma.
     """
     if not COMPRAR_EQUIPAMENTO:
@@ -2147,12 +2212,32 @@ def tentar_comprar_pedra(client, estado):
     if gold_atual < alvo["gold_necessario"]:
         return False
 
+    # Se url_compra ainda não disponível (estava bloqueada), re-busca na loja
+    url_compra = alvo.get("url_compra")
+    if not url_compra:
+        try:
+            soup_shop = client.get("/shop/steine/", fragment=False)
+            atualizado = _parsear_shop_listagem(soup_shop, "steine")
+            if atualizado and atualizado["nome"] == alvo["nome"]:
+                url_compra = atualizado["url_compra"]
+                alvo["url_compra"] = url_compra
+                estado["pedra_alvo"] = alvo
+                salvar_estado(estado)
+                log.info(f"  Pedra: buy link obtido — {url_compra}")
+            else:
+                log.debug(f"  Pedra: buy link para '{alvo['nome']}' ainda não disponível (gold insuficiente?)")
+                return False
+        except Exception as e:
+            log.warning(f"  Pedra: erro ao buscar buy link — {e}")
+            return False
+
     log.info(f"  💰 Gold ({gold_atual}g) >= pedras {alvo['quantidade']}x '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
 
     compradas = 0
     for i in range(alvo["quantidade"]):
+        # Passo 1: GET página de confirmação (tem quantidade + preço + botão Continue)
         try:
-            soup = client.get(alvo["url_compra"], fragment=False)
+            soup = client.get(url_compra, fragment=False)
         except Exception as e:
             log.warning(f"  Comprar pedra #{i+1}: erro ao carregar — {e}")
             break
@@ -2168,22 +2253,44 @@ def tentar_comprar_pedra(client, estado):
             val  = inp.get("value", "")
             if name:
                 campos[name] = val
+        if "amount" in campos:
+            campos["amount"] = "1"
         if "buy" not in campos:
             campos["buy"] = "1"
 
-        action = form.get("action") or alvo["url_compra"]
+        action = form.get("action") or url_compra
         if action.startswith("http"):
             from urllib.parse import urlparse
             action = urlparse(action).path
         if not action or action == "#":
-            action = alvo["url_compra"]
+            action = url_compra
 
+        # Passo 2: POST (Continue) — pode retornar 2ª confirmação (Accept)
         try:
-            client.post(action, data=campos, fragment=False)
-            compradas += 1
+            soup2 = client.post(action, data=campos, fragment=False)
         except Exception as e:
             log.warning(f"  Comprar pedra #{i+1}: erro no POST — {e}")
             break
+
+        # Verifica se há 2ª confirmação (Accept) — mesma estrutura da armadura
+        if soup2:
+            form2 = soup2.find("form") if hasattr(soup2, "find") else None
+            if form2:
+                campos2 = {inp.get("name"): inp.get("value","") for inp in form2.find_all("input") if inp.get("name")}
+                action2 = form2.get("action") or action
+                if action2.startswith("http"):
+                    from urllib.parse import urlparse as _up
+                    action2 = _up(action2).path
+                # Só faz 2º POST se parece um form de confirmação (tem ac=shop ou buy)
+                if campos2.get("ac") == "shop" or "buy" in campos2:
+                    try:
+                        client.post(action2, data=campos2, fragment=False)
+                        log.debug(f"  Comprar pedra #{i+1}: 2ª confirmação submetida")
+                    except Exception as e:
+                        log.warning(f"  Comprar pedra #{i+1}: erro no 2º POST — {e}")
+                        break
+
+        compradas += 1
 
     if compradas > 0:
         log.info(f"  ✓ Comprou {compradas}x '{alvo['nome']}'")
