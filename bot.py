@@ -2333,17 +2333,21 @@ def tentar_comprar_item_alvo(client, estado):
     url_venda_atual = alvo.get("url_venda_atual")
     log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} (liquido {alvo['gold_necessario']}g, bruto {gold_bruto}g) — comprando!")
 
-    # Vende item atual se necessário para completar o gold bruto
-    if url_venda_atual and gold_atual < gold_bruto:
-        log.info(f"  Vendendo item atual para completar gold ({gold_atual}g < {gold_bruto}g)...")
+    # Sempre vende item atual antes de comprar — libera inventário e evita acúmulo
+    if url_venda_atual:
+        log.info(f"  Vendendo item atual antes da troca ({gold_bruto}g necessário, gold atual {gold_atual}g)...")
         gold_recebido = vender_item_atual(client, url_venda_atual)
-        if gold_recebido == 0:
-            log.warning(f"  Venda falhou — abortando compra de {alvo['nome']}")
+        if gold_recebido > 0:
+            gold_atual += gold_recebido
+            log.info(f"  Venda ok: +{gold_recebido}g → total {gold_atual}g")
+        elif gold_atual < gold_bruto:
+            # Venda falhou E não tem gold suficiente sem ela
+            log.warning(f"  Venda falhou e gold insuficiente ({gold_atual}g < {gold_bruto}g) — abortando compra de {alvo['nome']}")
             return False
-        gold_atual += gold_recebido
-        if gold_atual < gold_bruto:
-            log.warning(f"  Após venda gold ({gold_atual}g) ainda insuficiente para {alvo['nome']} ({gold_bruto}g) — abortando")
-            return False
+        # Se venda falhou mas já tinha gold suficiente, continua mesmo assim
+    if gold_atual < gold_bruto:
+        log.warning(f"  Gold insuficiente após venda ({gold_atual}g < {gold_bruto}g) — abortando")
+        return False
 
     # Se item era gold-bloqueado (url_compra=None), re-escaneia loja para obter buy link
     url_compra = alvo.get("url_compra")
@@ -2419,14 +2423,13 @@ def tentar_comprar_item_alvo(client, estado):
     log.info(f"  ✓ Comprou {alvo['nome']} (bruto {gold_bruto}g, liquido {alvo['gold_necessario']}g)")
     estado.pop("item_alvo", None)
     salvar_estado(estado)
-    # Re-escaneia lojas
+    # Equipa o item recém comprado (waffen, schilde, ruestungen)
+    try:
+        equipar_melhor_item(client)
+    except Exception as e:
+        log.warning(f"  Auto-equipar pós-compra: erro — {e}")
+    # Re-escaneia lojas para definir próximo alvo
     verificar_alvo_equipamento(client, estado)
-    # Equipa arma/escudo; armadura não precisa equipar (vai pro inventário de defesa)
-    if alvo.get("categoria") in ("waffen", "schilde"):
-        try:
-            equipar_melhor_item(client)
-        except Exception as e:
-            log.warning(f"  Auto-equipar pós-compra: erro — {e}")
     return True
 
 
