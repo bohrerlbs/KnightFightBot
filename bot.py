@@ -2126,6 +2126,8 @@ def verificar_alvo_equipamento(client, estado):
                     "url_compra": item["url_compra"],
                     "url_venda_atual": url_venda_eq,
                     "categoria": tipo,
+                    "req_skill_valor": item.get("req_skill_valor", 0),
+                    "req_skill_tipo": item.get("req_skill_tipo"),
                 })
             elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
                 # Sem botão de compra e bloqueado por skill conhecida
@@ -2146,7 +2148,10 @@ def verificar_alvo_equipamento(client, estado):
     # Lógica: o item mais caro com skill atendida = o mais poderoso que o personagem pode usar
     if candidatos:
         log.debug(f"  Candidatos ({len(candidatos)}): " +
-                  ", ".join(f"{c['nome']} {c['gold_bruto']}g" for c in sorted(candidatos, key=lambda x: x["gold_bruto"], reverse=True)))
+                  ", ".join(
+                      f"{c['nome']} req={c.get('req_skill_valor',0)} {c['gold_bruto']}g"
+                      for c in sorted(candidatos, key=lambda x: (x.get("req_skill_valor", 0), x["gold_bruto"]), reverse=True)
+                  ))
     if not candidatos:
         if not algum_shop_acessivel:
             # Todos os shops bloqueados por missão — preserva estado anterior
@@ -2158,20 +2163,23 @@ def verificar_alvo_equipamento(client, estado):
             salvar_estado(estado)
         melhor = None
     else:
-        # Por categoria, pega o melhor (mais caro); depois escolhe o melhor global
+        # Por categoria: melhor = maior req_skill_valor que o personagem já atende
+        # (maior req = item mais poderoso para a skill atual)
+        # Tiebreak: gold_bruto (mais caro = mais poderoso entre itens de mesmo req)
         melhor_por_cat = {}
         for c in candidatos:
             cat = c["categoria"]
-            if cat not in melhor_por_cat or c["gold_bruto"] > melhor_por_cat[cat]["gold_bruto"]:
+            prev = melhor_por_cat.get(cat)
+            c_key = (c.get("req_skill_valor", 0), c["gold_bruto"])
+            if prev is None or c_key > (prev.get("req_skill_valor", 0), prev["gold_bruto"]):
                 melhor_por_cat[cat] = c
-        # Prioridade: arma > escudo > armadura (sempre há só 1 slot de cada)
-        # Pega o que tem maior custo bruto entre os melhores de cada categoria
+        # Entre categorias: prioriza o item mais caro (maior investimento = maior upgrade)
         melhor = max(melhor_por_cat.values(), key=lambda x: x["gold_bruto"])
         alvo_anterior = estado.get("item_alvo")
         if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
             log.info(
                 f"  Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g líquido "
-                f"({melhor['gold_bruto']}g bruto, cat={melhor['categoria']})"
+                f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
             )
         estado["item_alvo"] = melhor
 
@@ -3553,8 +3561,16 @@ def parsear_inventario(soup):
     Extrai itens do inventário da página /status/.
     Localiza a seção 'Inventory' (box-top) → box-bg seguinte → <tr class="mobile-cols-2">.
     Nome em <strong>, quantidade em "N item(s) in your inventory." no texto do td.
-    Retorna dict {nome: qtd}. Compatível com 'if nome in inventario'.
+
+    O jogo mostra "X items in your inventory" contando TODOS (equipados + bolsa).
+    Itens equipados têm <span class="fontsmallred"> ou texto "equipped" no TR.
+    Para itens equipados: qtd_bolsa = qtd_total - qtd_equipada (armadura/arma/amuleto=1, aneis=2 max).
+    Retorna dict {nome: qtd_na_bolsa}. Compatível com 'if nome in inventario'.
     """
+    _SLOTS_EQUIPADOS = {
+        # aneis: máximo 2 equipados simultaneamente
+        "anel": 2, "ring": 2, "ringe": 2, "anillo": 2,
+    }
     result = {}
     for boxtop in soup.find_all("div", class_="box-top"):
         txt = boxtop.get_text().strip().lower()
@@ -3569,14 +3585,32 @@ def parsear_inventario(soup):
                 nome = strong.get_text(strip=True)
                 if not nome:
                     continue
-                # Extrai quantidade do texto do td ("N item(s) in your inventory.")
-                qtd = 1
+                tr_txt = tr.get_text(separator=" ", strip=True)
+                # Extrai quantidade total ("N item(s) in your inventory.")
+                qtd_total = 1
                 td = strong.find_parent("td")
                 if td:
                     m = re.search(r"(\d+)\s+item", td.get_text(), re.IGNORECASE)
                     if m:
-                        qtd = int(m.group(1))
-                result[nome] = result.get(nome, 0) + qtd
+                        qtd_total = int(m.group(1))
+                # Verifica se está equipado — subtrai slot equipado do total
+                equipado = bool(re.search(
+                    r"equipped|equipado|ausger[üu]stet",
+                    tr_txt, re.IGNORECASE
+                ))
+                if equipado:
+                    # Determina quantos slots esse tipo ocupa
+                    nome_lower = nome.lower()
+                    slots = 1  # default: arma, armadura, amuleto = 1 slot
+                    for chave, n in _SLOTS_EQUIPADOS.items():
+                        if chave in nome_lower:
+                            slots = n
+                            break
+                    qtd_bolsa = max(0, qtd_total - slots)
+                else:
+                    qtd_bolsa = qtd_total
+                if qtd_bolsa > 0:
+                    result[nome] = result.get(nome, 0) + qtd_bolsa
             break
     return result
 
