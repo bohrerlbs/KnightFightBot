@@ -2011,6 +2011,8 @@ def _parsear_shop_todos_itens(soup, tipo):
             if not m_val:
                 m_val = re.search(r"[Ww]ert[:\s]+(\d[\d.,]+)", tr_text)  # DE
             if not m_val:
+                m_val = re.search(r"[Vv]alor\s+da\s+mercadoria[:\s]+(\d[\d.,]+)", tr_text)  # PT inventário
+            if not m_val:
                 m_val = re.search(r"[Pp]re[çc]o\s+de\s+venda[:\s]+(\d[\d.,]+)", tr_text)  # PT
             if not m_val:
                 m_val = re.search(r"[Vv]alor\s+do\s+item[:\s]+(\d[\d.,]+)", tr_text)  # PT alt
