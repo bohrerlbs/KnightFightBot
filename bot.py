@@ -1996,7 +1996,9 @@ def _parsear_shop_todos_itens(soup, tipo):
                 m_val = re.search(r"[Ww]ert[:\s]+(\d[\d.,]+)", tr_text)  # DE
             if m_val:
                 gold_venda = int(m_val.group(1).replace(".", "").replace(",", ""))
-            equipado = bool(re.search(r"equipped|ausger[üu]stet|equipado", tr_text, re.IGNORECASE))
+            # Na listagem da loja, qualquer item com sell link está equipado
+            # (itens do inventário não-equipados aparecem na seção de inventário, não aqui)
+            equipado = True
 
         itens.append({
             "nome": nome,
@@ -2096,6 +2098,24 @@ def verificar_alvo_equipamento(client, estado):
                 # Item já equipado — não é upgrade, pula
                 if item.get("equipado"):
                     continue
+                # Se tem requisito de skill, verifica se o personagem já atende
+                # (o jogo exibe botão de compra independente de skill)
+                if item["req_skill_tipo"] and item["req_skill_valor"] > 0:
+                    sk_atual = skill_atual(item["req_skill_tipo"])
+                    if sk_atual < item["req_skill_valor"]:
+                        # Tem botão mas não tem skill — trata como bloqueado
+                        gold_liquido = max(0, item["gold"] - gold_venda_eq)
+                        bloqueados.append({
+                            "nome": item["nome"],
+                            "gold_necessario": gold_liquido,
+                            "gold_bruto": item["gold"],
+                            "gold_venda_atual": gold_venda_eq,
+                            "categoria": tipo,
+                            "req_skill_tipo": item["req_skill_tipo"],
+                            "req_skill_valor": item["req_skill_valor"],
+                            "req_skill_atual": sk_atual,
+                        })
+                        continue
                 # Custo líquido: preço do novo menos o que recebemos vendendo o atual
                 gold_liquido = max(0, item["gold"] - gold_venda_eq)
                 candidatos.append({
@@ -2108,7 +2128,7 @@ def verificar_alvo_equipamento(client, estado):
                     "categoria": tipo,
                 })
             elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
-                # Bloqueado por skill conhecida (ignora alignment, level, etc.)
+                # Sem botão de compra e bloqueado por skill conhecida
                 sk_atual = skill_atual(item["req_skill_tipo"])
                 gold_liquido = max(0, item["gold"] - gold_venda_eq)
                 bloqueados.append({
@@ -2124,6 +2144,9 @@ def verificar_alvo_equipamento(client, estado):
 
     # Determina item_alvo — MELHOR item disponível (maior gold_bruto) por categoria
     # Lógica: o item mais caro com skill atendida = o mais poderoso que o personagem pode usar
+    if candidatos:
+        log.debug(f"  Candidatos ({len(candidatos)}): " +
+                  ", ".join(f"{c['nome']} {c['gold_bruto']}g" for c in sorted(candidatos, key=lambda x: x["gold_bruto"], reverse=True)))
     if not candidatos:
         if not algum_shop_acessivel:
             # Todos os shops bloqueados por missão — preserva estado anterior
@@ -2496,14 +2519,7 @@ def verificar_alvo_pedra(client, estado):
         return
 
     engastes_vazios = info["engastes_vazios"]
-
-    # Inventário atual
-    try:
-        r_s = client.session.get(BASE_URL + "/status/", timeout=15)
-        inv = parsear_inventario(BeautifulSoup(r_s.text, "html.parser"))
-    except Exception as e:
-        log.warning(f"  Pedra: erro ao ler inventário — {e}")
-        inv = {}
+    a_comprar = engastes_vazios  # pedras vão direto para a arma, não ficam no inventário
 
     # Melhor pedra disponível por gold (com buy button = já comprável)
     try:
@@ -2521,17 +2537,6 @@ def verificar_alvo_pedra(client, estado):
         else:
             log.debug("  Pedra: nenhuma pedra de alma com preço gold encontrada na loja")
             return
-
-    no_inv    = inv.get(melhor["nome"], 0)
-    a_comprar = max(0, engastes_vazios - no_inv)
-
-    if a_comprar == 0:
-        log.info(f"  Pedra: {no_inv}x '{melhor['nome']}' no inventário — inserindo ({engastes_vazios} engaste(s) vazio(s))")
-        if estado.get("pedra_alvo"):
-            del estado["pedra_alvo"]
-            salvar_estado(estado)
-        inserir_pedra_na_arma(client, {"wid": info["wid"], "waffenid": info["waffenid"]})
-        return
 
     gold_total = melhor["gold_necessario"] * a_comprar
     anterior   = estado.get("pedra_alvo", {})
