@@ -444,10 +444,13 @@ def fmt_t(seg):
 # ═══════════════════════════════════════════
 # ESTADO
 # ═══════════════════════════════════════════
+_estado_lock = __import__("threading").Lock()
+
 def carregar_estado():
-    if os.path.exists(ESTADO_FILE):
-        with open(ESTADO_FILE, encoding="utf-8") as f:
-            return json.load(f)
+    with _estado_lock:
+        if os.path.exists(ESTADO_FILE):
+            with open(ESTADO_FILE, encoding="utf-8") as f:
+                return json.load(f)
     return {
         "ultimo_ataque": None,
         "imunidade_ate": None,
@@ -465,8 +468,12 @@ def salvar_estado(e):
         e["minutos_missao_hoje"] = 0
         e["dia_atual"] = hoje
         log.info("Novo dia — contadores resetados")
-    with open(ESTADO_FILE, "w", encoding="utf-8") as f:
-        json.dump(e, f, indent=2, ensure_ascii=False)
+    # Escrita atômica: grava em arquivo temp e renomeia — evita corrupção por race condition entre threads
+    tmp = ESTADO_FILE + ".tmp"
+    with _estado_lock:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(e, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, ESTADO_FILE)
 
 def registrar_ataque(estado, user_id, resultado="desconhecido", gold_ganho=0, xp_ganho=0):
     estado["ultimo_ataque"] = agora().isoformat()
