@@ -2125,7 +2125,8 @@ def verificar_alvo_equipamento(client, estado):
 
             # Só é upgrade se req_skill > req do item atualmente equipado
             # (evita comprar item igual ou pior do que o atual)
-            if item_req <= req_eq:
+            # Exceção: se não há item equipado (item_eq=None), qualquer item é válido
+            if item_eq is not None and item_req <= req_eq:
                 continue
 
             # Verifica se o personagem tem skill suficiente para usar este item
@@ -3331,8 +3332,11 @@ def verificar_treinamento(client):
         anel_alvo    = estado_t.get("anel_alvo")
         amuleto_alvo = estado_t.get("amuleto_alvo")
         if item_alvo:
-            gold_reservado = item_alvo.get("gold_bruto", item_alvo["gold_necessario"])
-            motivo_reserva = item_alvo["nome"]
+            gb = item_alvo.get("gold_bruto", item_alvo.get("gold_necessario", 0))
+            # Ignora reserva com preço inválido (< 50g = bug de parsing)
+            if gb >= 50:
+                gold_reservado = gb
+                motivo_reserva = item_alvo["nome"]
         elif pedra_alvo:
             gold_reservado = pedra_alvo["gold_necessario"]
             motivo_reserva = pedra_alvo["nome"]
@@ -4330,6 +4334,11 @@ def _taverna_1h(client):
             sair_taverna(client)
             atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
             log.info("  ✓ Job da taverna concluído — retomando")
+            if COMPRAR_EQUIPAMENTO:
+                try:
+                    verificar_alvo_equipamento(client, carregar_estado())
+                except Exception as e:
+                    log.warning(f"  Re-scan loja pós-taverna: erro — {e}")
             try:
                 treinados = verificar_treinamento(client)
                 if treinados:
@@ -4353,6 +4362,11 @@ def _taverna_1h(client):
                         sair_taverna(client)
                         atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                         log.info("  ✓ Missão concluída — retomando")
+                        if COMPRAR_EQUIPAMENTO:
+                            try:
+                                verificar_alvo_equipamento(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Re-scan loja pós-taverna: erro — {e}")
                         try:
                             treinados = verificar_treinamento(client)
                             if treinados:
@@ -4372,6 +4386,11 @@ def _taverna_1h(client):
                         sair_taverna(client)
                         atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                         log.info("  ✓ Job da taverna concluído — retomando")
+                        if COMPRAR_EQUIPAMENTO:
+                            try:
+                                verificar_alvo_equipamento(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Re-scan loja pós-taverna: erro — {e}")
                         try:
                             treinados = verificar_treinamento(client)
                             if treinados:
