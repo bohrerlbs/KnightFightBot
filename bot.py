@@ -2090,6 +2090,16 @@ def verificar_alvo_equipamento(client, estado):
             log.warning(f"  Loja {tipo}: erro ao carregar — {e}")
             continue
 
+        # Dump diagnóstico da loja (apenas uma vez por perfil)
+        _dump_loja = os.path.join(os.path.dirname(ESTADO_FILE), f"debug_loja_{tipo}.html")
+        if not os.path.exists(_dump_loja):
+            try:
+                with open(_dump_loja, "w", encoding="utf-8") as _f:
+                    _f.write(str(soup))
+                log.info(f"  [DIAG] HTML da loja {tipo} salvo em {_dump_loja}")
+            except Exception:
+                pass
+
         if _esta_bloqueado_por_missao(soup):
             log.debug(f"  Loja {tipo}: bloqueada por missão ativa — pulando scan")
             continue
