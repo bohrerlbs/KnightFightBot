@@ -1918,19 +1918,28 @@ def _parsear_shop_todos_itens(soup, tipo):
         if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
             continue
 
-        # Extrai preço
+        # Extrai preço de compra — pega o MAIOR valor entre todos os spans com ícone de gold
+        # (evita capturar preço de venda pequeno que aparece antes do preço de compra no HTML)
         gold = 0
+        gold_candidatos = []
         for span in tr.find_all("span"):
             if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
                 continue
             m = re.search(r"[\d.]+", span.get_text())
             if m:
-                gold = int(m.group().replace(".", ""))
-                break
+                val = int(m.group().replace(".", ""))
+                if val > 0:
+                    gold_candidatos.append(val)
+        if gold_candidatos:
+            gold = max(gold_candidatos)
         if gold == 0:
             m = re.search(r"\b(\d[\d.]+)\b", tr.get_text())
             if m:
                 gold = int(m.group(1).replace(".", ""))
+        # Preços de itens no jogo custam no mínimo 50g — valor menor indica erro de parsing
+        if 0 < gold < 50:
+            log.debug(f"  Loja: preço {gold}g ignorado (< 50g, provável erro de parsing)")
+            gold = 0
 
         # Extrai nome
         nome = "Item"
@@ -1994,6 +2003,12 @@ def _parsear_shop_todos_itens(soup, tipo):
             m_val = re.search(r"[Ii]tem\s+value[:\s]+(\d[\d.,]+)", tr_text)
             if not m_val:
                 m_val = re.search(r"[Ww]ert[:\s]+(\d[\d.,]+)", tr_text)  # DE
+            if not m_val:
+                m_val = re.search(r"[Pp]re[çc]o\s+de\s+venda[:\s]+(\d[\d.,]+)", tr_text)  # PT
+            if not m_val:
+                m_val = re.search(r"[Vv]alor\s+do\s+item[:\s]+(\d[\d.,]+)", tr_text)  # PT alt
+            if not m_val:
+                m_val = re.search(r"[Vv]alor[:\s]+(\d[\d.,]+)", tr_text)  # PT genérico
             if m_val:
                 gold_venda = int(m_val.group(1).replace(".", "").replace(",", ""))
             # Na listagem da loja, qualquer item com sell link está equipado
@@ -2099,6 +2114,11 @@ def verificar_alvo_equipamento(client, estado):
 
             # Item equipado — serve apenas para determinar item_eq, não é candidato
             if item.get("equipado"):
+                continue
+
+            # Pula itens com preço não parseado (erro de extração)
+            if item["gold"] == 0:
+                log.debug(f"  Loja {tipo}: '{item['nome']}' sem preço parseado — pulando")
                 continue
 
             item_req = item.get("req_skill_valor", 0)
@@ -2323,6 +2343,18 @@ def tentar_comprar_item_alvo(client, estado):
         return False
     alvo = estado.get("item_alvo")
     if not alvo:
+        return False
+
+    # Descarta item_alvo com preço inválido (< 50g = erro de parsing de versão anterior)
+    gold_bruto_salvo = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
+    if 0 < gold_bruto_salvo < 50:
+        log.warning(f"  item_alvo '{alvo['nome']}' com preço inválido ({gold_bruto_salvo}g) — descartando e re-escaneando")
+        del estado["item_alvo"]
+        salvar_estado(estado)
+        try:
+            verificar_alvo_equipamento(client, estado)
+        except Exception:
+            pass
         return False
 
     gold_atual = estado.get("gold_atual", 0)
