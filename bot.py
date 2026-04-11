@@ -2056,8 +2056,9 @@ def verificar_alvo_equipamento(client, estado):
     except Exception as e:
         log.warning(f"  Alvo equipamento: erro ao ler inventário — {e}")
 
-    candidatos = []   # pode comprar agora (tem buy link), não está no inv
-    bloqueados = []   # não tem buy link, bloqueado por skill
+    candidatos    = []  # pode comprar agora (tem buy link, tem skill, é upgrade)
+    ouro_bloqueados = []  # tem skill mas não tem gold suficiente (loja esconde buy link)
+    bloqueados    = []  # bloqueado por skill insuficiente
 
     algum_shop_acessivel = False
     for url_loja, tipo in paginas:
@@ -2078,8 +2079,10 @@ def verificar_alvo_equipamento(client, estado):
         item_eq = next((i for i in todos if i.get("equipado")), None)
         gold_venda_eq = item_eq["gold_venda"] if item_eq else 0
         url_venda_eq  = item_eq["url_venda"]  if item_eq else None
-        if item_eq and gold_venda_eq:
-            log.debug(f"  Loja {tipo}: item equipado '{item_eq['nome']}' vale {gold_venda_eq}g na venda")
+        # Req_skill do item equipado: candidato só é upgrade se req > req do equipado
+        req_eq = item_eq.get("req_skill_valor", 0) if item_eq else 0
+        if item_eq:
+            log.debug(f"  Loja {tipo}: equipado='{item_eq['nome']}' req={req_eq} venda={gold_venda_eq}g")
 
         for item in todos:
             if item["nome"] in inventario and not item.get("equipado"):
@@ -2094,30 +2097,40 @@ def verificar_alvo_equipamento(client, estado):
                 if BUILD_TIPO == "1h" and item["req_skill_tipo"] == "zweihand":
                     continue  # 1h build ignora armas 2h
 
-            if item["pode_comprar"]:
-                # Item já equipado — não é upgrade, pula
-                if item.get("equipado"):
-                    continue
-                # Se tem requisito de skill, verifica se o personagem já atende
-                # (o jogo exibe botão de compra independente de skill)
-                if item["req_skill_tipo"] and item["req_skill_valor"] > 0:
-                    sk_atual = skill_atual(item["req_skill_tipo"])
-                    if sk_atual < item["req_skill_valor"]:
-                        # Tem botão mas não tem skill — trata como bloqueado
-                        gold_liquido = max(0, item["gold"] - gold_venda_eq)
-                        bloqueados.append({
-                            "nome": item["nome"],
-                            "gold_necessario": gold_liquido,
-                            "gold_bruto": item["gold"],
-                            "gold_venda_atual": gold_venda_eq,
-                            "categoria": tipo,
-                            "req_skill_tipo": item["req_skill_tipo"],
-                            "req_skill_valor": item["req_skill_valor"],
-                            "req_skill_atual": sk_atual,
-                        })
-                        continue
-                # Custo líquido: preço do novo menos o que recebemos vendendo o atual
-                gold_liquido = max(0, item["gold"] - gold_venda_eq)
+            # Item equipado — serve apenas para determinar item_eq, não é candidato
+            if item.get("equipado"):
+                continue
+
+            item_req = item.get("req_skill_valor", 0)
+
+            # Só é upgrade se req_skill > req do item atualmente equipado
+            # (evita comprar item igual ou pior do que o atual)
+            if item_req <= req_eq:
+                continue
+
+            # Verifica se o personagem tem skill suficiente para usar este item
+            tem_skill = True
+            if item["req_skill_tipo"] and item_req > 0:
+                sk_atual = skill_atual(item["req_skill_tipo"])
+                if sk_atual < item_req:
+                    tem_skill = False
+
+            gold_liquido = max(0, item["gold"] - gold_venda_eq)
+
+            if not tem_skill:
+                # Sem skill → bloqueado por skill
+                bloqueados.append({
+                    "nome": item["nome"],
+                    "gold_necessario": gold_liquido,
+                    "gold_bruto": item["gold"],
+                    "gold_venda_atual": gold_venda_eq,
+                    "categoria": tipo,
+                    "req_skill_tipo": item["req_skill_tipo"],
+                    "req_skill_valor": item_req,
+                    "req_skill_atual": skill_atual(item["req_skill_tipo"]),
+                })
+            elif item["pode_comprar"]:
+                # Tem skill E tem gold suficiente (buy link visível) → candidato
                 candidatos.append({
                     "nome": item["nome"],
                     "gold_necessario": gold_liquido,
@@ -2126,61 +2139,78 @@ def verificar_alvo_equipamento(client, estado):
                     "url_compra": item["url_compra"],
                     "url_venda_atual": url_venda_eq,
                     "categoria": tipo,
-                    "req_skill_valor": item.get("req_skill_valor", 0),
+                    "req_skill_valor": item_req,
                     "req_skill_tipo": item.get("req_skill_tipo"),
                 })
-            elif item["req_skill_tipo"] and item["req_skill_valor"] > 0:
-                # Sem botão de compra e bloqueado por skill conhecida
-                sk_atual = skill_atual(item["req_skill_tipo"])
-                gold_liquido = max(0, item["gold"] - gold_venda_eq)
-                bloqueados.append({
+            else:
+                # Tem skill MAS sem gold suficiente (loja esconde buy link) → gold-bloqueado
+                ouro_bloqueados.append({
                     "nome": item["nome"],
                     "gold_necessario": gold_liquido,
                     "gold_bruto": item["gold"],
                     "gold_venda_atual": gold_venda_eq,
+                    "url_compra": None,  # re-busca quando tiver gold
+                    "url_venda_atual": url_venda_eq,
                     "categoria": tipo,
-                    "req_skill_tipo": item["req_skill_tipo"],
-                    "req_skill_valor": item["req_skill_valor"],
-                    "req_skill_atual": sk_atual,
+                    "req_skill_valor": item_req,
+                    "req_skill_tipo": item.get("req_skill_tipo"),
                 })
 
     # Determina item_alvo — MELHOR item disponível (maior gold_bruto) por categoria
     # Lógica: o item mais caro com skill atendida = o mais poderoso que o personagem pode usar
+    def _melhor_da_lista(lista):
+        """Seleciona o melhor item de uma lista: max(req_skill_valor, gold_bruto) por categoria, depois global por gold_bruto."""
+        por_cat = {}
+        for c in lista:
+            cat = c["categoria"]
+            prev = por_cat.get(cat)
+            c_key = (c.get("req_skill_valor", 0), c["gold_bruto"])
+            if prev is None or c_key > (prev.get("req_skill_valor", 0), prev["gold_bruto"]):
+                por_cat[cat] = c
+        return max(por_cat.values(), key=lambda x: x["gold_bruto"]) if por_cat else None
+
     if candidatos:
         log.debug(f"  Candidatos ({len(candidatos)}): " +
                   ", ".join(
                       f"{c['nome']} req={c.get('req_skill_valor',0)} {c['gold_bruto']}g"
                       for c in sorted(candidatos, key=lambda x: (x.get("req_skill_valor", 0), x["gold_bruto"]), reverse=True)
                   ))
-    if not candidatos:
-        if not algum_shop_acessivel:
-            # Todos os shops bloqueados por missão — preserva estado anterior
-            log.debug("  Alvo equipamento: todos shops bloqueados — mantendo item_alvo anterior")
-            return
-        if estado.get("item_alvo"):
-            log.info("  Alvo de equipamento: nenhum disponível (já usa o melhor) — limpando")
-            del estado["item_alvo"]
-            salvar_estado(estado)
-        melhor = None
-    else:
-        # Por categoria: melhor = maior req_skill_valor que o personagem já atende
-        # (maior req = item mais poderoso para a skill atual)
-        # Tiebreak: gold_bruto (mais caro = mais poderoso entre itens de mesmo req)
-        melhor_por_cat = {}
-        for c in candidatos:
-            cat = c["categoria"]
-            prev = melhor_por_cat.get(cat)
-            c_key = (c.get("req_skill_valor", 0), c["gold_bruto"])
-            if prev is None or c_key > (prev.get("req_skill_valor", 0), prev["gold_bruto"]):
-                melhor_por_cat[cat] = c
-        # Entre categorias: prioriza o item mais caro (maior investimento = maior upgrade)
-        melhor = max(melhor_por_cat.values(), key=lambda x: x["gold_bruto"])
+    if ouro_bloqueados:
+        log.debug(f"  Gold-bloqueados ({len(ouro_bloqueados)}): " +
+                  ", ".join(
+                      f"{o['nome']} req={o.get('req_skill_valor',0)} {o['gold_bruto']}g"
+                      for o in sorted(ouro_bloqueados, key=lambda x: (x.get("req_skill_valor", 0), x["gold_bruto"]), reverse=True)
+                  ))
+
+    if not algum_shop_acessivel:
+        log.debug("  Alvo equipamento: todos shops bloqueados — mantendo item_alvo anterior")
+        return
+
+    if candidatos:
+        melhor = _melhor_da_lista(candidatos)
         alvo_anterior = estado.get("item_alvo")
         if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
             log.info(
                 f"  Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g líquido "
                 f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
             )
+    elif ouro_bloqueados:
+        # Tem skill mas não tem gold ainda — salva alvo para acumular ouro
+        melhor = _melhor_da_lista(ouro_bloqueados)
+        alvo_anterior = estado.get("item_alvo")
+        if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
+            log.info(
+                f"  Alvo equipamento (acumulando gold): {melhor['nome']} @ {melhor['gold_necessario']}g líquido "
+                f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
+            )
+    else:
+        if estado.get("item_alvo"):
+            log.info("  Alvo de equipamento: nenhum disponível (já usa o melhor) — limpando")
+            del estado["item_alvo"]
+            salvar_estado(estado)
+        melhor = None
+
+    if melhor:
         estado["item_alvo"] = melhor
 
     # Determina item_proximo (bloqueado por skill com menor req_skill_valor acima do atual)
@@ -2315,9 +2345,31 @@ def tentar_comprar_item_alvo(client, estado):
             log.warning(f"  Após venda gold ({gold_atual}g) ainda insuficiente para {alvo['nome']} ({gold_bruto}g) — abortando")
             return False
 
+    # Se item era gold-bloqueado (url_compra=None), re-escaneia loja para obter buy link
+    url_compra = alvo.get("url_compra")
+    if not url_compra:
+        categoria = alvo.get("categoria", "waffen")
+        log.info(f"  {alvo['nome']}: era gold-bloqueado, re-escaneando /{categoria}/ para buy link...")
+        try:
+            soup_loja = client.get(f"/shop/{categoria}/", fragment=False)
+            todos_loja = _parsear_shop_todos_itens(soup_loja, categoria)
+            match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
+            if match:
+                url_compra = match["url_compra"]
+                alvo["url_compra"] = url_compra
+                estado["item_alvo"] = alvo
+                salvar_estado(estado)
+                log.info(f"  Buy link obtido: {url_compra}")
+            else:
+                log.info(f"  {alvo['nome']}: ainda sem buy link na loja (gold ainda insuficiente?)")
+                return False
+        except Exception as e:
+            log.warning(f"  Re-scan /{categoria}/ para '{alvo['nome']}': erro — {e}")
+            return False
+
     # Carrega página da URL de compra (funciona para waffen, schilde e ruestungen)
     try:
-        soup = client.get(alvo["url_compra"], fragment=False)
+        soup = client.get(url_compra, fragment=False)
     except Exception as e:
         log.warning(f"  Comprar {alvo['nome']}: erro ao carregar — {e}")
         return False
@@ -2351,12 +2403,12 @@ def tentar_comprar_item_alvo(client, estado):
     # Garante amount=1 para todos os itens via item_alvo
     campos["amount"] = "1"
 
-    action = form.get("action") or alvo["url_compra"]
+    action = form.get("action") or url_compra
     if action.startswith("http"):
         from urllib.parse import urlparse
         action = urlparse(action).path
     if not action or action == "#":
-        action = alvo["url_compra"]
+        action = url_compra
 
     try:
         client.post(action, data=campos, fragment=False)
