@@ -2815,7 +2815,7 @@ def inserir_pedra_na_arma(client, alvo):
         # Encontra seção Inventário na página do ferreiro
         inv_bg = None
         for boxtop in soup.find_all("div", class_="box-top"):
-            if any(k in boxtop.get_text().lower() for k in ["inventar", "inventor", "inventory"]):
+            if "invent" in boxtop.get_text().lower():
                 inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
                 break
 
@@ -2906,7 +2906,7 @@ def verificar_alvo_anel(client, estado):
     levels_equipados = []
     inv_boxbg = None
     for _boxtop in soup.find_all("div", class_="box-top"):
-        if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
+        if "invent" in _boxtop.get_text().strip().lower():
             inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
     sell_info_equipados = []  # {"level": lv, "sell_url": url, "sell_val": val}
@@ -2953,8 +2953,9 @@ def verificar_alvo_anel(client, estado):
         m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
         req_lv = int(m_lv.group(1)) if m_lv else 0
 
-        # Deve ser upgrade: req_level > pior equipado
-        if req_lv <= pior_level_eq:
+        # Modo upgrade (slots cheios): só anéis melhores que o pior equipado
+        # Modo compra (slot vazio): qualquer anel que o personagem possa usar
+        if a_comprar == 0 and req_lv <= pior_level_eq:
             continue
         # Personagem deve poder usar: req_level <= player_level (0 = sem requisito)
         if req_lv > 0 and req_lv > player_level:
@@ -3060,6 +3061,10 @@ def tentar_comprar_anel(client, estado):
     if gold_atual < alvo["gold_necessario"]:
         return False
 
+    if not alvo.get("url_compra"):
+        log.debug(f"  Anel: '{alvo.get('nome')}' sem url_compra — acumulando gold")
+        return False
+
     log.info(f"  💰 Gold ({gold_atual}g) >= aneis {alvo['quantidade']}x '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
 
     # Vende pior anel se necessário para abrir slot
@@ -3157,7 +3162,7 @@ def verificar_alvo_amuleto(client, estado):
     sell_val_amuleto_eq = 0
     inv_boxbg = None
     for _boxtop in soup.find_all("div", class_="box-top"):
-        if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
+        if "invent" in _boxtop.get_text().strip().lower():
             inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
     if inv_boxbg:
@@ -3286,6 +3291,10 @@ def tentar_comprar_amuleto(client, estado):
     if gold_atual < alvo["gold_necessario"]:
         return False
 
+    if not alvo.get("url_compra"):
+        log.debug(f"  Amuleto: '{alvo.get('nome')}' sem url_compra — acumulando gold")
+        return False
+
     log.info(f"  💰 Gold ({gold_atual}g) >= amuleto '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
 
     # Vende amuleto atual se necessário para liberar slot
@@ -3360,31 +3369,30 @@ def equipar_melhor_item(client):
         log.warning(f"  Equipar: erro ao carregar /landsitz/ — {e}")
         return
 
-    # Localiza seção inventário
+    # Localiza seção inventário (EN: inventory, PT: inventário, DE: Inventar, ES: Inventario)
     inv_bg = None
     for boxtop in soup.find_all("div", class_="box-top"):
         t = boxtop.get_text().strip().lower()
-        if "inventár" in t or "inventor" in t:
+        if "invent" in t:
             inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
             break
     if not inv_bg:
         return
 
     def parse_tier(tr_elem):
-        """Maior N em linhas de requisito do item (Condição/Condition/Requirement - X: N)."""
+        """Maior N em linhas de requisito do item (Condição/Condition/Requirement - X: N).
+        Tenta primeiro no span com font-size; cai back no texto completo do TR."""
         span = tr_elem.find("span", style=lambda s: s and "font-size" in s)
-        if not span:
-            return 0
+        txt = span.get_text() if span else tr_elem.get_text(separator=" ", strip=True)
         nums = re.findall(
             r"(?:Condi[çc][ãa]o|Condition|Requirement|Voraussetzung)\s*-\s*[^:]+:\s*(\d+)",
-            span.get_text(), re.IGNORECASE
+            txt, re.IGNORECASE
         )
         return max((int(n) for n in nums), default=0)
 
-    def slot_de_href(href):
+    def slot_de_href(href, tr=None):
         if "wid=" in href and "uwid" not in href:  return "weapon"
         if "sid=" in href and "usid" not in href:  return "shield"
-        if "armid=" in href:                        return "armor"
         if "rid=" in href:                          return "ring"
         if "aid=" in href:                          return "amulet"
         # Equip via iid= (id generico do inventario) — typ= indica o slot
@@ -3395,6 +3403,16 @@ def equipar_melhor_item(client):
                 if typ == 1: return "shield"
                 if typ == 2: return "weapon"
                 if typ == 3: return "armor"
+        # armid= é usado para armadura E aneis/amuletos em alguns servers KF
+        # — usa texto do TR para distinguir
+        if "armid=" in href:
+            if tr is not None:
+                _txt = tr.get_text(" ", strip=True).lower()
+                if re.search(r"\banel\b|\bring\b|anillo|ringe?\b", _txt):
+                    return "ring"
+                if re.search(r"\bamuleto\b|\bamulet\b|amulette?\b", _txt):
+                    return "amulet"
+            return "armor"
         return None
 
     # Monta mapa nome → tier de todos os itens do inventário
@@ -3428,7 +3446,7 @@ def equipar_melhor_item(client):
     # Percorre itens não equipados com botão Equip
     for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
         tr_txt = tr.get_text()
-        if "equipped" in tr_txt.lower() or "equipado" in tr_txt.lower():
+        if re.search(r"equipped|equipado|ausger[üu]stet", tr_txt, re.IGNORECASE):
             continue
 
         equip_a = tr.find("a", href=lambda h: h and "/landsitz/?" in h
@@ -3442,7 +3460,7 @@ def equipar_melhor_item(client):
         nome = strong.get_text(strip=True)
 
         href = equip_a["href"]
-        slot = slot_de_href(href)
+        slot = slot_de_href(href, tr)
         if not slot:
             continue
 
@@ -3516,7 +3534,7 @@ def limpar_duplicatas_inventario(client):
         # Localiza seção inventário da loja
         inv_bg = None
         for boxtop in soup.find_all("div", class_="box-top"):
-            if "inventor" in boxtop.get_text().strip().lower():
+            if "invent" in boxtop.get_text().strip().lower():
                 inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
                 break
         if not inv_bg:
