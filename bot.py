@@ -2909,6 +2909,7 @@ def verificar_alvo_anel(client, estado):
         if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
             inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
+    sell_info_equipados = []  # {"level": lv, "sell_url": url, "sell_val": val}
     if inv_boxbg:
         for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
             _tr_txt = tr.get_text(separator=" ", strip=True)
@@ -2919,17 +2920,15 @@ def verificar_alvo_anel(client, estado):
                 _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
                 lv = int(_m_lv.group(1)) if _m_lv else 0
                 levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
+                sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+                sell_url = sell_a["href"] if sell_a else None
+                m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
+                sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
+                sell_info_equipados.append({"level": lv, "sell_url": sell_url, "sell_val": sell_val})
 
-    log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), levels equipados: {levels_equipados}, player_lv={player_level}")
+    log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), levels equipados: {levels_equipados}, sell_info: {sell_info_equipados}, player_lv={player_level}")
 
     a_comprar = max(0, MAX_ANEIS - total_aneis)
-    if a_comprar == 0:
-        if estado.get("anel_alvo"):
-            log.debug("  Anel: já temos 2 aneis — limpando alvo")
-            del estado["anel_alvo"]
-            salvar_estado(estado)
-        return
-
     pior_level_eq = min(levels_equipados) if levels_equipados else -1
 
     # Varre shop listing (pula TRs da seção inventário para não misturar dados)
@@ -3009,21 +3008,38 @@ def verificar_alvo_anel(client, estado):
 
     # Melhor: maior req_level (mais poderoso), desempate por maior gold
     melhor = max(lista, key=lambda x: (x.get("req_level", 0), x.get("gold_necessario", 0)))
-    gold_total = melhor["gold_necessario"] * a_comprar
+    gold_bruto = melhor["gold_necessario"]
+
+    # Se slots cheios, vender pior anel para abrir espaço
+    vender_pior = None
+    if a_comprar == 0:
+        if sell_info_equipados:
+            pior = min(sell_info_equipados, key=lambda x: x["level"])
+            if pior.get("sell_url"):
+                vender_pior = pior
+        a_comprar = 1
+
+    gold_venda_pior = vender_pior["sell_val"] if vender_pior else 0
+    gold_necessario = max(0, gold_bruto - gold_venda_pior) * a_comprar
+
     anterior = estado.get("anel_alvo", {})
     if anterior.get("nome") != melhor["nome"] or anterior.get("quantidade") != a_comprar:
         log.info(
-            f"  💍 Alvo anel: {a_comprar}x '{melhor['nome']}' @ {melhor['gold_necessario']}g/un = {gold_total}g "
+            f"  💍 Alvo anel: {a_comprar}x '{melhor['nome']}' @ {gold_bruto}g/un "
+            f"(vende pior={gold_venda_pior}g → custo líq={gold_necessario}g) "
             f"(req_lv {melhor.get('req_level',0)}, pior_eq={pior_level_eq}, player_lv={player_level})"
         )
 
     estado["anel_alvo"] = {
         "nome":            melhor["nome"],
-        "gold_necessario": gold_total,
-        "gold_unitario":   melhor["gold_necessario"],
+        "gold_necessario": gold_necessario,
+        "gold_unitario":   gold_bruto,
         "url_compra":      melhor["url_compra"],
         "quantidade":      a_comprar,
     }
+    if vender_pior:
+        estado["anel_alvo"]["url_venda_pior"] = vender_pior["sell_url"]
+        estado["anel_alvo"]["gold_venda_pior"] = vender_pior["sell_val"]
     salvar_estado(estado)
     publicar_dashboard_equipamento(estado)
 
@@ -3045,6 +3061,14 @@ def tentar_comprar_anel(client, estado):
         return False
 
     log.info(f"  💰 Gold ({gold_atual}g) >= aneis {alvo['quantidade']}x '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
+
+    # Vende pior anel se necessário para abrir slot
+    if alvo.get("url_venda_pior"):
+        try:
+            gold_recebido = vender_item_atual(client, alvo["url_venda_pior"])
+            log.info(f"  Anel: vendeu pior anel equipado — recebeu {gold_recebido}g")
+        except Exception as e:
+            log.warning(f"  Anel: erro ao vender pior anel — {e}")
 
     comprados = 0
     for i in range(alvo["quantidade"]):
@@ -3129,6 +3153,8 @@ def verificar_alvo_amuleto(client, estado):
     # Localiza seção inventário para contagem e level do equipado
     total_amuletos = 0
     level_amuleto_eq = -1
+    sell_url_amuleto_eq = None
+    sell_val_amuleto_eq = 0
     inv_boxbg = None
     for _boxtop in soup.find_all("div", class_="box-top"):
         if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
@@ -3143,8 +3169,12 @@ def verificar_alvo_amuleto(client, estado):
             if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
                 _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
                 level_amuleto_eq = int(_m_lv.group(1)) if _m_lv else 0
+                sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+                sell_url_amuleto_eq = sell_a["href"] if sell_a else None
+                m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
+                sell_val_amuleto_eq = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
 
-    log.debug(f"  Amuleto: {total_amuletos} total, level_eq={level_amuleto_eq}, player_lv={player_level}")
+    log.debug(f"  Amuleto: {total_amuletos} total, level_eq={level_amuleto_eq}, sell_url={sell_url_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
 
     # Varre shop listing (pula TRs da seção inventário)
     inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
@@ -3218,18 +3248,25 @@ def verificar_alvo_amuleto(client, estado):
         return
 
     melhor = max(lista, key=lambda x: (x.get("req_level", 0), x.get("gold_necessario", 0)))
+    gold_bruto_amu = melhor["gold_necessario"]
+    gold_necessario_amu = max(0, gold_bruto_amu - sell_val_amuleto_eq)
     anterior = estado.get("amuleto_alvo", {})
     if anterior.get("nome") != melhor["nome"]:
         log.info(
-            f"  📿 Alvo amuleto: '{melhor['nome']}' @ {melhor['gold_necessario']}g "
+            f"  📿 Alvo amuleto: '{melhor['nome']}' @ {gold_bruto_amu}g "
+            f"(vende atual={sell_val_amuleto_eq}g → custo líq={gold_necessario_amu}g) "
             f"(req_lv {melhor.get('req_level',0)}, eq_lv={level_amuleto_eq}, player_lv={player_level})"
         )
 
     estado["amuleto_alvo"] = {
         "nome":            melhor["nome"],
-        "gold_necessario": melhor["gold_necessario"],
+        "gold_necessario": gold_necessario_amu,
+        "gold_bruto":      gold_bruto_amu,
         "url_compra":      melhor["url_compra"],
     }
+    if sell_url_amuleto_eq:
+        estado["amuleto_alvo"]["url_venda_atual"] = sell_url_amuleto_eq
+        estado["amuleto_alvo"]["gold_venda_atual"] = sell_val_amuleto_eq
     salvar_estado(estado)
     publicar_dashboard_equipamento(estado)
 
@@ -3250,6 +3287,14 @@ def tentar_comprar_amuleto(client, estado):
         return False
 
     log.info(f"  💰 Gold ({gold_atual}g) >= amuleto '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
+
+    # Vende amuleto atual se necessário para liberar slot
+    if alvo.get("url_venda_atual"):
+        try:
+            gold_recebido = vender_item_atual(client, alvo["url_venda_atual"])
+            log.info(f"  Amuleto: vendeu amuleto atual — recebeu {gold_recebido}g")
+        except Exception as e:
+            log.warning(f"  Amuleto: erro ao vender amuleto atual — {e}")
 
     try:
         soup = client.get(alvo["url_compra"], fragment=False)
