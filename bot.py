@@ -2196,10 +2196,11 @@ def verificar_alvo_equipamento(client, estado):
                     "req_skill_tipo": item.get("req_skill_tipo"),
                 })
 
-    # Determina item_alvo — MELHOR item disponível (maior gold_bruto) por categoria
-    # Lógica: o item mais caro com skill atendida = o mais poderoso que o personagem pode usar
+    # Determina item_alvo — por categoria pega o melhor (maior req_skill/gold_bruto),
+    # depois entre categorias pega o MAIS BARATO (gold_necessario) para comprar logo
+    # e equipar todas as categorias o mais rápido possível.
     def _melhor_da_lista(lista):
-        """Seleciona o melhor item de uma lista: max(req_skill_valor, gold_bruto) por categoria, depois global por gold_bruto."""
+        """Por categoria: melhor item (max req_skill_valor, gold_bruto). Entre categorias: mais barato (min gold_necessario)."""
         por_cat = {}
         for c in lista:
             cat = c["categoria"]
@@ -2207,7 +2208,7 @@ def verificar_alvo_equipamento(client, estado):
             c_key = (c.get("req_skill_valor", 0), c["gold_bruto"])
             if prev is None or c_key > (prev.get("req_skill_valor", 0), prev["gold_bruto"]):
                 por_cat[cat] = c
-        return max(por_cat.values(), key=lambda x: x["gold_bruto"]) if por_cat else None
+        return min(por_cat.values(), key=lambda x: x["gold_necessario"]) if por_cat else None
 
     if candidatos:
         log.debug(f"  Candidatos ({len(candidatos)}): " +
@@ -4453,10 +4454,17 @@ def loop_rapido(client):
                     estado["gold_atual"] = gold_fresh
                     salvar_estado(estado)
                     # Verifica se acumulou gold suficiente para comprar item/pedra alvo
-                    try:
-                        tentar_comprar_item_alvo(client, estado)
-                    except Exception as e:
-                        log.warning(f"Compra item alvo: erro — {e}")
+                    # Loop: compra múltiplos itens por ciclo (ex: escudo + armadura ao mesmo tempo)
+                    _compras_ciclo = 0
+                    while COMPRAR_EQUIPAMENTO and _compras_ciclo < 5:
+                        try:
+                            estado = carregar_estado()
+                            if not tentar_comprar_item_alvo(client, estado):
+                                break
+                            _compras_ciclo += 1
+                        except Exception as e:
+                            log.warning(f"Compra item alvo: erro — {e}")
+                            break
                     try:
                         tentar_comprar_pedra(client, estado)
                     except Exception as e:
