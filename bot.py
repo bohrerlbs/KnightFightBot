@@ -4186,7 +4186,7 @@ def recarregar_config():
         log.warning(f"Erro ao recarregar config: {e}")
 
 def loop_lento(client):
-    """A cada 1h: ranking + pig list + status. Às 3h: cache de perfis."""
+    """A cada 1h: status + atributos + skills + scan de lojas. Às 3h: cache de perfis."""
     while True:
         log.info("\n[LENTO] Iniciando ciclo horário...")
         try:
@@ -4294,21 +4294,36 @@ def loop_lento(client):
             except Exception as e:
                 log.warning(f"Alvo amuleto loop lento: erro — {e}")
 
-            # Ranking + pig list
+        except Exception as e:
+            log.error(f"Erro loop lento: {e}", exc_info=True)
+
+        time.sleep(INTERVALO_LENTO_SEG)
+
+
+def loop_ranking(client):
+    """
+    Loop independente (1h): scrape ranking + atualiza pig list.
+    Nunca bloqueia por taverna ou missão — só faz leitura de dados públicos.
+    """
+    while True:
+        try:
+            log.info("\n[RANKING] Coletando ranking e atualizando pig list...")
             jogadores = scrape_ranking(client)
             if jogadores:
                 salvar_snapshot(jogadores)
                 snaps = carregar_snapshots()
                 if len(snaps) >= 2:
                     pig_list = carregar_pig_list()
-                    pig_list = atualizar_pig_list(pig_list, snaps[-2]["jogadores"], snaps[-1]["jogadores"], estado)
+                    pig_list = atualizar_pig_list(
+                        pig_list, snaps[-2]["jogadores"], snaps[-1]["jogadores"], carregar_estado()
+                    )
                     salvar_pig_list(pig_list)
                     atualizar_ciclo_file("pig_list", pig_list)
+                    log.info(f"[RANKING] Pig list atualizada: {len(pig_list)} candidatos")
                 else:
-                    log.info("Aguardando 2º snapshot para comparar (próxima hora)")
-
+                    log.info("[RANKING] Aguardando 2º snapshot para comparar (próxima hora)")
         except Exception as e:
-            log.error(f"Erro loop lento: {e}", exc_info=True)
+            log.error(f"Erro loop ranking: {e}", exc_info=True)
 
         time.sleep(INTERVALO_LENTO_SEG)
 
@@ -4611,10 +4626,10 @@ def _taverna_1h(client):
     imunizar_agora(client)
 
 
-def loop_rapido(client):
+def loop_acoes(client):
     """
-    A cada 2min: verifica CD → ataca pig / imuniza / faz missão.
-    REGRA: missão e ataque compartilham o mesmo CD. Nunca os dois juntos.
+    Loop de ações: dorme enquanto em taverna ou missão/CD, acorda quando libre.
+    Ao acordar: varre lojas → compra → HP → treino → ataca pig / imuniza / missão.
     """
     while True:
         try:
@@ -4625,90 +4640,97 @@ def loop_rapido(client):
                 time.sleep(INTERVALO_RAPIDO_SEG)
                 continue
 
-            estado = carregar_estado()
-            imun = imunidade_restante(estado)
-            log.info(f"\n⚡ [RÁPIDO] Imunidade: {fmt_t(imun)}")
+            # ── Taverna: dorme até a missão terminar ─────────────────────────
+            em_tav, seg_tav = verificar_taverna_ativa(client)
+            if em_tav:
+                if seg_tav > 60:
+                    log.info(f"  Taverna ativa: {fmt_t(seg_tav)} restantes — dormindo até acabar")
+                    time.sleep(seg_tav + 30)
+                try:
+                    sair_taverna(client)
+                except Exception:
+                    pass
+                continue
 
-            # Atualiza gold real da conta a cada ciclo
+            # ── CD de missão/ataque: dorme até liberar ───────────────────────
+            rv = verificar_raubzug(client)
+            estado = carregar_estado()
+            if rv["segundos_cd"] > 0:
+                estado["cooldown_seg"] = rv["segundos_cd"]
+                salvar_estado(estado)
+            atualizar_ciclo_file("estado", estado)
+
+            if not rv["livre"] and rv["segundos_cd"] > 0:
+                seg_cd = rv["segundos_cd"]
+                log.info(f"  Em CD: {fmt_t(seg_cd)} — dormindo até acabar")
+                atualizar_ciclo_file("missao", {
+                    "status": "em_cd",
+                    "termina_em": (agora() + timedelta(seconds=seg_cd)).isoformat(),
+                    "segundos": seg_cd,
+                })
+                time.sleep(seg_cd + 10)
+                continue
+
+            # ── LIVRE: personagem disponível — faz tudo ──────────────────────
+            imun = imunidade_restante(estado)
+            log.info(f"\n⚡ [AÇÕES] Livre! Imunidade: {fmt_t(imun)}")
+
+            # Atualiza gold real da conta
             try:
                 gold_fresh, gems_fresh = parsear_gold_gems(client)
                 if gold_fresh > 0:
-                    # Só salva se conseguiu ler gold positivo (evita falso 0 por erro de parsing)
                     estado["gold_atual"] = gold_fresh
                     salvar_estado(estado)
-                    # Verifica se acumulou gold suficiente para comprar item/pedra alvo
-                    # Loop: compra múltiplos itens por ciclo (ex: escudo + armadura ao mesmo tempo)
-                    _compras_ciclo = 0
-                    while COMPRAR_EQUIPAMENTO and _compras_ciclo < 5:
-                        try:
-                            estado = carregar_estado()
-                            if not tentar_comprar_item_alvo(client, estado):
-                                break
-                            _compras_ciclo += 1
-                        except Exception as e:
-                            log.warning(f"Compra item alvo: erro — {e}")
-                            break
-                    try:
-                        tentar_comprar_pedra(client, estado)
-                    except Exception as e:
-                        log.warning(f"Compra pedra alvo: erro — {e}")
-                    try:
-                        tentar_comprar_anel(client, estado)
-                    except Exception as e:
-                        log.warning(f"Compra anel alvo: erro — {e}")
-                    try:
-                        tentar_comprar_amuleto(client, estado)
-                    except Exception as e:
-                        log.warning(f"Compra amuleto alvo: erro — {e}")
                 elif gold_fresh == 0 and estado.get("gold_atual", 0) > 0:
-                    # Gold lido como 0 mas estado tinha valor — não sobrescreve sem confirmar
                     log.debug(f"Gold lido como 0 (estado={estado.get('gold_atual')}g) — aguardando confirmação")
             except Exception:
                 pass
 
-            # A cada 6 ciclos (~12min), re-escaneia lojas de equipamentos
-            # Garante que item_alvo seja atualizado mesmo se a varredura anterior
-            # ocorreu enquanto o personagem estava em missão/taverna
-            _scan_ciclo = getattr(loop_rapido, '_scan_ciclo', 0) + 1
-            loop_rapido._scan_ciclo = _scan_ciclo
-            if _scan_ciclo % 6 == 0 and COMPRAR_EQUIPAMENTO:
+            # Scan de lojas (sempre que o personagem está livre)
+            if COMPRAR_EQUIPAMENTO:
                 try:
-                    log.debug("  Scan periódico: verificando lojas de equipamentos...")
-                    _est_scan = carregar_estado()
-                    verificar_alvo_equipamento(client, _est_scan)
-                    _est_scan = carregar_estado()
-                    verificar_alvo_anel(client, _est_scan)
-                    _est_scan = carregar_estado()
-                    verificar_alvo_amuleto(client, _est_scan)
+                    verificar_alvo_equipamento(client, carregar_estado())
                 except Exception as e:
-                    log.warning(f"Scan periódico loja: erro — {e}")
+                    log.warning(f"Scan equipamento: erro — {e}")
+                try:
+                    verificar_alvo_pedra(client, carregar_estado())
+                except Exception as e:
+                    log.warning(f"Scan pedra: erro — {e}")
+                try:
+                    verificar_alvo_anel(client, carregar_estado())
+                except Exception as e:
+                    log.warning(f"Scan anel: erro — {e}")
+                try:
+                    verificar_alvo_amuleto(client, carregar_estado())
+                except Exception as e:
+                    log.warning(f"Scan amuleto: erro — {e}")
 
-            rv = verificar_raubzug(client)
-            if rv["segundos_cd"] > 0:
-                estado["cooldown_seg"] = rv["segundos_cd"]
-            atualizar_ciclo_file("estado", estado)
+            # Compras (usa gold do estado atualizado)
+            estado = carregar_estado()
+            _compras_ciclo = 0
+            while COMPRAR_EQUIPAMENTO and _compras_ciclo < 5:
+                try:
+                    estado = carregar_estado()
+                    if not tentar_comprar_item_alvo(client, estado):
+                        break
+                    _compras_ciclo += 1
+                except Exception as e:
+                    log.warning(f"Compra item alvo: erro — {e}")
+                    break
+            try:
+                tentar_comprar_pedra(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Compra pedra alvo: erro — {e}")
+            try:
+                tentar_comprar_anel(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Compra anel alvo: erro — {e}")
+            try:
+                tentar_comprar_amuleto(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Compra amuleto alvo: erro — {e}")
 
-            if not rv["livre"] and rv["segundos_cd"] > 0:
-                log.info(f"  Em CD: {fmt_t(rv['segundos_cd'])} restantes")
-                atualizar_ciclo_file("missao", {
-                    "status": "em_cd",
-                    "termina_em": (agora() + timedelta(seconds=rv["segundos_cd"])).isoformat(),
-                    "segundos": rv["segundos_cd"],
-                })
-                # Mesmo em CD, verifica se precisa imunizar
-                imun_cd = imunidade_restante(carregar_estado())
-                if imun_cd < RENOVAR_IMUNIDADE_SEG:
-                    log.warning(f"⚠ Em CD mas imunidade expirando ({fmt_t(imun_cd)}) — tentando imunizar...")
-                    cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
-                    if cache_ok:
-                        score_min_cd = SCORE_MIN_IMUNIZACAO
-                        alvo_cd = buscar_alvo_imunizacao(client, carregar_estado(), score_min_cd)
-                        if alvo_cd:
-                            executar_ataque(client, alvo_cd["user_id"])
-                            log.info(f"Imunizado (durante CD) com {alvo_cd['nome']}")
-                if rv["segundos_cd"] > 0:
-                    time.sleep(min(rv["segundos_cd"], INTERVALO_RAPIDO_SEG))
-                continue
+            estado = carregar_estado()
 
             # LIVRE — decide ação
 
@@ -5308,13 +5330,12 @@ if __name__ == "__main__":
         except Exception as e:
             log.warning(f"Erro ao verificar taverna inicial: {e}")
 
-        # ── Loop rápido começa AGORA — não espera ranking ──
-        threading.Thread(target=loop_rapido, args=(client,), daemon=True).start()
-        log.info("Loop rápido iniciado — bot já está agindo!")
+        # ── Loop de ações começa AGORA ──────────────────────────────────────
+        threading.Thread(target=loop_acoes, args=(client,), daemon=True).start()
+        log.info("Loop de ações iniciado — bot já está agindo!")
 
-        # ── Ranking e cache rodam em background sem bloquear ──
+        # ── Background: skills + scan lojas + ranking inicial ───────────────
         def inicializar_background():
-            # Distribui pontos de skill pendentes ao iniciar
             try:
                 distribuir_pontos_skill(client)
             except Exception as e:
@@ -5354,7 +5375,10 @@ if __name__ == "__main__":
 
         threading.Thread(target=inicializar_background, daemon=True).start()
 
-        # ── Loop lento continua rodando a cada 1h ──
+        # ── Loop ranking (1h): ranking + pig list, independente do estado do personagem ──
+        threading.Thread(target=loop_ranking, args=(client,), daemon=True).start()
+
+        # ── Loop lento (1h): status + cache de perfis ────────────────────────
         threading.Thread(target=loop_lento, args=(client,), daemon=True).start()
 
         log.info("Bot rodando. Ctrl+C para parar.")
