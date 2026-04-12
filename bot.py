@@ -4186,7 +4186,7 @@ def recarregar_config():
         log.warning(f"Erro ao recarregar config: {e}")
 
 def loop_lento(client):
-    """A cada 1h: status + atributos + skills + scan de lojas. Às 3h: cache de perfis."""
+    """A cada 1h: status do personagem + atributos + recalculo de scores + skills."""
     while True:
         log.info("\n[LENTO] Iniciando ciclo horário...")
         try:
@@ -4258,41 +4258,11 @@ def loop_lento(client):
             except Exception as e:
                 log.error(f"Erro status: {e}")
 
-            # Cache de perfis às 3h (ou se expirou há mais de 20h)
-            # Usa cache_precisa_atualizar() como principal gatilho para não depender
-            # de o loop cair exatamente na hora certa (ciclo é de 1h, pode pular a hora)
-            hora_atual = agora().hour
-            cache_velho = cache_precisa_atualizar()
-            janela_3h = abs(hora_atual - HORA_CACHE_PERFIS) <= 1  # janela de ±1h
-            if cache_velho and janela_3h:
-                log.info(f"Atualizando cache de perfis (hora={hora_atual}h, janela={HORA_CACHE_PERFIS}h)...")
-                coletar_perfis_cache(client)
-            elif cache_velho and seg_desde(carregar_perfis_cache().get("atualizado_em","")) / 3600 >= 25:
-                # Fallback: se passou 25h sem atualizar (perdeu a janela), atualiza imediatamente
-                log.warning(f"Cache de perfis com +25h sem atualizar — forçando varredura agora...")
-                coletar_perfis_cache(client)
-
             # Distribui pontos de skill pendentes (fallback horário)
             try:
                 distribuir_pontos_skill(client)
             except Exception as e:
                 log.warning(f"Skills loop lento: erro — {e}")
-            try:
-                verificar_alvo_equipamento(client, carregar_estado())
-            except Exception as e:
-                log.warning(f"Alvo equipamento loop lento: erro — {e}")
-            try:
-                verificar_alvo_pedra(client, carregar_estado())
-            except Exception as e:
-                log.warning(f"Alvo pedra loop lento: erro — {e}")
-            try:
-                verificar_alvo_anel(client, carregar_estado())
-            except Exception as e:
-                log.warning(f"Alvo anel loop lento: erro — {e}")
-            try:
-                verificar_alvo_amuleto(client, carregar_estado())
-            except Exception as e:
-                log.warning(f"Alvo amuleto loop lento: erro — {e}")
 
         except Exception as e:
             log.error(f"Erro loop lento: {e}", exc_info=True)
@@ -4302,7 +4272,7 @@ def loop_lento(client):
 
 def loop_ranking(client):
     """
-    Loop independente (1h): scrape ranking + atualiza pig list.
+    Loop independente (1h): scrape ranking + pig list + cache de perfis.
     Nunca bloqueia por taverna ou missão — só faz leitura de dados públicos.
     """
     while True:
@@ -4322,6 +4292,18 @@ def loop_ranking(client):
                     log.info(f"[RANKING] Pig list atualizada: {len(pig_list)} candidatos")
                 else:
                     log.info("[RANKING] Aguardando 2º snapshot para comparar (próxima hora)")
+
+            # Cache de perfis às 3h (ou fallback se +25h sem atualizar)
+            hora_atual = agora().hour
+            cache_velho = cache_precisa_atualizar()
+            janela_3h = abs(hora_atual - HORA_CACHE_PERFIS) <= 1
+            if cache_velho and janela_3h:
+                log.info(f"[RANKING] Atualizando cache de perfis (hora={hora_atual}h)...")
+                coletar_perfis_cache(client)
+            elif cache_velho and seg_desde(carregar_perfis_cache().get("atualizado_em", "")) / 3600 >= 25:
+                log.warning("[RANKING] Cache +25h sem atualizar — forçando varredura...")
+                coletar_perfis_cache(client)
+
         except Exception as e:
             log.error(f"Erro loop ranking: {e}", exc_info=True)
 
