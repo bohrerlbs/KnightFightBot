@@ -3342,6 +3342,14 @@ def equipar_melhor_item(client):
         if "armid=" in href:                        return "armor"
         if "rid=" in href:                          return "ring"
         if "aid=" in href:                          return "amulet"
+        # Equip via iid= (id generico do inventario) — typ= indica o slot
+        if "iid=" in href:
+            m = re.search(r"[?&]typ=(\d+)", href)
+            if m:
+                typ = int(m.group(1))
+                if typ == 1: return "shield"
+                if typ == 2: return "weapon"
+                if typ == 3: return "armor"
         return None
 
     # Monta mapa nome → tier de todos os itens do inventário
