@@ -3241,8 +3241,12 @@ def equipar_melhor_item(client):
             log.debug(f"  Equipar: '{nome}' (tier {tier_novo}) não é melhor que {tiers_eq} — skip")
             continue
 
-        from urllib.parse import urlparse
-        url = urlparse(href).path if href.startswith("http") else href
+        from urllib.parse import urlparse as _up_eq
+        if href.startswith("http"):
+            _p_eq = _up_eq(href)
+            url = _p_eq.path + ("?" + _p_eq.query if _p_eq.query else "")
+        else:
+            url = href
         log.info(f"  Equipando '{nome}' (tier {tier_novo} > {tiers_eq}, slot {slot})")
         try:
             client.get(url, fragment=False)
@@ -3353,10 +3357,23 @@ def verificar_treinamento(client):
         amuleto_alvo = estado_t.get("amuleto_alvo")
         if item_alvo:
             gb = item_alvo.get("gold_bruto", item_alvo.get("gold_necessario", 0))
-            # Ignora reserva com preço inválido (< 50g = bug de parsing)
-            if gb >= 50:
-                gold_reservado = gb
-                motivo_reserva = item_alvo["nome"]
+            if 0 < gb < 50:
+                # Preço inválido (parsing antigo) — descarta e re-escaneia
+                log.warning(f"  Treinamento: item_alvo '{item_alvo['nome']}' com preço inválido ({gb}g) — descartando")
+                del estado_t["item_alvo"]
+                salvar_estado(estado_t)
+                try:
+                    verificar_alvo_equipamento(client, estado_t)
+                    estado_t = carregar_estado()
+                    item_alvo = estado_t.get("item_alvo")
+                except Exception:
+                    item_alvo = None
+            if item_alvo:
+                gb = item_alvo.get("gold_bruto", item_alvo.get("gold_necessario", 0))
+                if gb >= 50:
+                    # Reserva gold_necessario (não gold_bruto): o bot vende o atual para compensar
+                    gold_reservado = item_alvo.get("gold_necessario", gb)
+                    motivo_reserva = item_alvo["nome"]
         elif pedra_alvo:
             gold_reservado = pedra_alvo["gold_necessario"]
             motivo_reserva = pedra_alvo["nome"]
