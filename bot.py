@@ -4720,6 +4720,13 @@ def loop_acoes(client):
             except Exception as e:
                 log.warning(f"Compra amuleto alvo: erro — {e}")
 
+            # Equipa itens do inventário que ainda não foram equipados
+            if COMPRAR_EQUIPAMENTO:
+                try:
+                    equipar_melhor_item(client)
+                except Exception as e:
+                    log.warning(f"Equipar inventário: erro — {e}")
+
             estado = carregar_estado()
 
             # LIVRE — decide ação
