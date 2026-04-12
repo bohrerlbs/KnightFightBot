@@ -3433,6 +3433,91 @@ def equipar_melhor_item(client):
             log.warning(f"  Equipar '{nome}': erro — {e}")
 
 
+def limpar_duplicatas_inventario(client):
+    """
+    Para cada loja, verifica duplicatas no inventário e vende os piores:
+    - weapon, shield, armor, amulet: mantém 1 (maior tier)
+    - ring: mantém 2 (2 maiores tier)
+    Deve ser chamado APÓS equipar_melhor_item (que já equipou o melhor).
+    """
+    def _tier_tr(tr):
+        span = tr.find("span", style=lambda s: s and "font-size" in s)
+        if not span:
+            return 0
+        nums = re.findall(
+            r"(?:Condi[çc][ãa]o|Condition|Requirement|Voraussetzung)\s*-\s*[^:]+:\s*(\d+)",
+            span.get_text(), re.IGNORECASE
+        )
+        return max((int(n) for n in nums), default=0)
+
+    lojas = [
+        ("/shop/waffen/",     1),
+        ("/shop/schilde/",    1),
+        ("/shop/ruestungen/", 1),
+        ("/shop/amulette/",   1),
+        ("/shop/ringe/",      2),
+    ]
+
+    for url_loja, max_qty in lojas:
+        try:
+            soup = client.get(url_loja, fragment=False)
+        except Exception as e:
+            log.warning(f"  Limpar inventário {url_loja}: erro — {e}")
+            continue
+
+        if _esta_bloqueado_por_missao(soup):
+            continue
+
+        # Localiza seção inventário da loja
+        inv_bg = None
+        for boxtop in soup.find_all("div", class_="box-top"):
+            if "inventor" in boxtop.get_text().strip().lower():
+                inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
+                break
+        if not inv_bg:
+            continue
+
+        # Coleta todos os itens com sell link (inventário real do jogador)
+        itens = []
+        for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
+            sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+            if not sell_a:
+                continue
+            tr_txt = tr.get_text()
+            is_eq = bool(re.search(r"equipped|equipado|ausger[üu]stet", tr_txt, re.IGNORECASE))
+            tier = _tier_tr(tr)
+            sell_href = sell_a["href"]
+            if sell_href.startswith("http"):
+                from urllib.parse import urlparse as _up_s
+                _p_s = _up_s(sell_href)
+                sell_href = _p_s.path + ("?" + _p_s.query if _p_s.query else "")
+            m_qty = re.search(r"(\d+)\s+item", tr_txt, re.IGNORECASE)
+            qty = int(m_qty.group(1)) if m_qty else 1
+            itens.append({"tier": tier, "equipado": is_eq, "sell_url": sell_href, "qty": qty})
+
+        total = sum(i["qty"] for i in itens)
+        if total <= max_qty:
+            continue
+
+        # Ordena: maior tier primeiro; entre iguais, equipado tem prioridade (fica)
+        itens.sort(key=lambda x: (-x["tier"], 0 if x["equipado"] else 1))
+
+        kept = 0
+        for item in itens:
+            to_keep = min(item["qty"], max_qty - kept)
+            to_sell = item["qty"] - to_keep
+            kept += to_keep
+            if to_sell <= 0:
+                continue
+            if item["equipado"]:
+                # Nunca tenta vender item equipado (inconsistência de dados)
+                log.debug(f"  Limpar: item equipado marcado para vender — ignorado")
+                continue
+            log.info(f"  Limpeza inventário {url_loja}: vendendo {to_sell}x tier={item['tier']}")
+            for _ in range(to_sell):
+                vender_item_atual(client, item["sell_url"])
+
+
 def rotina_encerramento_noturno(client):
     """
     Executada quando o horário de operação termina:
@@ -4721,11 +4806,16 @@ def loop_acoes(client):
                 log.warning(f"Compra amuleto alvo: erro — {e}")
 
             # Equipa itens do inventário que ainda não foram equipados
+            # e vende duplicatas/piores itens
             if COMPRAR_EQUIPAMENTO:
                 try:
                     equipar_melhor_item(client)
                 except Exception as e:
                     log.warning(f"Equipar inventário: erro — {e}")
+                try:
+                    limpar_duplicatas_inventario(client)
+                except Exception as e:
+                    log.warning(f"Limpar inventário: erro — {e}")
 
             estado = carregar_estado()
 
