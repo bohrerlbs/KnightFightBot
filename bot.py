@@ -1880,7 +1880,12 @@ def _parsear_shop_listagem(soup, tipo):
             from urllib.parse import urlparse as _up
             _p = _up(url_compra)
             url_compra = _p.path + ("?" + _p.query if _p.query else "")
-        return {"nome": nome, "gold_necessario": preco, "url_compra": url_compra, "categoria": tipo}
+        # Extrai nível de requisito (para comparação de upgrade em aneis/amuletos)
+        req_level = 0
+        m_rl = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr.get_text(separator=" "), re.IGNORECASE)
+        if m_rl:
+            req_level = int(m_rl.group(1))
+        return {"nome": nome, "gold_necessario": preco, "url_compra": url_compra, "categoria": tipo, "req_level": req_level}
 
     return None
 
@@ -2894,16 +2899,24 @@ def verificar_alvo_anel(client, estado):
         log.warning(f"  Anel: erro ao carregar loja — {e}")
         return
 
-    # Conta aneis: inventário + equipados (sell link na listagem = item próprio)
-    inv = parsear_inventario(soup)
-    aneis_inv = sum(inv.values())
-    # Aneis equipados aparecem na listagem com link de venda (/shop/sell/)
-    aneis_equipados = sum(
-        1 for tr in soup.find_all("tr", class_="mobile-cols-2")
-        if tr.find("a", href=lambda h: h and "/shop/sell/" in h)
-    )
-    total_aneis = aneis_inv + aneis_equipados
-    log.debug(f"  Anel: {aneis_equipados} equipados + {aneis_inv} inventário = {total_aneis} total")
+    # Conta total de aneis via seção inventário (evita sub-contagem de itens idênticos)
+    total_aneis = 0
+    tiers_aneis_equipados = []
+    for _boxtop in soup.find_all("div", class_="box-top"):
+        if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
+            _boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
+            if _boxbg:
+                for tr in _boxbg.find_all("tr", class_="mobile-cols-2"):
+                    _tr_txt = tr.get_text(separator=" ", strip=True)
+                    _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+                    qty = int(_m_qty.group(1)) if _m_qty else 1
+                    total_aneis += qty
+                    if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
+                        _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                        tier_eq = int(_m_lv.group(1)) if _m_lv else 0
+                        tiers_aneis_equipados.extend([tier_eq] * min(qty, MAX_ANEIS))
+            break
+    log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), tiers equipados: {tiers_aneis_equipados}")
 
     a_comprar = max(0, MAX_ANEIS - total_aneis)
     if a_comprar == 0:
@@ -2919,6 +2932,17 @@ def verificar_alvo_anel(client, estado):
             del estado["anel_alvo"]
             salvar_estado(estado)
         return
+
+    # Só compra se novo anel for melhor que o pior equipado (evita comprar anel pior)
+    if tiers_aneis_equipados:
+        pior_tier_eq = min(tiers_aneis_equipados)
+        novo_tier = melhor.get("req_level", 0)
+        if novo_tier <= pior_tier_eq:
+            log.debug(f"  Anel: '{melhor['nome']}' (req_lv {novo_tier}) não melhora pior equipado (req_lv {pior_tier_eq}) — skip")
+            if estado.get("anel_alvo"):
+                del estado["anel_alvo"]
+                salvar_estado(estado)
+            return
 
     gold_total = melhor["gold_necessario"] * a_comprar
     anterior = estado.get("anel_alvo", {})
@@ -3031,15 +3055,23 @@ def verificar_alvo_amuleto(client, estado):
         log.warning(f"  Amuleto: erro ao carregar loja — {e}")
         return
 
-    # Conta amuletos: inventário + equipado (sell link na listagem = item próprio)
-    inv = parsear_inventario(soup)
-    amuletos_inv = sum(inv.values())
-    amuletos_equipados = sum(
-        1 for tr in soup.find_all("tr", class_="mobile-cols-2")
-        if tr.find("a", href=lambda h: h and "/shop/sell/" in h)
-    )
-    total_amuletos = amuletos_inv + amuletos_equipados
-    log.debug(f"  Amuleto: {amuletos_equipados} equipados + {amuletos_inv} inventário = {total_amuletos} total")
+    # Conta total de amuletos via seção inventário
+    total_amuletos = 0
+    tier_amuleto_equipado = 0
+    for _boxtop in soup.find_all("div", class_="box-top"):
+        if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
+            _boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
+            if _boxbg:
+                for tr in _boxbg.find_all("tr", class_="mobile-cols-2"):
+                    _tr_txt = tr.get_text(separator=" ", strip=True)
+                    _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+                    qty = int(_m_qty.group(1)) if _m_qty else 1
+                    total_amuletos += qty
+                    if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
+                        _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                        tier_amuleto_equipado = int(_m_lv.group(1)) if _m_lv else 0
+            break
+    log.debug(f"  Amuleto: {total_amuletos} total (equipados+bolsa), tier equipado: {tier_amuleto_equipado}")
 
     if total_amuletos >= 1:
         if estado.get("amuleto_alvo"):
@@ -3054,6 +3086,16 @@ def verificar_alvo_amuleto(client, estado):
             del estado["amuleto_alvo"]
             salvar_estado(estado)
         return
+
+    # Só compra se novo amuleto for melhor que o equipado (caso haja um)
+    if tier_amuleto_equipado > 0:
+        novo_tier = melhor.get("req_level", 0)
+        if novo_tier <= tier_amuleto_equipado:
+            log.debug(f"  Amuleto: '{melhor['nome']}' (req_lv {novo_tier}) não melhora equipado (req_lv {tier_amuleto_equipado}) — skip")
+            if estado.get("amuleto_alvo"):
+                del estado["amuleto_alvo"]
+                salvar_estado(estado)
+            return
 
     anterior = estado.get("amuleto_alvo", {})
     if anterior.get("nome") != melhor["nome"]:
@@ -4499,6 +4541,23 @@ def loop_rapido(client):
                     log.debug(f"Gold lido como 0 (estado={estado.get('gold_atual')}g) — aguardando confirmação")
             except Exception:
                 pass
+
+            # A cada 6 ciclos (~12min), re-escaneia lojas de equipamentos
+            # Garante que item_alvo seja atualizado mesmo se a varredura anterior
+            # ocorreu enquanto o personagem estava em missão/taverna
+            _scan_ciclo = getattr(loop_rapido, '_scan_ciclo', 0) + 1
+            loop_rapido._scan_ciclo = _scan_ciclo
+            if _scan_ciclo % 6 == 0 and COMPRAR_EQUIPAMENTO:
+                try:
+                    log.debug("  Scan periódico: verificando lojas de equipamentos...")
+                    _est_scan = carregar_estado()
+                    verificar_alvo_equipamento(client, _est_scan)
+                    _est_scan = carregar_estado()
+                    verificar_alvo_anel(client, _est_scan)
+                    _est_scan = carregar_estado()
+                    verificar_alvo_amuleto(client, _est_scan)
+                except Exception as e:
+                    log.warning(f"Scan periódico loja: erro — {e}")
 
             rv = verificar_raubzug(client)
             if rv["segundos_cd"] > 0:
