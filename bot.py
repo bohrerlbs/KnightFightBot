@@ -2885,9 +2885,9 @@ def inserir_pedra_na_arma(client, alvo):
 def verificar_alvo_anel(client, estado):
     """
     Determina aneis a comprar. Máximo 2 simultâneos.
-    - Lê inventário direto da página /shop/ringe/ (seção Inventory)
-    - Busca melhor anel disponível por gold (sem gemas, com buy button)
-    - Salva em estado["anel_alvo"]
+    Lógica de upgrade por level:
+      - level_equipado >= level_loja → ignora (atual já é melhor ou igual)
+      - level_equipado < level_loja E level_loja <= level_personagem → compra/acumula gold
     """
     if not COMPRAR_EQUIPAMENTO:
         return
@@ -2899,24 +2899,28 @@ def verificar_alvo_anel(client, estado):
         log.warning(f"  Anel: erro ao carregar loja — {e}")
         return
 
-    # Conta total de aneis via seção inventário (evita sub-contagem de itens idênticos)
+    player_level = MY_STATS.get("level", estado.get("level", 0))
+
+    # Localiza seção inventário para contagem real e levels equipados
     total_aneis = 0
-    tiers_aneis_equipados = []
+    levels_equipados = []
+    inv_boxbg = None
     for _boxtop in soup.find_all("div", class_="box-top"):
         if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
-            _boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
-            if _boxbg:
-                for tr in _boxbg.find_all("tr", class_="mobile-cols-2"):
-                    _tr_txt = tr.get_text(separator=" ", strip=True)
-                    _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
-                    qty = int(_m_qty.group(1)) if _m_qty else 1
-                    total_aneis += qty
-                    if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
-                        _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
-                        tier_eq = int(_m_lv.group(1)) if _m_lv else 0
-                        tiers_aneis_equipados.extend([tier_eq] * min(qty, MAX_ANEIS))
+            inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
-    log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), tiers equipados: {tiers_aneis_equipados}")
+    if inv_boxbg:
+        for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
+            _tr_txt = tr.get_text(separator=" ", strip=True)
+            _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+            qty = int(_m_qty.group(1)) if _m_qty else 1
+            total_aneis += qty
+            if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
+                _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                lv = int(_m_lv.group(1)) if _m_lv else 0
+                levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
+
+    log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), levels equipados: {levels_equipados}, player_lv={player_level}")
 
     a_comprar = max(0, MAX_ANEIS - total_aneis)
     if a_comprar == 0:
@@ -2926,28 +2930,92 @@ def verificar_alvo_anel(client, estado):
             salvar_estado(estado)
         return
 
-    melhor = _parsear_shop_listagem(soup, "ringe")
-    if not melhor:
+    pior_level_eq = min(levels_equipados) if levels_equipados else -1
+
+    # Varre shop listing (pula TRs da seção inventário para não misturar dados)
+    inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
+    candidatos = []    # tem level certo + buy link (pode comprar agora)
+    ouro_bloq  = []    # tem level certo mas sem buy link (acumular gold)
+
+    for tr in soup.find_all("tr", class_="mobile-cols-2"):
+        if id(tr) in inv_tr_ids:
+            continue
+        # Pula itens cujo preço é gema
+        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+            continue
+        # Precisa ter preço em gold
+        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+            continue
+        # Pula itens já equipados (sell link na listagem)
+        if tr.find("a", href=lambda h: h and "/shop/sell/" in h):
+            continue
+
+        tr_txt = tr.get_text(separator=" ", strip=True)
+        m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
+        req_lv = int(m_lv.group(1)) if m_lv else 0
+
+        # Deve ser upgrade: req_level > pior equipado
+        if req_lv <= pior_level_eq:
+            continue
+        # Personagem deve poder usar: req_level <= player_level (0 = sem requisito)
+        if req_lv > 0 and req_lv > player_level:
+            continue
+
+        # Extrai preço (maior valor entre spans com goldstueck)
+        gold = 0
+        for span in tr.find_all("span"):
+            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            m = re.search(r"[\d.]+", span.get_text())
+            if m:
+                gold = max(gold, int(m.group().replace(".", "")))
+        if gold == 0:
+            m = re.search(r"\b(\d[\d.]+)\b", tr_txt)
+            if m:
+                gold = int(m.group(1).replace(".", ""))
+        if 0 < gold < 50:
+            continue  # preço inválido
+
+        nome = "Anel"
+        strong = tr.find("strong") or tr.find("b")
+        if strong:
+            nome = strong.get_text(strip=True)[:80]
+
+        buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+        url_compra = None
+        if buy_a:
+            href = buy_a["href"]
+            if href.startswith("http"):
+                from urllib.parse import urlparse as _up
+                _p = _up(href)
+                url_compra = _p.path + ("?" + _p.query if _p.query else "")
+            else:
+                url_compra = href
+
+        item = {"nome": nome, "gold_necessario": gold, "req_level": req_lv,
+                "url_compra": url_compra, "categoria": "ringe"}
+        if buy_a:
+            candidatos.append(item)
+        else:
+            ouro_bloq.append(item)
+
+    lista = candidatos or ouro_bloq
+    if not lista:
         if estado.get("anel_alvo"):
+            log.debug("  Anel: nenhum upgrade disponível — limpando alvo")
             del estado["anel_alvo"]
             salvar_estado(estado)
         return
 
-    # Só compra se novo anel for melhor que o pior equipado (evita comprar anel pior)
-    if tiers_aneis_equipados:
-        pior_tier_eq = min(tiers_aneis_equipados)
-        novo_tier = melhor.get("req_level", 0)
-        if novo_tier <= pior_tier_eq:
-            log.debug(f"  Anel: '{melhor['nome']}' (req_lv {novo_tier}) não melhora pior equipado (req_lv {pior_tier_eq}) — skip")
-            if estado.get("anel_alvo"):
-                del estado["anel_alvo"]
-                salvar_estado(estado)
-            return
-
+    # Melhor: maior req_level (mais poderoso), desempate por maior gold
+    melhor = max(lista, key=lambda x: (x.get("req_level", 0), x.get("gold_necessario", 0)))
     gold_total = melhor["gold_necessario"] * a_comprar
     anterior = estado.get("anel_alvo", {})
     if anterior.get("nome") != melhor["nome"] or anterior.get("quantidade") != a_comprar:
-        log.info(f"  💍 Alvo anel: {a_comprar}x '{melhor['nome']}' @ {melhor['gold_necessario']}g = {gold_total}g total")
+        log.info(
+            f"  💍 Alvo anel: {a_comprar}x '{melhor['nome']}' @ {melhor['gold_necessario']}g/un = {gold_total}g "
+            f"(req_lv {melhor.get('req_level',0)}, pior_eq={pior_level_eq}, player_lv={player_level})"
+        )
 
     estado["anel_alvo"] = {
         "nome":            melhor["nome"],
@@ -3042,9 +3110,10 @@ def tentar_comprar_anel(client, estado):
 def verificar_alvo_amuleto(client, estado):
     """
     Determina amuleto a comprar. Máximo 1.
-    - Lê inventário direto da página /shop/amulette/
-    - Busca melhor amuleto disponível por gold
-    - Salva em estado["amuleto_alvo"]
+    Lógica de upgrade por level:
+      - level_equipado >= level_loja → ignora (atual já é melhor ou igual)
+      - level_equipado < level_loja E level_loja <= level_personagem → compra/acumula gold
+    Se já tem 1 amuleto mas não é upgrade, não compra.
     """
     if not COMPRAR_EQUIPAMENTO:
         return
@@ -3055,51 +3124,106 @@ def verificar_alvo_amuleto(client, estado):
         log.warning(f"  Amuleto: erro ao carregar loja — {e}")
         return
 
-    # Conta total de amuletos via seção inventário
+    player_level = MY_STATS.get("level", estado.get("level", 0))
+
+    # Localiza seção inventário para contagem e level do equipado
     total_amuletos = 0
-    tier_amuleto_equipado = 0
+    level_amuleto_eq = -1
+    inv_boxbg = None
     for _boxtop in soup.find_all("div", class_="box-top"):
         if "inventor" in _boxtop.get_text().strip().lower() or "inventory" in _boxtop.get_text().strip().lower():
-            _boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
-            if _boxbg:
-                for tr in _boxbg.find_all("tr", class_="mobile-cols-2"):
-                    _tr_txt = tr.get_text(separator=" ", strip=True)
-                    _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
-                    qty = int(_m_qty.group(1)) if _m_qty else 1
-                    total_amuletos += qty
-                    if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
-                        _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
-                        tier_amuleto_equipado = int(_m_lv.group(1)) if _m_lv else 0
+            inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
-    log.debug(f"  Amuleto: {total_amuletos} total (equipados+bolsa), tier equipado: {tier_amuleto_equipado}")
+    if inv_boxbg:
+        for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
+            _tr_txt = tr.get_text(separator=" ", strip=True)
+            _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+            qty = int(_m_qty.group(1)) if _m_qty else 1
+            total_amuletos += qty
+            if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
+                _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                level_amuleto_eq = int(_m_lv.group(1)) if _m_lv else 0
 
-    if total_amuletos >= 1:
+    log.debug(f"  Amuleto: {total_amuletos} total, level_eq={level_amuleto_eq}, player_lv={player_level}")
+
+    # Varre shop listing (pula TRs da seção inventário)
+    inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
+    candidatos = []
+    ouro_bloq  = []
+
+    for tr in soup.find_all("tr", class_="mobile-cols-2"):
+        if id(tr) in inv_tr_ids:
+            continue
+        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+            continue
+        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+            continue
+        if tr.find("a", href=lambda h: h and "/shop/sell/" in h):
+            continue
+
+        tr_txt = tr.get_text(separator=" ", strip=True)
+        m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
+        req_lv = int(m_lv.group(1)) if m_lv else 0
+
+        # Deve ser upgrade: req_level > level do equipado atual
+        if req_lv <= level_amuleto_eq:
+            continue
+        # Personagem deve poder usar: req_level <= player_level
+        if req_lv > 0 and req_lv > player_level:
+            continue
+
+        gold = 0
+        for span in tr.find_all("span"):
+            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            m = re.search(r"[\d.]+", span.get_text())
+            if m:
+                gold = max(gold, int(m.group().replace(".", "")))
+        if gold == 0:
+            m = re.search(r"\b(\d[\d.]+)\b", tr_txt)
+            if m:
+                gold = int(m.group(1).replace(".", ""))
+        if 0 < gold < 50:
+            continue
+
+        nome = "Amuleto"
+        strong = tr.find("strong") or tr.find("b")
+        if strong:
+            nome = strong.get_text(strip=True)[:80]
+
+        buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+        url_compra = None
+        if buy_a:
+            href = buy_a["href"]
+            if href.startswith("http"):
+                from urllib.parse import urlparse as _up
+                _p = _up(href)
+                url_compra = _p.path + ("?" + _p.query if _p.query else "")
+            else:
+                url_compra = href
+
+        item = {"nome": nome, "gold_necessario": gold, "req_level": req_lv,
+                "url_compra": url_compra, "categoria": "amulette"}
+        if buy_a:
+            candidatos.append(item)
+        else:
+            ouro_bloq.append(item)
+
+    lista = candidatos or ouro_bloq
+    if not lista:
         if estado.get("amuleto_alvo"):
-            log.debug("  Amuleto: já temos 1 amuleto — limpando alvo")
+            log.debug("  Amuleto: nenhum upgrade disponível — limpando alvo")
             del estado["amuleto_alvo"]
             salvar_estado(estado)
         return
 
-    melhor = _parsear_shop_listagem(soup, "amulette")
-    if not melhor:
-        if estado.get("amuleto_alvo"):
-            del estado["amuleto_alvo"]
-            salvar_estado(estado)
-        return
-
-    # Só compra se novo amuleto for melhor que o equipado (caso haja um)
-    if tier_amuleto_equipado > 0:
-        novo_tier = melhor.get("req_level", 0)
-        if novo_tier <= tier_amuleto_equipado:
-            log.debug(f"  Amuleto: '{melhor['nome']}' (req_lv {novo_tier}) não melhora equipado (req_lv {tier_amuleto_equipado}) — skip")
-            if estado.get("amuleto_alvo"):
-                del estado["amuleto_alvo"]
-                salvar_estado(estado)
-            return
-
+    melhor = max(lista, key=lambda x: (x.get("req_level", 0), x.get("gold_necessario", 0)))
     anterior = estado.get("amuleto_alvo", {})
     if anterior.get("nome") != melhor["nome"]:
-        log.info(f"  📿 Alvo amuleto: '{melhor['nome']}' @ {melhor['gold_necessario']}g")
+        log.info(
+            f"  📿 Alvo amuleto: '{melhor['nome']}' @ {melhor['gold_necessario']}g "
+            f"(req_lv {melhor.get('req_level',0)}, eq_lv={level_amuleto_eq}, player_lv={player_level})"
+        )
 
     estado["amuleto_alvo"] = {
         "nome":            melhor["nome"],
