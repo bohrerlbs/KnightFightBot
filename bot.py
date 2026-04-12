@@ -1749,9 +1749,9 @@ def comprar_armadura_barata(client):
                 span_gold = span; break
         preco_list = 0
         if span_gold:
-            m = re.search(r"[\d.]+", span_gold.get_text())
+            m = re.search(r"[\d.,]+", span_gold.get_text())
             if m:
-                preco_list = int(m.group().replace(".", ""))
+                preco_list = int(m.group().replace(".", "").replace(",", ""))
         if preco_list < melhor_preco:
             melhor_preco = preco_list
             buy_a = a
@@ -1851,15 +1851,15 @@ def _parsear_shop_listagem(soup, tipo):
         for span in tr.find_all("span"):
             if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
                 continue
-            m = re.search(r"[\d.]+", span.get_text())
+            m = re.search(r"[\d.,]+", span.get_text())
             if m:
-                preco = int(m.group().replace(".", ""))
+                preco = int(m.group().replace(".", "").replace(",", ""))
                 break
         # Fallback: primeiro número do tr
         if preco == 0:
-            m = re.search(r"\b(\d[\d.]+)\b", tr.get_text())
+            m = re.search(r"\b(\d[\d.,]+)\b", tr.get_text())
             if m:
-                preco = int(m.group(1).replace(".", ""))
+                preco = int(m.group(1).replace(".", "").replace(",", ""))
 
         # Nome: tag <strong> ou <b> da td de info (class "t"), não da td com o botão
         nome = "Item"
@@ -1937,17 +1937,17 @@ def _parsear_shop_todos_itens(soup, tipo):
         for span in tr.find_all("span"):
             if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
                 continue
-            m = re.search(r"[\d.]+", span.get_text())
+            m = re.search(r"[\d.,]+", span.get_text())
             if m:
-                val = int(m.group().replace(".", ""))
+                val = int(m.group().replace(".", "").replace(",", ""))
                 if val > 0:
                     gold_candidatos.append(val)
         if gold_candidatos:
             gold = max(gold_candidatos)
         if gold == 0:
-            m = re.search(r"\b(\d[\d.]+)\b", tr.get_text())
+            m = re.search(r"\b(\d[\d.,]+)\b", tr.get_text())
             if m:
-                gold = int(m.group(1).replace(".", ""))
+                gold = int(m.group(1).replace(".", "").replace(",", ""))
         # Preços de itens no jogo custam no mínimo 50g — valor menor indica erro de parsing
         if 0 < gold < 50:
             log.debug(f"  Loja: preço {gold}g ignorado (< 50g, provável erro de parsing)")
@@ -2588,16 +2588,16 @@ def _parsear_pedra_bloqueada(soup):
         for span in tr.find_all("span"):
             if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
                 continue
-            m = re.search(r"[\d.]+", span.get_text())
+            m = re.search(r"[\d.,]+", span.get_text())
             if m:
-                preco = int(m.group().replace(".", ""))
+                preco = int(m.group().replace(".", "").replace(",", ""))
                 break
         if preco == 0:
             # fallback: número mais próximo do goldstueck no texto do tr
             txt_tr = tr.get_text(" ")
-            m = re.search(r"(\d[\d.]*)\s*$", txt_tr.split("goldstueck")[0] if "goldstueck" in txt_tr else "")
+            m = re.search(r"(\d[\d.,]*)\s*$", txt_tr.split("goldstueck")[0] if "goldstueck" in txt_tr else "")
             if m:
-                preco = int(m.group(1).replace(".", ""))
+                preco = int(m.group(1).replace(".", "").replace(",", ""))
         if preco <= 0:
             continue
 
@@ -2966,13 +2966,13 @@ def verificar_alvo_anel(client, estado):
         for span in tr.find_all("span"):
             if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
                 continue
-            m = re.search(r"[\d.]+", span.get_text())
+            m = re.search(r"[\d.,]+", span.get_text())
             if m:
-                gold = max(gold, int(m.group().replace(".", "")))
+                gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
         if gold == 0:
-            m = re.search(r"\b(\d[\d.]+)\b", tr_txt)
+            m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
             if m:
-                gold = int(m.group(1).replace(".", ""))
+                gold = int(m.group(1).replace(".", "").replace(",", ""))
         if 0 < gold < 50:
             continue  # preço inválido
 
@@ -3176,13 +3176,13 @@ def verificar_alvo_amuleto(client, estado):
         for span in tr.find_all("span"):
             if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
                 continue
-            m = re.search(r"[\d.]+", span.get_text())
+            m = re.search(r"[\d.,]+", span.get_text())
             if m:
-                gold = max(gold, int(m.group().replace(".", "")))
+                gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
         if gold == 0:
-            m = re.search(r"\b(\d[\d.]+)\b", tr_txt)
+            m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
             if m:
-                gold = int(m.group(1).replace(".", ""))
+                gold = int(m.group(1).replace(".", "").replace(",", ""))
         if 0 < gold < 50:
             continue
 
@@ -3590,8 +3590,8 @@ def verificar_treinamento(client):
             if "geschicklichkeit" in href and not BUILD_1MAO:
                 continue
             texto = a.get_text(separator=" ")
-            custo_m = re.search(r"[\d.]+", texto)
-            custo = int(custo_m.group().replace(".", "")) if custo_m else 0
+            custo_m = re.search(r"[\d.,]+", texto)
+            custo = int(custo_m.group().replace(".", "").replace(",", "")) if custo_m else 0
             segmento = href.strip("/").split("/")[-1]
             candidatos.append({"href": href, "custo": custo, "nome": nomes.get(segmento, segmento)})
 
