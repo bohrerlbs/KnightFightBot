@@ -2299,7 +2299,21 @@ def verificar_alvo_equipamento(client, estado):
         log.debug("  Alvo equipamento: todos shops bloqueados — mantendo item_alvo anterior")
         return
 
-    if candidatos:
+    # Urgentes em ouro_bloqueados (slot vazio, sem buy link ainda) têm prioridade
+    # sobre candidatos não-urgentes — preencher slot vazio é mais importante do que
+    # comprar upgrade quando o personagem já tem algo equipado.
+    urgentes_bloqueados = [o for o in ouro_bloqueados if o.get("urgente")]
+
+    if urgentes_bloqueados:
+        melhor = min(urgentes_bloqueados, key=lambda x: x["gold_necessario"])
+        alvo_anterior = estado.get("item_alvo")
+        if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
+            log.info(
+                f"  Alvo equipamento (slot vazio — acumulando gold): {melhor['nome']} "
+                f"@ {melhor['gold_necessario']}g líquido "
+                f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
+            )
+    elif candidatos:
         melhor = _melhor_da_lista(candidatos)
         alvo_anterior = estado.get("item_alvo")
         if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
