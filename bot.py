@@ -3743,10 +3743,16 @@ def verificar_treinamento(client):
         elif amuleto_alvo:
             gold_reservado = amuleto_alvo["gold_necessario"]
             motivo_reserva = amuleto_alvo["nome"]
-        # Pausa só se gold atual já está abaixo do reservado (não pode comprar o alvo)
-        if gold_reservado > 0 and gold_t < gold_reservado:
-            log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
-                     f"({gold_t}g / {gold_reservado}g)")
+        # Pausa treino sempre que há um alvo de compra com preço válido.
+        # Se gold < reservado: acumulando. Se gold >= reservado: compra deveria ter acontecido
+        # mas falhou (url_compra=None, rescan falhou) — não gasta o gold em treino.
+        if gold_reservado > 0:
+            if gold_t < gold_reservado:
+                log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
+                         f"({gold_t}g / {gold_reservado}g)")
+            else:
+                log.info(f"  Treinamento pausado — aguardando compra de {motivo_reserva} "
+                         f"({gold_t}g disponível, compra pendente)")
             return []
 
     nomes = {
