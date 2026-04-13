@@ -2087,7 +2087,6 @@ def verificar_alvo_equipamento(client, estado):
 
     candidatos    = []  # pode comprar agora (tem buy link, tem skill, é upgrade)
     ouro_bloqueados = []  # tem skill mas não tem gold suficiente (loja esconde buy link)
-    bloqueados    = []  # bloqueado por skill insuficiente
 
     algum_shop_acessivel = False
     for url_loja, tipo in paginas:
@@ -2160,21 +2159,15 @@ def verificar_alvo_equipamento(client, estado):
                 if sk_atual < item_req:
                     tem_skill = False
 
-            gold_liquido = max(0, item["gold"] - gold_venda_eq)
-
+            # Ignora itens bloqueados por skill — só compra o que o personagem pode usar agora
             if not tem_skill:
-                # Sem skill → bloqueado por skill
-                bloqueados.append({
-                    "nome": item["nome"],
-                    "gold_necessario": gold_liquido,
-                    "gold_bruto": item["gold"],
-                    "gold_venda_atual": gold_venda_eq,
-                    "categoria": tipo,
-                    "req_skill_tipo": item["req_skill_tipo"],
-                    "req_skill_valor": item_req,
-                    "req_skill_atual": skill_atual(item["req_skill_tipo"]),
-                })
-            elif item["pode_comprar"]:
+                continue
+
+            gold_liquido = max(0, item["gold"] - gold_venda_eq)
+            # urgente=True quando slot está vazio (sem item equipado) — prioridade máxima
+            urgente = item_eq is None
+
+            if item["pode_comprar"]:
                 # Tem skill E tem gold suficiente (buy link visível) → candidato
                 candidatos.append({
                     "nome": item["nome"],
@@ -2186,6 +2179,7 @@ def verificar_alvo_equipamento(client, estado):
                     "categoria": tipo,
                     "req_skill_valor": item_req,
                     "req_skill_tipo": item.get("req_skill_tipo"),
+                    "urgente": urgente,
                 })
             else:
                 # Tem skill MAS sem gold suficiente (loja esconde buy link) → gold-bloqueado
@@ -2199,13 +2193,15 @@ def verificar_alvo_equipamento(client, estado):
                     "categoria": tipo,
                     "req_skill_valor": item_req,
                     "req_skill_tipo": item.get("req_skill_tipo"),
+                    "urgente": urgente,
                 })
 
     # Determina item_alvo — por categoria pega o melhor (maior req_skill/gold_bruto),
     # depois entre categorias pega o MAIS BARATO (gold_necessario) para comprar logo
     # e equipar todas as categorias o mais rápido possível.
     def _melhor_da_lista(lista):
-        """Por categoria: melhor item (max req_skill_valor, gold_bruto). Entre categorias: mais barato (min gold_necessario)."""
+        """Por categoria: melhor item (max req_skill_valor, gold_bruto).
+        Entre categorias: slots vazios (urgente) têm prioridade; empate → mais barato."""
         por_cat = {}
         for c in lista:
             cat = c["categoria"]
@@ -2213,7 +2209,13 @@ def verificar_alvo_equipamento(client, estado):
             c_key = (c.get("req_skill_valor", 0), c["gold_bruto"])
             if prev is None or c_key > (prev.get("req_skill_valor", 0), prev["gold_bruto"]):
                 por_cat[cat] = c
-        return min(por_cat.values(), key=lambda x: x["gold_necessario"]) if por_cat else None
+        if not por_cat:
+            return None
+        # Slots vazios têm prioridade absoluta sobre upgrades
+        urgentes = [v for v in por_cat.values() if v.get("urgente")]
+        if urgentes:
+            return min(urgentes, key=lambda x: x["gold_necessario"])
+        return min(por_cat.values(), key=lambda x: x["gold_necessario"])
 
     if candidatos:
         log.debug(f"  Candidatos ({len(candidatos)}): " +
@@ -2259,32 +2261,9 @@ def verificar_alvo_equipamento(client, estado):
     if melhor:
         estado["item_alvo"] = melhor
 
-    # Determina item_proximo (bloqueado por skill com menor req_skill_valor acima do atual)
-    proximo = None
-    if bloqueados:
-        # Filtra por skill relevante ao build (2h: zweihand+ruestung; 1h: einhand+ruestung)
-        if BUILD_TIPO == "2h":
-            sk_relevantes = {"zweihand", "ruestung"}
-        else:
-            sk_relevantes = {"einhand", "ruestung"}
-        bloqueados = [b for b in bloqueados if b["req_skill_tipo"] in sk_relevantes]
-        # Filtra apenas itens cujo req_skill_valor é acima do skill atual
-        bloqueados_validos = [b for b in bloqueados if b["req_skill_valor"] > b["req_skill_atual"]]
-        if bloqueados_validos:
-            proximo = min(bloqueados_validos, key=lambda x: x["req_skill_valor"])
-            ant_prox = estado.get("item_proximo")
-            if not ant_prox or ant_prox.get("nome") != proximo["nome"]:
-                log.info(
-                    f"  Proximo (skill): {proximo['nome']} @ {proximo['gold_necessario']}g "
-                    f"({proximo['req_skill_tipo']} {proximo['req_skill_atual']}/{proximo['req_skill_valor']})"
-                )
-            estado["item_proximo"] = proximo
-        else:
-            if estado.get("item_proximo"):
-                del estado["item_proximo"]
-    else:
-        if estado.get("item_proximo"):
-            del estado["item_proximo"]
+    # Remove item_proximo legado se existir
+    if estado.get("item_proximo"):
+        del estado["item_proximo"]
 
     salvar_estado(estado)
     publicar_dashboard_equipamento(estado)
@@ -2294,7 +2273,6 @@ def publicar_dashboard_equipamento(estado):
     """Publica todos os alvos de compra no ciclo_file para o dashboard do launcher."""
     atualizar_ciclo_file("equipamento", {
         "item_alvo":    estado.get("item_alvo"),
-        "item_proximo": estado.get("item_proximo"),
         "pedra_alvo":   estado.get("pedra_alvo"),
         "anel_alvo":    estado.get("anel_alvo"),
         "amuleto_alvo": estado.get("amuleto_alvo"),
