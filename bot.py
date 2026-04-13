@@ -2046,13 +2046,83 @@ def _parsear_shop_todos_itens(soup, tipo):
     return itens
 
 
+_CATALOGO_CACHE = None
+
+
+def _carregar_catalogo():
+    """Carrega catálogo local de itens (Itens/*.txt). Resultado cacheado em memória.
+    Retorna dict: chave → lista de dicts com nome, gold, req_skill, req_skill_tipo, categoria
+    ordenada por req_skill ascendente.
+    """
+    global _CATALOGO_CACHE
+    if _CATALOGO_CACHE is not None:
+        return _CATALOGO_CACHE
+
+    base = Path(__file__).parent / "Itens"
+
+    def _parse_file(fname, col_gold, col_req, req_tipo, categoria, req_fn=None):
+        itens = []
+        path = base / fname
+        if not path.exists():
+            log.warning(f"  Catálogo: arquivo não encontrado — {path}")
+            return itens
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            log.warning(f"  Catálogo: erro ao ler {fname} — {e}")
+            return itens
+        for line in lines[1:]:  # pula cabeçalho
+            cols = [c.strip() for c in line.split(",")]
+            if len(cols) <= max(col_gold, col_req):
+                continue
+            nome = cols[0]
+            if not nome or "[Bazar]" in nome:
+                continue
+            try:
+                gold = int(cols[col_gold].replace(".", "").replace(" ", ""))
+            except ValueError:
+                continue
+            if gold <= 0:
+                continue
+            try:
+                req = req_fn(cols[col_req]) if req_fn else int(cols[col_req])
+            except (ValueError, TypeError, AttributeError):
+                req = 0
+            itens.append({
+                "nome": nome,
+                "gold": gold,
+                "req_skill": req,
+                "req_skill_tipo": req_tipo,
+                "categoria": categoria,
+            })
+        itens.sort(key=lambda x: x["req_skill"])
+        return itens
+
+    def _level_req(s):
+        m = re.search(r"(\d+)", s)
+        return int(m.group(1)) if m else 0
+
+    _CATALOGO_CACHE = {
+        "waffen_einhand":  _parse_file("1h.txt",       6, 7, "einhand",  "waffen"),
+        "waffen_zweihand": _parse_file("2h.txt",       6, 7, "zweihand", "waffen"),
+        "ruestungen":      _parse_file("armadura.txt", 4, 5, "ruestung", "ruestungen"),
+        "schilde":         _parse_file("escudos.txt",  6, 7, "ruestung", "schilde"),
+        "aneis":           _parse_file("aneis.txt",    6, 7, None,       "aneis",    req_fn=_level_req),
+        "amuletos":        _parse_file("amuletos.txt", 7, 8, None,       "amuletos"),
+    }
+    totais = ", ".join(f"{k}={len(v)}" for k, v in _CATALOGO_CACHE.items())
+    log.debug(f"  Catálogo carregado: {totais}")
+    return _CATALOGO_CACHE
+
+
 def verificar_alvo_equipamento(client, estado):
     """
-    Varre as lojas relevantes e determina o próximo item a comprar.
-    Salva em estado["item_alvo"] o item mais barato disponível com skill atendida + preço gold.
-    Salva em estado["item_proximo"] o item bloqueado por skill com menor req_skill_valor acima do atual.
-    - 2h: verifica waffen + ruestungen
-    - 1h: verifica waffen + schilde + ruestungen
+    Determina o próximo item a comprar usando o catálogo local (Itens/*.txt).
+    Escaneia a loja apenas para detectar o item equipado atual e o buy link quando disponível.
+    Salva em estado["item_alvo"] o melhor item atingível (maior req_skill dentro da skill atual).
+    - 2h: waffen_zweihand + ruestungen
+    - 1h: waffen_einhand + schilde + ruestungen
     """
     if not COMPRAR_EQUIPAMENTO:
         return
@@ -2060,33 +2130,15 @@ def verificar_alvo_equipamento(client, estado):
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
 
-    # Skills atuais do personagem (MY_STATS é atualizado pelo parsear_status em cada ciclo)
+    # Skills atuais do personagem
     sk_2maos    = MY_STATS.get("sk_2maos", 0)
     sk_1mao     = MY_STATS.get("sk_1mao", 0)
     sk_armadura = MY_STATS.get("sk_armadura", 0)
 
-    def skill_atual(sk_tipo):
-        if sk_tipo == "zweihand":
-            return sk_2maos
-        if sk_tipo == "einhand":
-            return sk_1mao
-        if sk_tipo == "ruestung":
-            return sk_armadura
-        return 0
+    catalogo = _carregar_catalogo()
 
-    # Busca inventário atual para não recomprar item já possuído
-    inventario = set()
-    try:
-        r_status = client.session.get(BASE_URL + "/status/", timeout=15)
-        soup_status = BeautifulSoup(r_status.text, "html.parser")
-        inventario = parsear_inventario(soup_status)
-        if inventario:
-            log.debug(f"  Inventário: {', '.join(sorted(inventario))}")
-    except Exception as e:
-        log.warning(f"  Alvo equipamento: erro ao ler inventário — {e}")
-
-    candidatos    = []  # pode comprar agora (tem buy link, tem skill, é upgrade)
-    ouro_bloqueados = []  # tem skill mas não tem gold suficiente (loja esconde buy link)
+    candidatos    = []  # buy link disponível (gold suficiente)
+    ouro_bloqueados = []  # gold insuficiente — acumula ouro
 
     algum_shop_acessivel = False
     for url_loja, tipo in paginas:
@@ -2113,88 +2165,77 @@ def verificar_alvo_equipamento(client, estado):
         algum_shop_acessivel = True
         todos = _parsear_shop_todos_itens(soup, tipo)
 
-        # Item equipado atualmente nesta categoria (para abater no custo de troca)
+        # Item equipado atualmente (tem sell link na listagem da loja)
         item_eq = next((i for i in todos if i.get("equipado")), None)
         gold_venda_eq = item_eq["gold_venda"] if item_eq else 0
         url_venda_eq  = item_eq["url_venda"]  if item_eq else None
-        # Req_skill do item equipado: candidato só é upgrade se req > req do equipado
         req_eq = item_eq.get("req_skill_valor", 0) if item_eq else 0
+        urgente = item_eq is None
         if item_eq:
             log.debug(f"  Loja {tipo}: equipado='{item_eq['nome']}' req={req_eq} venda={gold_venda_eq}g")
 
-        for item in todos:
-            if item["nome"] in inventario and not item.get("equipado"):
-                log.debug(f"  Loja {tipo}: '{item['nome']}' já no inventário — pulando")
-                continue
+        # Chave do catálogo e skill correspondente ao tipo de loja
+        if tipo == "waffen":
+            cat_key  = "waffen_zweihand" if BUILD_TIPO == "2h" else "waffen_einhand"
+            sk_atual = sk_2maos if BUILD_TIPO == "2h" else sk_1mao
+            req_tipo = "zweihand" if BUILD_TIPO == "2h" else "einhand"
+        elif tipo == "ruestungen":
+            cat_key  = "ruestungen"
+            sk_atual = sk_armadura
+            req_tipo = "ruestung"
+        elif tipo == "schilde":
+            cat_key  = "schilde"
+            sk_atual = sk_armadura
+            req_tipo = "ruestung"
+        else:
+            continue
 
-            # Para a loja de armas: filtra por tipo relevante ao build
-            # req_skill_tipo=None → arma básica sem req, vale para qualquer build
-            if tipo == "waffen" and item["req_skill_tipo"] is not None:
-                if BUILD_TIPO == "2h" and item["req_skill_tipo"] == "einhand":
-                    continue  # 2h build ignora armas 1h
-                if BUILD_TIPO == "1h" and item["req_skill_tipo"] == "zweihand":
-                    continue  # 1h build ignora armas 2h
+        # Melhores itens do catálogo que o personagem pode usar E que são upgrade do equipado
+        disponiveis = [
+            it for it in catalogo.get(cat_key, [])
+            if it["req_skill"] <= sk_atual and (urgente or it["req_skill"] > req_eq)
+        ]
+        if not disponiveis:
+            log.debug(f"  Catálogo {cat_key}: nenhum item disponível (sk={sk_atual}, req_eq={req_eq})")
+            continue
 
-            # Item equipado — serve apenas para determinar item_eq, não é candidato
-            if item.get("equipado"):
-                continue
+        # Melhor = maior req_skill; empate → maior gold (item mais caro = melhor em KF)
+        melhor_cat = max(disponiveis, key=lambda x: (x["req_skill"], x["gold"]))
+        gold_liquido = max(0, melhor_cat["gold"] - gold_venda_eq)
 
-            # Pula itens com preço não parseado (erro de extração)
-            if item["gold"] == 0:
-                log.debug(f"  Loja {tipo}: '{item['nome']}' sem preço parseado — pulando")
-                continue
+        # Busca buy link na listagem da loja para este item específico
+        # Match por req_skill_valor + gold (robusto entre idiomas; nome varia por servidor)
+        shop_match = next(
+            (i for i in todos
+             if not i.get("equipado")
+             and i.get("req_skill_valor") == melhor_cat["req_skill"]
+             and abs(i["gold"] - melhor_cat["gold"]) <= 50
+             and i.get("pode_comprar")),
+            None
+        )
+        url_compra = shop_match["url_compra"] if shop_match else None
 
-            item_req = item.get("req_skill_valor", 0)
+        item_dict = {
+            "nome":             melhor_cat["nome"],
+            "gold_necessario":  gold_liquido,
+            "gold_bruto":       melhor_cat["gold"],
+            "gold_venda_atual": gold_venda_eq,
+            "url_compra":       url_compra,
+            "url_venda_atual":  url_venda_eq,
+            "categoria":        tipo,
+            "req_skill_valor":  melhor_cat["req_skill"],
+            "req_skill_tipo":   req_tipo,
+            "urgente":          urgente,
+        }
 
-            # Só é upgrade se req_skill > req do item atualmente equipado
-            # (evita comprar item igual ou pior do que o atual)
-            # Exceção: se não há item equipado (item_eq=None), qualquer item é válido
-            if item_eq is not None and item_req <= req_eq:
-                continue
-
-            # Verifica se o personagem tem skill suficiente para usar este item
-            tem_skill = True
-            if item["req_skill_tipo"] and item_req > 0:
-                sk_atual = skill_atual(item["req_skill_tipo"])
-                if sk_atual < item_req:
-                    tem_skill = False
-
-            # Ignora itens bloqueados por skill — só compra o que o personagem pode usar agora
-            if not tem_skill:
-                continue
-
-            gold_liquido = max(0, item["gold"] - gold_venda_eq)
-            # urgente=True quando slot está vazio (sem item equipado) — prioridade máxima
-            urgente = item_eq is None
-
-            if item["pode_comprar"]:
-                # Tem skill E tem gold suficiente (buy link visível) → candidato
-                candidatos.append({
-                    "nome": item["nome"],
-                    "gold_necessario": gold_liquido,
-                    "gold_bruto": item["gold"],
-                    "gold_venda_atual": gold_venda_eq,
-                    "url_compra": item["url_compra"],
-                    "url_venda_atual": url_venda_eq,
-                    "categoria": tipo,
-                    "req_skill_valor": item_req,
-                    "req_skill_tipo": item.get("req_skill_tipo"),
-                    "urgente": urgente,
-                })
-            else:
-                # Tem skill MAS sem gold suficiente (loja esconde buy link) → gold-bloqueado
-                ouro_bloqueados.append({
-                    "nome": item["nome"],
-                    "gold_necessario": gold_liquido,
-                    "gold_bruto": item["gold"],
-                    "gold_venda_atual": gold_venda_eq,
-                    "url_compra": None,  # re-busca quando tiver gold
-                    "url_venda_atual": url_venda_eq,
-                    "categoria": tipo,
-                    "req_skill_valor": item_req,
-                    "req_skill_tipo": item.get("req_skill_tipo"),
-                    "urgente": urgente,
-                })
+        if url_compra:
+            candidatos.append(item_dict)
+            log.debug(f"  Catálogo {cat_key}: alvo '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
+                      f"{melhor_cat['gold']}g (buy link disponível)")
+        else:
+            ouro_bloqueados.append(item_dict)
+            log.debug(f"  Catálogo {cat_key}: alvo '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
+                      f"{melhor_cat['gold']}g (acumulando gold)")
 
     # Determina item_alvo — por categoria pega o melhor (maior req_skill/gold_bruto),
     # depois entre categorias pega o MAIS BARATO (gold_necessario) para comprar logo
@@ -2377,7 +2418,19 @@ def tentar_comprar_item_alvo(client, estado):
         try:
             soup_loja = client.get(f"/shop/{categoria}/", fragment=False)
             todos_loja = _parsear_shop_todos_itens(soup_loja, categoria)
-            match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
+            req_alvo  = alvo.get("req_skill_valor", 0)
+            gold_alvo = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
+            # Match por req_skill_valor + gold (robusto entre idiomas; nome varia por servidor)
+            match = next(
+                (i for i in todos_loja
+                 if i.get("req_skill_valor") == req_alvo
+                 and abs(i["gold"] - gold_alvo) <= 50
+                 and i.get("url_compra")),
+                None
+            )
+            if not match:
+                # Fallback: nome (funciona quando catálogo e servidor têm o mesmo idioma)
+                match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
             if match:
                 url_compra = match["url_compra"]
                 alvo["url_compra"] = url_compra
