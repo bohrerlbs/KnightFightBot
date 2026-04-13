@@ -3451,12 +3451,18 @@ def equipar_melhor_item(client):
         return
 
     def parse_tier(tr_elem):
-        """Maior N em linhas de requisito do item (Condição/Condition/Requirement - X: N).
+        """Maior N em linhas de requisito do item.
+        Detecta dois formatos:
+        - 'Condition - 2-Handed Weapons: 5'  (armas/armaduras/escudos)
+        - 'Level: 4' / 'Nível: 4'             (aneis e amuletos)
         Tenta primeiro no span com font-size; cai back no texto completo do TR."""
         span = tr_elem.find("span", style=lambda s: s and "font-size" in s)
         txt = span.get_text() if span else tr_elem.get_text(separator=" ", strip=True)
         nums = re.findall(
-            r"(?:Condi[çc][ãa]o|Condition|Requirement|Voraussetzung)\s*-\s*[^:]+:\s*(\d+)",
+            r"(?:"
+            r"(?:Condi[çc][ãa]o|Condition|Requirement|Voraussetzung)\s*-\s*[^:]+:\s*"
+            r"|(?:n[íi]vel|level|stufe|nivel)\s*[:\-]\s*"
+            r")(\d+)",
             txt, re.IGNORECASE
         )
         return max((int(n) for n in nums), default=0)
@@ -3464,8 +3470,8 @@ def equipar_melhor_item(client):
     def slot_de_href(href, tr=None):
         if "wid=" in href and "uwid" not in href:  return "weapon"
         if "sid=" in href and "usid" not in href:  return "shield"
-        if "rid=" in href:                          return "ring"
-        if "aid=" in href:                          return "amulet"
+        if "rid=" in href and "urid" not in href:  return "ring"
+        if "aid=" in href and "uaid" not in href:  return "amulet"
         # Equip via iid= (id generico do inventario) — typ= indica o slot
         if "iid=" in href:
             m = re.search(r"[?&]typ=(\d+)", href)
@@ -3474,6 +3480,8 @@ def equipar_melhor_item(client):
                 if typ == 1: return "shield"
                 if typ == 2: return "weapon"
                 if typ == 3: return "armor"
+                if typ == 4: return "ring"
+                if typ == 5: return "amulet"
         # armid= é usado para armadura E aneis/amuletos em alguns servers KF
         # — usa texto do TR para distinguir
         if "armid=" in href:
