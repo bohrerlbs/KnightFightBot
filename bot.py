@@ -3506,15 +3506,16 @@ def equipar_melhor_item(client):
         if "rid=" in href and "urid" not in href:  return "ring"
         if "aid=" in href and "uaid" not in href:  return "amulet"
         # Equip via iid= (id generico do inventario) — typ= indica o slot
+        # typ=3 confirmado como anel (ex: ?iid=197059&itemid=1&typ=3 para Ring of Strength)
         if "iid=" in href:
             m = re.search(r"[?&]typ=(\d+)", href)
             if m:
                 typ = int(m.group(1))
                 if typ == 1: return "shield"
                 if typ == 2: return "weapon"
-                if typ == 3: return "armor"
-                if typ == 4: return "ring"
-                if typ == 5: return "amulet"
+                if typ == 3: return "ring"
+                if typ == 4: return "amulet"
+                if typ == 5: return "armor"
         # armid= é usado para armadura E aneis/amuletos em alguns servers KF
         # — usa texto do TR para distinguir
         if "armid=" in href:
@@ -3641,20 +3642,22 @@ def sincronizar_slots(client, estado):
     slots_nomes = {}   # slot -> {"nome": ..., "req": ...} ou lista p/ rings
 
     def _nome_do_span(span):
-        """Extrai nome do item do span: texto direto ou strong/b dentro dele."""
-        strong = span.find("strong") or span.find("b")
-        if strong:
-            return strong.get_text(strip=True)
+        """Extrai nome do item do span.
+        O data-tooltip contém HTML como <b>Nome</b><br>... — precisa de parsing."""
+        tip_html = span.get("data-tooltip", "")
+        if tip_html:
+            from bs4 import BeautifulSoup as _BS
+            tip_soup = _BS(tip_html, "html.parser")
+            b = tip_soup.find("b") or tip_soup.find("strong")
+            if b:
+                return b.get_text(strip=True)
+            # fallback: primeiro texto sem tags
+            txt = tip_soup.get_text(separator=" ", strip=True)
+            if txt:
+                return txt.split("\n")[0].strip()
+        # fallback: texto direto do span
         txt = span.get_text(strip=True)
-        if txt:
-            return txt.split("\n")[0].strip()
-        tip_orig = span.get("data-tooltip", "")
-        # primeira linha não-vazia do tooltip
-        for linha in tip_orig.split("\n"):
-            linha = linha.strip()
-            if linha:
-                return linha
-        return ""
+        return txt.split("\n")[0].strip() if txt else ""
 
     def _req_do_span(span):
         """Extrai requisito numérico do tooltip do span."""
@@ -3678,7 +3681,8 @@ def sincronizar_slots(client, estado):
             if "uwid=" in dh:
                 slots_eq.add("weapon")
                 slots_nomes["weapon"] = {"nome": nome, "req": req}
-            elif "usid=" in dh:
+            elif "sid=" in dh:
+                # game usa ?sid= (sem prefixo u) para escudo equipado
                 slots_eq.add("shield")
                 slots_nomes["shield"] = {"nome": nome, "req": req}
             elif "rid=" in dh:
