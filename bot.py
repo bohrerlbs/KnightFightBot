@@ -3506,16 +3506,20 @@ def equipar_melhor_item(client):
         if "rid=" in href and "urid" not in href:  return "ring"
         if "aid=" in href and "uaid" not in href:  return "amulet"
         # Equip via iid= (id generico do inventario) — typ= indica o slot
-        # typ=3 confirmado como anel (ex: ?iid=197059&itemid=1&typ=3 para Ring of Strength)
+        # Confirmado via HTML real (br1/pl11):
+        #   typ=2 → armadura  (Colete de pano, iid=235580&typ=2 → armid= equipado)
+        #   typ=3 → anel       (Ring of Strength / Anel da Batalha, iid=...&typ=3 → rid= equipado)
+        #   typ=4 → amuleto   (Amuleto Protetor, iid=234708&typ=4 → aid= equipado)
+        # Armas usam ?wid=...&typ=N (typ alto, ex 45) — nunca passam pelo iid= path
+        # Escudos usam ?sid=... diretamente
         if "iid=" in href:
             m = re.search(r"[?&]typ=(\d+)", href)
             if m:
                 typ = int(m.group(1))
                 if typ == 1: return "shield"
-                if typ == 2: return "weapon"
+                if typ == 2: return "armor"
                 if typ == 3: return "ring"
                 if typ == 4: return "amulet"
-                if typ == 5: return "armor"
         # armid= é usado para armadura E aneis/amuletos em alguns servers KF
         # — usa texto do TR para distinguir
         if "armid=" in href:
@@ -3548,7 +3552,7 @@ def equipar_melhor_item(client):
             nome_eq = BeautifulSoup(nome_m.group(1), "html.parser").get_text(strip=True)
 
             if   "uwid=" in data_href:  slot = "weapon"
-            elif "usid=" in data_href:  slot = "shield"
+            elif "sid="   in data_href:  slot = "shield"   # ?sid= (sem prefixo u)
             elif "armid=" in data_href: slot = "armor"
             elif "rid="   in data_href: slot = "ring"
             elif "aid="   in data_href: slot = "amulet"
