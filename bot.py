@@ -2190,6 +2190,11 @@ def verificar_alvo_equipamento(client, estado):
         else:
             continue
 
+        # Sem skill de armadura: req=0 items dão 0 defesa — inúteis, pulamos completamente
+        if tipo in ("ruestungen", "schilde") and sk_armadura == 0:
+            log.debug(f"  Catálogo {cat_key}: sk_armadura=0 — pulando (itens req=0 dão 0 defesa)")
+            continue
+
         # Melhores itens do catálogo que o personagem pode usar E que são upgrade do equipado
         disponiveis = [
             it for it in catalogo.get(cat_key, [])
