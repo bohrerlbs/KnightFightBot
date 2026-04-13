@@ -1022,6 +1022,9 @@ function renderProfiles(profiles){
     html += '<div class="card-info">';
     html += '<div class="info-item"><div class="info-label">UserID</div><div class="info-val">'+(p.userid||p.user_id||'-')+'</div></div>';
     html += '<div class="info-item"><div class="info-label">Dashboard</div><div class="info-val" style="color:var(--gold)">:'+(p.port||8765)+'</div></div>';
+    if(p._level){ html += '<div class="info-item"><div class="info-label">Nível</div><div class="info-val">'+p._level+'</div></div>'; }
+    if(p._gold != null){ html += '<div class="info-item"><div class="info-label">Gold</div><div class="info-val" style="color:#f0c040">'+p._gold.toLocaleString('pt-BR')+'g</div></div>'; }
+    if(p._gems){ html += '<div class="info-item"><div class="info-label">Gemas</div><div class="info-val" style="color:#a78bfa">'+p._gems+'</div></div>'; }
     html += '</div>';
     html += '<div class="log-preview">'+(logs||'<span>Nenhum log ainda...</span>')+'</div>';
     html += '<div class="card-actions">';

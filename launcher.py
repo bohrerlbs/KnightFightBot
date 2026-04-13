@@ -152,6 +152,9 @@ def get_profiles():
                 try:
                     est = json.loads(estado_path.read_text(encoding="utf-8"))
                     cfg["_sk_armadura"] = est.get("sk_armadura", 0)
+                    cfg["_gold"]        = est.get("gold_atual", 0)
+                    cfg["_gems"]        = est.get("gems", 0)
+                    cfg["_level"]       = est.get("level", 0)
                 except:
                     pass
             profiles.append(cfg)
