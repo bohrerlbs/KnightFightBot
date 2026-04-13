@@ -2125,8 +2125,8 @@ def _carregar_catalogo():
     _CATALOGO_CACHE = {
         "waffen_einhand":  _parse_file("1h.txt",       6, 7, "einhand",  "waffen",  filtro_gema=True),
         "waffen_zweihand": _parse_file("2h.txt",       6, 7, "zweihand", "waffen",  filtro_gema=True),
-        "ruestungen":      _parse_file("armadura.txt", 4, 5, "ruestung", "ruestungen"),
-        "schilde":         _parse_file("escudos.txt",  6, 7, "ruestung", "schilde"),
+        "ruestungen":      _parse_file("armadura.txt", 4, 5, "ruestung", "ruestungen", filtro_gema=True),
+        "schilde":         _parse_file("escudos.txt",  6, 7, "ruestung", "schilde",    filtro_gema=True),
         "aneis":           _parse_file("aneis.txt",    6, 7, None,       "aneis",    req_fn=_level_req),
         "amuletos":        _parse_file("amuletos.txt", 7, 8, None,       "amuletos"),
     }
