@@ -2061,9 +2061,10 @@ def _carregar_catalogo():
     base = Path(__file__).parent / "Itens"
 
     def _parse_file(fname, col_gold, col_req, req_tipo, categoria, req_fn=None, filtro_gema=False):
-        """filtro_gema=True: pula itens onde req_skill>=30 e gold<5000 (itens de gemas
-        aparecem no catálogo com preço em gemas ~1300-3500, enquanto itens gold custam
-        10000-35000g na mesma faixa de skill — diferença é óbvia)."""
+        """filtro_gema=True: após ordenar por req_skill, remove itens cujo preço é inferior
+        ao item anterior (req menor). Itens de gema quebram a progressão crescente de preço
+        — uma arma com req=76 não pode custar 1900g se a de req=72 custa 31500g.
+        Funciona em qualquer faixa de req, não depende de threshold fixo."""
         itens = []
         path = base / fname
         if not path.exists():
@@ -2092,10 +2093,6 @@ def _carregar_catalogo():
                 req = req_fn(cols[col_req]) if req_fn else int(cols[col_req])
             except (ValueError, TypeError, AttributeError):
                 req = 0
-            # Filtra itens de gema: req alto + preço baixo (gemas custam 1300-3500,
-            # itens gold no mesmo range custam 10000-35000g)
-            if filtro_gema and req >= 30 and gold < 5000:
-                continue
             itens.append({
                 "nome": nome,
                 "gold": gold,
@@ -2104,6 +2101,21 @@ def _carregar_catalogo():
                 "categoria": categoria,
             })
         itens.sort(key=lambda x: x["req_skill"])
+        if filtro_gema and len(itens) > 1:
+            # Remove itens que quebram a progressão crescente de preço:
+            # itera do mais barato (req menor) para o mais caro, mantendo o
+            # máximo de gold visto até agora. Se o item atual custa menos que
+            # o máximo anterior, é item de gema disfarçado e deve ser pulado.
+            filtrados = []
+            gold_max = 0
+            for item in itens:
+                if item["gold"] >= gold_max:
+                    gold_max = item["gold"]
+                    filtrados.append(item)
+                else:
+                    log.debug(f"  Catálogo {fname}: pulando item de gema '{item['nome']}' "
+                              f"(req={item['req_skill']}, gold={item['gold']} < max_anterior={gold_max})")
+            itens = filtrados
         return itens
 
     def _level_req(s):
