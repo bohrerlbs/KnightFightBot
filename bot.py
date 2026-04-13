@@ -2389,9 +2389,33 @@ def tentar_comprar_item_alvo(client, estado):
 
     gold_bruto = alvo.get("gold_bruto", alvo["gold_necessario"])
     url_venda_atual = alvo.get("url_venda_atual")
+
+    # Se item era gold-bloqueado (url_compra=None), re-escaneia loja ANTES de vender
+    # qualquer coisa — evita vender item atual sem conseguir comprar o novo
+    url_compra = alvo.get("url_compra")
+    if not url_compra:
+        categoria = alvo.get("categoria", "waffen")
+        log.info(f"  {alvo['nome']}: sem url_compra, re-escaneando /{categoria}/...")
+        try:
+            soup_loja = client.get(f"/shop/{categoria}/", fragment=False)
+            todos_loja = _parsear_shop_todos_itens(soup_loja, categoria)
+            match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
+            if match:
+                url_compra = match["url_compra"]
+                alvo["url_compra"] = url_compra
+                estado["item_alvo"] = alvo
+                salvar_estado(estado)
+                log.info(f"  Buy link obtido: {url_compra}")
+            else:
+                log.info(f"  {alvo['nome']}: ainda sem buy link na loja — aguardando")
+                return False
+        except Exception as e:
+            log.warning(f"  Re-scan /{categoria}/ para '{alvo['nome']}': erro — {e}")
+            return False
+
     log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} (liquido {alvo['gold_necessario']}g, bruto {gold_bruto}g) — comprando!")
 
-    # Sempre vende item atual antes de comprar — libera inventário e evita acúmulo
+    # Vende item atual APÓS confirmar que buy link existe
     if url_venda_atual:
         log.info(f"  Vendendo item atual antes da troca ({gold_bruto}g necessário, gold atual {gold_atual}g)...")
         gold_recebido = vender_item_atual(client, url_venda_atual)
@@ -2406,28 +2430,6 @@ def tentar_comprar_item_alvo(client, estado):
     if gold_atual < gold_bruto:
         log.warning(f"  Gold insuficiente após venda ({gold_atual}g < {gold_bruto}g) — abortando")
         return False
-
-    # Se item era gold-bloqueado (url_compra=None), re-escaneia loja para obter buy link
-    url_compra = alvo.get("url_compra")
-    if not url_compra:
-        categoria = alvo.get("categoria", "waffen")
-        log.info(f"  {alvo['nome']}: era gold-bloqueado, re-escaneando /{categoria}/ para buy link...")
-        try:
-            soup_loja = client.get(f"/shop/{categoria}/", fragment=False)
-            todos_loja = _parsear_shop_todos_itens(soup_loja, categoria)
-            match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
-            if match:
-                url_compra = match["url_compra"]
-                alvo["url_compra"] = url_compra
-                estado["item_alvo"] = alvo
-                salvar_estado(estado)
-                log.info(f"  Buy link obtido: {url_compra}")
-            else:
-                log.info(f"  {alvo['nome']}: ainda sem buy link na loja (gold ainda insuficiente?)")
-                return False
-        except Exception as e:
-            log.warning(f"  Re-scan /{categoria}/ para '{alvo['nome']}': erro — {e}")
-            return False
 
     # Carrega página da URL de compra (funciona para waffen, schilde e ruestungen)
     try:
