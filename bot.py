@@ -2060,7 +2060,10 @@ def _carregar_catalogo():
 
     base = Path(__file__).parent / "Itens"
 
-    def _parse_file(fname, col_gold, col_req, req_tipo, categoria, req_fn=None):
+    def _parse_file(fname, col_gold, col_req, req_tipo, categoria, req_fn=None, filtro_gema=False):
+        """filtro_gema=True: pula itens onde req_skill>=30 e gold<5000 (itens de gemas
+        aparecem no catálogo com preço em gemas ~1300-3500, enquanto itens gold custam
+        10000-35000g na mesma faixa de skill — diferença é óbvia)."""
         itens = []
         path = base / fname
         if not path.exists():
@@ -2089,6 +2092,10 @@ def _carregar_catalogo():
                 req = req_fn(cols[col_req]) if req_fn else int(cols[col_req])
             except (ValueError, TypeError, AttributeError):
                 req = 0
+            # Filtra itens de gema: req alto + preço baixo (gemas custam 1300-3500,
+            # itens gold no mesmo range custam 10000-35000g)
+            if filtro_gema and req >= 30 and gold < 5000:
+                continue
             itens.append({
                 "nome": nome,
                 "gold": gold,
@@ -2104,8 +2111,8 @@ def _carregar_catalogo():
         return int(m.group(1)) if m else 0
 
     _CATALOGO_CACHE = {
-        "waffen_einhand":  _parse_file("1h.txt",       6, 7, "einhand",  "waffen"),
-        "waffen_zweihand": _parse_file("2h.txt",       6, 7, "zweihand", "waffen"),
+        "waffen_einhand":  _parse_file("1h.txt",       6, 7, "einhand",  "waffen",  filtro_gema=True),
+        "waffen_zweihand": _parse_file("2h.txt",       6, 7, "zweihand", "waffen",  filtro_gema=True),
         "ruestungen":      _parse_file("armadura.txt", 4, 5, "ruestung", "ruestungen"),
         "schilde":         _parse_file("escudos.txt",  6, 7, "ruestung", "schilde"),
         "aneis":           _parse_file("aneis.txt",    6, 7, None,       "aneis",    req_fn=_level_req),
@@ -3731,8 +3738,10 @@ def verificar_treinamento(client):
             if item_alvo:
                 gb = item_alvo.get("gold_bruto", item_alvo.get("gold_necessario", 0))
                 if gb >= 50:
-                    # Reserva gold_necessario (não gold_bruto): o bot vende o atual para compensar
-                    gold_reservado = item_alvo.get("gold_necessario", gb)
+                    # Reserva gold_necessario (não gold_bruto): o bot vende o atual para compensar.
+                    # Se gold_necessario=0 (item de gema chegou ao catálogo), usa gold_bruto como reserva.
+                    gn = item_alvo.get("gold_necessario", gb)
+                    gold_reservado = gn if gn > 0 else gb
                     motivo_reserva = item_alvo["nome"]
         elif pedra_alvo:
             gold_reservado = pedra_alvo["gold_necessario"]
