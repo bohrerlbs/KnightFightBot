@@ -3042,8 +3042,9 @@ def verificar_alvo_anel(client, estado):
         # Precisa ter preço em gold
         if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
             continue
-        # Pula itens já equipados (sell link na listagem)
-        if tr.find("a", href=lambda h: h and "/shop/sell/" in h):
+        # Em modo upgrade (slots cheios), pula aneis já possuídos (sell link = já tem esse)
+        # Em modo compra (slot vazio), permite duplicata — jogo aceita 2 anéis iguais
+        if a_comprar == 0 and tr.find("a", href=lambda h: h and "/shop/sell/" in h):
             continue
 
         tr_txt = tr.get_text(separator=" ", strip=True)
