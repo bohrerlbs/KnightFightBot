@@ -3575,6 +3575,108 @@ def equipar_melhor_item(client):
             log.warning(f"  Equipar '{nome}': erro — {e}")
 
 
+def sincronizar_slots(client, estado):
+    """
+    Verifica todos os slots esperados via /landsitz/ — sem depender da loja.
+    1. Equipa itens do inventário que ainda não estão equipados.
+    2. Detecta slots ainda vazios após equip e dispara verificar_alvo_* correspondente.
+
+    Slots esperados:
+      2h: weapon, armor (se sk_armadura>0), ring×2, amulet
+      1h: weapon, shield, armor (se sk_armadura>0), ring×2, amulet
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return
+
+    # Passo 1: equipa itens do inventário
+    try:
+        equipar_melhor_item(client)
+    except Exception as e:
+        log.warning(f"  Slots: erro ao equipar inventário — {e}")
+
+    # Passo 2: lê /landsitz/ para detectar slots equipados
+    try:
+        soup = client.get("/landsitz/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Slots: erro ao carregar /landsitz/ — {e}")
+        return
+
+    equipped_div = soup.find("div", id="equipped-items")
+    slots_eq = set()
+    ring_count = 0
+
+    if equipped_div:
+        for span in equipped_div.find_all("span", attrs={"data-href": True}):
+            dh  = span.get("data-href", "")
+            tip = span.get("data-tooltip", "").lower()
+            if "uwid=" in dh:
+                slots_eq.add("weapon")
+            elif "usid=" in dh:
+                slots_eq.add("shield")
+            elif "rid=" in dh:
+                ring_count += 1
+                slots_eq.add("ring")
+            elif "aid=" in dh:
+                slots_eq.add("amulet")
+            elif "armid=" in dh:
+                if re.search(r"\banel\b|\bring\b|anillo|ringe?\b", tip):
+                    ring_count += 1
+                    slots_eq.add("ring")
+                elif re.search(r"\bamuleto\b|\bamulet\b|amulette?\b", tip):
+                    slots_eq.add("amulet")
+                else:
+                    slots_eq.add("armor")
+
+    sk_armadura = MY_STATS.get("sk_armadura", estado.get("sk_armadura", 0))
+
+    # Monta lista de slots esperados vs vazios
+    esperados = ["weapon"]
+    if BUILD_TIPO == "1h":
+        esperados.append("shield")
+    if sk_armadura > 0:
+        esperados.append("armor")
+    esperados.append("ring")   # ×2 — checar ring_count < 2
+    esperados.append("amulet")
+
+    vazios = []
+    for s in esperados:
+        if s == "ring":
+            if ring_count < 2:
+                vazios.append(f"ring({ring_count}/2)")
+        elif s not in slots_eq:
+            vazios.append(s)
+
+    if vazios:
+        log.info(f"  Slots vazios detectados: {vazios} — disparando scans")
+    else:
+        log.debug(f"  Slots: todos preenchidos ({slots_eq}, rings={ring_count})")
+        return
+
+    # Passo 3: dispara verify para cada slot vazio
+    needs_equip_scan  = any(v in ("weapon", "shield", "armor") for v in vazios)
+    needs_ring_scan   = any("ring" in v for v in vazios)
+    needs_amulet_scan = "amulet" in vazios
+
+    # weapon/shield/armor → verificar_alvo_equipamento (detecta urgente via loja)
+    if needs_equip_scan:
+        try:
+            verificar_alvo_equipamento(client, carregar_estado())
+        except Exception as e:
+            log.warning(f"  Slots: scan equip — {e}")
+
+    if needs_ring_scan:
+        try:
+            verificar_alvo_anel(client, carregar_estado())
+        except Exception as e:
+            log.warning(f"  Slots: scan anel — {e}")
+
+    if needs_amulet_scan:
+        try:
+            verificar_alvo_amuleto(client, carregar_estado())
+        except Exception as e:
+            log.warning(f"  Slots: scan amuleto — {e}")
+
+
 def limpar_duplicatas_inventario(client):
     """
     Para cada loja, verifica duplicatas no inventário e vende os piores:
@@ -4955,13 +5057,13 @@ def loop_acoes(client):
             except Exception as e:
                 log.warning(f"Compra amuleto alvo: erro — {e}")
 
-            # Equipa itens do inventário que ainda não foram equipados
-            # e vende duplicatas/piores itens
+            # Sincroniza slots via /landsitz/ (sem depender da loja):
+            # equipa itens do inventário e detecta/reporta slots ainda vazios
             if COMPRAR_EQUIPAMENTO:
                 try:
-                    equipar_melhor_item(client)
+                    sincronizar_slots(client, carregar_estado())
                 except Exception as e:
-                    log.warning(f"Equipar inventário: erro — {e}")
+                    log.warning(f"Sincronizar slots: erro — {e}")
                 try:
                     limpar_duplicatas_inventario(client)
                 except Exception as e:
@@ -5577,6 +5679,13 @@ if __name__ == "__main__":
                 distribuir_pontos_skill(client)
             except Exception as e:
                 log.warning(f"Skills startup: erro — {e}")
+            # Sincroniza slots via /landsitz/ (sem depender da loja):
+            # equipa itens do inventário e detecta slots vazios que precisam de compra
+            try:
+                sincronizar_slots(client, carregar_estado())
+            except Exception as e:
+                log.warning(f"Sincronizar slots startup: erro — {e}")
+            # Scans de loja complementares (para itens não encontrados no inventário)
             try:
                 verificar_alvo_equipamento(client, carregar_estado())
             except Exception as e:
