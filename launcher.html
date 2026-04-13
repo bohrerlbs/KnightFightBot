@@ -278,6 +278,16 @@ header {
 .taverna-icon{font-size:14px;}
 .taverna-timer{font-weight:500;font-size:12px;color:#ffd97d;margin-left:auto;}
 
+/* Slots equipados */
+.slots-section{border-top:1px solid var(--border);margin-top:8px;padding-top:8px;}
+.slots-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+.slot-row{display:flex;align-items:center;gap:5px;padding:2px 0;font-size:11px;}
+.slot-icon{width:14px;text-align:center;flex-shrink:0;font-size:12px;}
+.slot-type{font-size:9px;color:var(--muted);width:54px;flex-shrink:0;}
+.slot-name{color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.slot-req{color:var(--muted);font-size:10px;white-space:nowrap;flex-shrink:0;}
+.slot-empty{color:#e05555;font-style:italic;}
+.slot-ok{color:#55c080;}
 /* Planejamento de Equipamento */
 .equip-section{border-top:1px solid var(--border);margin-top:8px;padding-top:8px;}
 .equip-label{font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
@@ -1039,6 +1049,99 @@ function renderProfiles(profiles){
     html += '</div>';
     html += '</div>';
 
+    // Slots equipados
+    var eq       = p._equipamento || {};
+    var slotData = eq.slots_equipados || {};
+    var buildTipo  = eq.build_tipo  || '2h';
+    var skArmadura = eq.sk_armadura || 0;
+    if(p._running){
+      html += '<div class="slots-section">';
+      html += '<div class="slots-label">Slots</div>';
+      // Weapon
+      (function(){
+        var s = slotData.weapon;
+        var ok = s && s.nome;
+        html += '<div class="slot-row">';
+        html += '<span class="slot-icon">'+(ok?'✓':'✗')+'</span>';
+        html += '<span class="slot-type">arma</span>';
+        if(ok){
+          html += '<span class="slot-name slot-ok">'+s.nome+'</span>';
+          html += '<span class="slot-req">req '+s.req+'</span>';
+        } else {
+          html += '<span class="slot-name slot-empty">vazio</span>';
+        }
+        html += '</div>';
+      })();
+      // Shield (1h only)
+      if(buildTipo === '1h'){
+        (function(){
+          var s = slotData.shield;
+          var ok = s && s.nome;
+          html += '<div class="slot-row">';
+          html += '<span class="slot-icon">'+(ok?'✓':'✗')+'</span>';
+          html += '<span class="slot-type">escudo</span>';
+          if(ok){
+            html += '<span class="slot-name slot-ok">'+s.nome+'</span>';
+            html += '<span class="slot-req">req '+s.req+'</span>';
+          } else {
+            html += '<span class="slot-name slot-empty">vazio</span>';
+          }
+          html += '</div>';
+        })();
+      }
+      // Armor (if sk_armadura > 0)
+      if(skArmadura > 0){
+        (function(){
+          var s = slotData.armor;
+          var ok = s && s.nome;
+          html += '<div class="slot-row">';
+          html += '<span class="slot-icon">'+(ok?'✓':'✗')+'</span>';
+          html += '<span class="slot-type">armadura</span>';
+          if(ok){
+            html += '<span class="slot-name slot-ok">'+s.nome+'</span>';
+            html += '<span class="slot-req">req '+s.req+'</span>';
+          } else {
+            html += '<span class="slot-name slot-empty">vazio</span>';
+          }
+          html += '</div>';
+        })();
+      }
+      // Rings (2 slots)
+      (function(){
+        var rings = slotData.rings || [];
+        for(var ri=0; ri<2; ri++){
+          var r = rings[ri];
+          var ok = r && r.nome;
+          html += '<div class="slot-row">';
+          html += '<span class="slot-icon">'+(ok?'✓':'✗')+'</span>';
+          html += '<span class="slot-type">anel '+(ri+1)+'</span>';
+          if(ok){
+            html += '<span class="slot-name slot-ok">'+r.nome+'</span>';
+            html += '<span class="slot-req">lv '+r.level+'</span>';
+          } else {
+            html += '<span class="slot-name slot-empty">vazio</span>';
+          }
+          html += '</div>';
+        }
+      })();
+      // Amulet
+      (function(){
+        var s = slotData.amulet;
+        var ok = s && s.nome;
+        html += '<div class="slot-row">';
+        html += '<span class="slot-icon">'+(ok?'✓':'✗')+'</span>';
+        html += '<span class="slot-type">amuleto</span>';
+        if(ok){
+          html += '<span class="slot-name slot-ok">'+s.nome+'</span>';
+          html += '<span class="slot-req">lv '+s.level+'</span>';
+        } else {
+          html += '<span class="slot-name slot-empty">vazio</span>';
+        }
+        html += '</div>';
+      })();
+      html += '</div>';
+    }
+
     // Planejamento de Equipamento
     var itemAlvo    = p._item_alvo    || null;
     var itemProximo = p._item_proximo || null;
@@ -1051,10 +1154,15 @@ function renderProfiles(profiles){
       if(itemAlvo){
         var catMap = {waffen:'arma',schilde:'escudo',ruestungen:'armadura'};
         var catAlvo = catMap[itemAlvo.categoria] || itemAlvo.categoria || '';
+        var urgTag  = itemAlvo.urgente ? ' ⚠' : '';
+        var custoInfo = itemAlvo.gold_necessario > 0
+          ? itemAlvo.gold_necessario+'g líq ('+itemAlvo.gold_bruto+'g bruto)'
+          : itemAlvo.gold_bruto+'g (vende atual cobre)';
+        var statusInfo = itemAlvo.url_compra ? ' · pronto' : ' · acumulando';
         html += '<div class="equip-row">';
-        html += '<span class="equip-tag equip-tag-gold">'+catAlvo+'</span>';
+        html += '<span class="equip-tag equip-tag-gold">'+catAlvo+urgTag+'</span>';
         html += '<span class="equip-item-name">'+itemAlvo.nome+'</span>';
-        html += '<span class="equip-item-info">'+itemAlvo.gold_necessario+'g</span>';
+        html += '<span class="equip-item-info">'+custoInfo+statusInfo+'</span>';
         html += '</div>';
       }
       if(itemProximo){

@@ -2197,6 +2197,15 @@ def verificar_alvo_equipamento(client, estado):
         if item_eq:
             log.debug(f"  Loja {tipo}: equipado='{item_eq['nome']}' req={req_eq} venda={gold_venda_eq}g")
 
+        # Armazena slot equipado no estado para o dashboard
+        slot_key = {"waffen": "weapon", "schilde": "shield", "ruestungen": "armor"}.get(tipo)
+        if slot_key:
+            slots = estado.setdefault("slots_equipados", {})
+            if item_eq:
+                slots[slot_key] = {"nome": item_eq["nome"], "req": req_eq}
+            else:
+                slots[slot_key] = None
+
         # Chave do catálogo e skill correspondente ao tipo de loja
         if tipo == "waffen":
             cat_key  = "waffen_zweihand" if BUILD_TIPO == "2h" else "waffen_einhand"
@@ -2353,12 +2362,15 @@ def verificar_alvo_equipamento(client, estado):
 
 
 def publicar_dashboard_equipamento(estado):
-    """Publica todos os alvos de compra no ciclo_file para o dashboard do launcher."""
+    """Publica alvos de compra e slots equipados no ciclo_file para o dashboard do launcher."""
     atualizar_ciclo_file("equipamento", {
-        "item_alvo":    estado.get("item_alvo"),
-        "pedra_alvo":   estado.get("pedra_alvo"),
-        "anel_alvo":    estado.get("anel_alvo"),
-        "amuleto_alvo": estado.get("amuleto_alvo"),
+        "item_alvo":       estado.get("item_alvo"),
+        "pedra_alvo":      estado.get("pedra_alvo"),
+        "anel_alvo":       estado.get("anel_alvo"),
+        "amuleto_alvo":    estado.get("amuleto_alvo"),
+        "slots_equipados": estado.get("slots_equipados", {}),
+        "build_tipo":      BUILD_TIPO,
+        "sk_armadura":     MY_STATS.get("sk_armadura", estado.get("sk_armadura", 0)),
     })
 
 
@@ -2985,6 +2997,7 @@ def verificar_alvo_anel(client, estado):
             inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
     sell_info_equipados = []  # {"level": lv, "sell_url": url, "sell_val": val}
+    nomes_equipados = []
     if inv_boxbg:
         for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
             _tr_txt = tr.get_text(separator=" ", strip=True)
@@ -3000,6 +3013,15 @@ def verificar_alvo_anel(client, estado):
                 m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
                 sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
                 sell_info_equipados.append({"level": lv, "sell_url": sell_url, "sell_val": sell_val})
+                _strong = tr.find("strong") or tr.find("b")
+                _nome = _strong.get_text(strip=True) if _strong else "Anel"
+                nomes_equipados.extend([_nome] * min(qty, MAX_ANEIS))
+
+    # Armazena aneis equipados no estado para o dashboard
+    slots = estado.setdefault("slots_equipados", {})
+    slots["rings"] = [{"nome": nomes_equipados[i] if i < len(nomes_equipados) else "Anel",
+                       "level": levels_equipados[i]}
+                      for i in range(len(levels_equipados))]
 
     log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), levels equipados: {levels_equipados}, sell_info: {sell_info_equipados}, player_lv={player_level}")
 
@@ -3240,6 +3262,7 @@ def verificar_alvo_amuleto(client, estado):
         if "invent" in _boxtop.get_text().strip().lower():
             inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
             break
+    nome_amuleto_eq = None
     if inv_boxbg:
         for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
             _tr_txt = tr.get_text(separator=" ", strip=True)
@@ -3253,6 +3276,12 @@ def verificar_alvo_amuleto(client, estado):
                 sell_url_amuleto_eq = sell_a["href"] if sell_a else None
                 m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
                 sell_val_amuleto_eq = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
+                _strong = tr.find("strong") or tr.find("b")
+                nome_amuleto_eq = _strong.get_text(strip=True) if _strong else None
+
+    # Armazena amuleto equipado no estado para o dashboard
+    slots = estado.setdefault("slots_equipados", {})
+    slots["amulet"] = {"nome": nome_amuleto_eq, "level": level_amuleto_eq} if level_amuleto_eq >= 0 else None
 
     log.debug(f"  Amuleto: {total_amuletos} total, level_eq={level_amuleto_eq}, sell_url={sell_url_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
 
@@ -3654,6 +3683,7 @@ def sincronizar_slots(client, estado):
         log.info(f"  Slots vazios detectados: {vazios} — disparando scans")
     else:
         log.debug(f"  Slots: todos preenchidos ({slots_eq}, rings={ring_count})")
+        publicar_dashboard_equipamento(estado)
         return
 
     # Passo 3: dispara verify para cada slot vazio
