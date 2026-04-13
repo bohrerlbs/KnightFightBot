@@ -143,6 +143,15 @@ def get_profiles():
                     cfg["_pedra_alvo"]   = eq.get("pedra_alvo")
                     cfg["_anel_alvo"]    = eq.get("anel_alvo")
                     cfg["_amuleto_alvo"] = eq.get("amuleto_alvo")
+                    cfg["_equipamento"]  = eq  # dict completo p/ slots no dashboard
+                except:
+                    pass
+            # Lê sk_armadura do estado para mostrar slot armadura no dashboard
+            estado_path = d / "estado.json"
+            if estado_path.exists():
+                try:
+                    est = json.loads(estado_path.read_text(encoding="utf-8"))
+                    cfg["_sk_armadura"] = est.get("sk_armadura", 0)
                 except:
                     pass
             profiles.append(cfg)

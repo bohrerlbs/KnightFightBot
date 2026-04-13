@@ -1052,8 +1052,8 @@ function renderProfiles(profiles){
     // Slots equipados
     var eq       = p._equipamento || {};
     var slotData = eq.slots_equipados || {};
-    var buildTipo  = eq.build_tipo  || '2h';
-    var skArmadura = eq.sk_armadura || 0;
+    var buildTipo  = p.build_tipo  || eq.build_tipo  || '2h';
+    var skArmadura = (p._sk_armadura != null ? p._sk_armadura : (eq.sk_armadura || 0));
     if(p._running){
       html += '<div class="slots-section">';
       html += '<div class="slots-label">Slots</div>';

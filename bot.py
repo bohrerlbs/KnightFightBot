@@ -3637,28 +3637,84 @@ def sincronizar_slots(client, estado):
     equipped_div = soup.find("div", id="equipped-items")
     slots_eq = set()
     ring_count = 0
+    # Extrai nomes dos itens equipados para o dashboard
+    slots_nomes = {}   # slot -> {"nome": ..., "req": ...} ou lista p/ rings
+
+    def _nome_do_span(span):
+        """Extrai nome do item do span: texto direto ou strong/b dentro dele."""
+        strong = span.find("strong") or span.find("b")
+        if strong:
+            return strong.get_text(strip=True)
+        txt = span.get_text(strip=True)
+        if txt:
+            return txt.split("\n")[0].strip()
+        tip_orig = span.get("data-tooltip", "")
+        # primeira linha não-vazia do tooltip
+        for linha in tip_orig.split("\n"):
+            linha = linha.strip()
+            if linha:
+                return linha
+        return ""
+
+    def _req_do_span(span):
+        """Extrai requisito numérico do tooltip do span."""
+        tip_orig = span.get("data-tooltip", "")
+        nums = re.findall(
+            r"(?:"
+            r"(?:Condi[çc][ãa]o|Condition|Requirement|Voraussetzung)\s*-\s*[^:]+:\s*"
+            r"|(?:n[íi]vel|level|stufe|nivel)\s*[:\-]\s*"
+            r")(\d+)",
+            tip_orig, re.IGNORECASE
+        )
+        return max((int(n) for n in nums), default=0)
 
     if equipped_div:
+        rings_list = []
         for span in equipped_div.find_all("span", attrs={"data-href": True}):
             dh  = span.get("data-href", "")
             tip = span.get("data-tooltip", "").lower()
+            nome = _nome_do_span(span)
+            req  = _req_do_span(span)
             if "uwid=" in dh:
                 slots_eq.add("weapon")
+                slots_nomes["weapon"] = {"nome": nome, "req": req}
             elif "usid=" in dh:
                 slots_eq.add("shield")
+                slots_nomes["shield"] = {"nome": nome, "req": req}
             elif "rid=" in dh:
                 ring_count += 1
                 slots_eq.add("ring")
+                rings_list.append({"nome": nome, "level": req})
             elif "aid=" in dh:
                 slots_eq.add("amulet")
+                slots_nomes["amulet"] = {"nome": nome, "level": req}
             elif "armid=" in dh:
                 if re.search(r"\banel\b|\bring\b|anillo|ringe?\b", tip):
                     ring_count += 1
                     slots_eq.add("ring")
+                    rings_list.append({"nome": nome, "level": req})
                 elif re.search(r"\bamuleto\b|\bamulet\b|amulette?\b", tip):
                     slots_eq.add("amulet")
+                    slots_nomes["amulet"] = {"nome": nome, "level": req}
                 else:
                     slots_eq.add("armor")
+                    slots_nomes["armor"] = {"nome": nome, "req": req}
+        if rings_list:
+            slots_nomes["rings"] = rings_list
+
+    # Persiste nomes no estado (sem sobrescrever entradas já preenchidas pela loja)
+    if slots_nomes:
+        estado = carregar_estado()
+        slots_state = estado.setdefault("slots_equipados", {})
+        for k, v in slots_nomes.items():
+            # Só sobrescreve se o slot ainda está vazio ou sem nome
+            existing = slots_state.get(k)
+            if k == "rings":
+                if not existing:
+                    slots_state[k] = v
+            elif not existing or not existing.get("nome"):
+                slots_state[k] = v
+        salvar_estado(estado)
 
     sk_armadura = MY_STATS.get("sk_armadura", estado.get("sk_armadura", 0))
 
@@ -5282,6 +5338,24 @@ def loop_acoes(client):
                         log.info(f"  Treinamento pós-ataque: {', '.join(treinados)}")
                 except Exception as e:
                     log.warning(f"  Treinamento pós-ataque: erro — {e}")
+                # Pós-ataque: melhor momento para scan de loja e slots (personagem livre)
+                if COMPRAR_EQUIPAMENTO:
+                    try:
+                        verificar_alvo_equipamento(client, carregar_estado())
+                    except Exception as e:
+                        log.warning(f"  Pós-ataque scan equip: erro — {e}")
+                    try:
+                        verificar_alvo_anel(client, carregar_estado())
+                    except Exception as e:
+                        log.warning(f"  Pós-ataque scan anel: erro — {e}")
+                    try:
+                        verificar_alvo_amuleto(client, carregar_estado())
+                    except Exception as e:
+                        log.warning(f"  Pós-ataque scan amuleto: erro — {e}")
+                    try:
+                        sincronizar_slots(client, carregar_estado())
+                    except Exception as e:
+                        log.warning(f"  Pós-ataque sincronizar slots: erro — {e}")
                 break
 
             # Precisa imunizar e não atacou pig?
@@ -5328,6 +5402,24 @@ def loop_acoes(client):
                                 log.info(f"  Treinamento pós-imunização: {', '.join(treinados)}")
                         except Exception as e:
                             log.warning(f"  Treinamento pós-imunização: erro — {e}")
+                        # Pós-imunização: scan de loja e slots
+                        if COMPRAR_EQUIPAMENTO:
+                            try:
+                                verificar_alvo_equipamento(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Pós-imun scan equip: erro — {e}")
+                            try:
+                                verificar_alvo_anel(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Pós-imun scan anel: erro — {e}")
+                            try:
+                                verificar_alvo_amuleto(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Pós-imun scan amuleto: erro — {e}")
+                            try:
+                                sincronizar_slots(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Pós-imun sincronizar slots: erro — {e}")
                         break
                     else:
                         log.warning(f"  Ataque falhou ({res_imun.get('status')}) — próximo alvo...")
