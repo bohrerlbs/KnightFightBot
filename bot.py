@@ -2104,17 +2104,21 @@ def _carregar_catalogo():
         if filtro_gema and len(itens) > 1:
             # Remove itens que quebram a progressão crescente de preço:
             # itera do mais barato (req menor) para o mais caro, mantendo o
-            # máximo de gold visto até agora. Se o item atual custa menos que
-            # o máximo anterior, é item de gema disfarçado e deve ser pulado.
+            # máximo de gold visto até agora. Item que custa menos de 60% do
+            # máximo anterior é item de gema (drops reais de gema chegam a 5-25%
+            # do valor de itens gold equivalentes; variações legítimas ficam acima de 80%).
             filtrados = []
             gold_max = 0
             for item in itens:
-                if item["gold"] >= gold_max:
-                    gold_max = item["gold"]
+                threshold = gold_max * 0.6
+                if item["gold"] >= threshold:
+                    if item["gold"] > gold_max:
+                        gold_max = item["gold"]
                     filtrados.append(item)
                 else:
                     log.debug(f"  Catálogo {fname}: pulando item de gema '{item['nome']}' "
-                              f"(req={item['req_skill']}, gold={item['gold']} < max_anterior={gold_max})")
+                              f"(req={item['req_skill']}, gold={item['gold']} < "
+                              f"60% do max_anterior={gold_max})")
             itens = filtrados
         return itens
 
@@ -2127,8 +2131,8 @@ def _carregar_catalogo():
         "waffen_zweihand": _parse_file("2h.txt",       6, 7, "zweihand", "waffen",  filtro_gema=True),
         "ruestungen":      _parse_file("armadura.txt", 4, 5, "ruestung", "ruestungen", filtro_gema=True),
         "schilde":         _parse_file("escudos.txt",  6, 7, "ruestung", "schilde",    filtro_gema=True),
-        "aneis":           _parse_file("aneis.txt",    6, 7, None,       "aneis",    req_fn=_level_req),
-        "amuletos":        _parse_file("amuletos.txt", 7, 8, None,       "amuletos"),
+        "aneis":           _parse_file("aneis.txt",    6, 7, None,       "aneis",    req_fn=_level_req, filtro_gema=True),
+        "amuletos":        _parse_file("amuletos.txt", 7, 8, None,       "amuletos", filtro_gema=True),
     }
     totais = ", ".join(f"{k}={len(v)}" for k, v in _CATALOGO_CACHE.items())
     log.debug(f"  Catálogo carregado: {totais}")
