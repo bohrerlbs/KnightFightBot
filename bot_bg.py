@@ -309,23 +309,33 @@ def parsear_status_bg(soup):
     return status
 
 def parsear_sessao_bg(soup):
-    """Extrai info da sessão atual do BG."""
+    """Extrai info da sessão atual do BG (multi-idioma: PT/EN/DE/PL)."""
     sessao = {}
     try:
         texto = soup.get_text(" ", strip=True)
 
-        # Pega todos os "X de um máximo de Y"
-        matches = re.findall(r"(\d+)\s+de\s+um\s+m[aá]ximo\s+de\s+(\d+)", texto)
+        # Padrões multilíngua: "X de um máximo de Y" (PT) / "X of a maximum of Y" (EN)
+        # / "X von maximal Y" (DE) — captura qualquer par (número, número-limite)
+        _PATTERNS_MAX = [
+            r"(\d+)\s+de\s+um\s+m[aá]ximo\s+de\s+(\d+)",          # PT
+            r"(\d+)\s+of\s+a\s+maximum\s+of\s+(\d+)",              # EN
+            r"(\d+)\s+of\s+(?:the\s+)?maximum\s+(\d+)",            # EN alt
+            r"(\d+)\s+von\s+maximal\s+(\d+)",                      # DE
+            r"(\d+)\s+z\s+maksymalnie\s+(\d+)",                    # PL
+            r"(\d+)\s*/\s*(\d+)\s*(?:battle|Kampf|walka|boj)",     # genérico "X/Y battle"
+        ]
+        matches = []
+        for pat in _PATTERNS_MAX:
+            matches.extend(re.findall(pat, texto, re.IGNORECASE))
+
         for val_s, max_s in matches:
             val, maximo = int(val_s), int(max_s)
             if maximo == 100:
-                # Limite diário (sempre 100, independente do modo)
                 sessao["batalhas_dia"]     = val
                 sessao["batalhas_dia_max"] = maximo
             elif maximo in (200, 400):
-                # Total da sessão (modo médio=200, premium=400)
-                sessao["batalhas_total"]   = maximo
-                sessao["batalhas_feitas"]  = val
+                sessao["batalhas_total"]  = maximo
+                sessao["batalhas_feitas"] = val
 
         # Se modo free (max=100), total = dia
         if "batalhas_total" not in sessao and "batalhas_dia" in sessao:
@@ -336,17 +346,41 @@ def parsear_sessao_bg(soup):
         if "batalhas_dia" in sessao:
             sessao["restantes_hoje"] = sessao["batalhas_dia_max"] - sessao["batalhas_dia"]
 
-        # Datas
-        m = re.search(r"In[ií]cio da sess[aã]o[^:]*:\s*([\d.]+\s[\d:]+)", texto, re.IGNORECASE)
-        if m: sessao["inicio"] = m.group(1)
-        m = re.search(r"Fim da sess[aã]o[^:]*:\s*([\d.]+\s[\d:]+)", texto, re.IGNORECASE)
-        if m: sessao["fim"] = m.group(1)
-        # Limite diário: "pode realizar mais X ataques"
-        m = re.search(r"pode realizar mais\s+(\d+)\s+ataques", texto)
-        if m: sessao["restantes_hoje"] = int(m.group(1))
+        # Datas — multilíngua
+        _DATA_INICIO = [
+            r"In[ií]cio da sess[aã]o[^:]*:\s*([\d.]+\s[\d:]+)",   # PT
+            r"Session\s+start[^:]*:\s*([\d.]+\s[\d:]+)",           # EN
+            r"Sessionsbeginn[^:]*:\s*([\d.]+\s[\d:]+)",            # DE
+            r"Pocz[aą]tek\s+sesji[^:]*:\s*([\d.]+\s[\d:]+)",       # PL
+        ]
+        for pat in _DATA_INICIO:
+            m = re.search(pat, texto, re.IGNORECASE)
+            if m: sessao["inicio"] = m.group(1); break
 
-        # Fallback: sessão existe (tem dados de batalha) mas data não foi parseada
-        if "batalhas_dia" in sessao and "inicio" not in sessao:
+        _DATA_FIM = [
+            r"Fim da sess[aã]o[^:]*:\s*([\d.]+\s[\d:]+)",          # PT
+            r"Session\s+end[^:]*:\s*([\d.]+\s[\d:]+)",             # EN
+            r"Sessionsende[^:]*:\s*([\d.]+\s[\d:]+)",              # DE
+            r"Koniec\s+sesji[^:]*:\s*([\d.]+\s[\d:]+)",            # PL
+        ]
+        for pat in _DATA_FIM:
+            m = re.search(pat, texto, re.IGNORECASE)
+            if m: sessao["fim"] = m.group(1); break
+
+        # Restantes multilíngua
+        _RESTANTES = [
+            r"pode realizar mais\s+(\d+)\s+ataques",               # PT
+            r"can\s+(?:still\s+)?perform\s+(?:up\s+to\s+)?(\d+)\s+attack",  # EN
+            r"noch\s+(\d+)\s+Kampf",                               # DE
+            r"mo[żz]esz\s+jeszcze\s+przeprowadzi[ćc]\s+(\d+)",    # PL
+        ]
+        for pat in _RESTANTES:
+            m = re.search(pat, texto, re.IGNORECASE)
+            if m: sessao["restantes_hoje"] = int(m.group(1)); break
+
+        # Fallback de início: se a página carregou mas data não foi parseada,
+        # usa chave sintética — garante que o bot não abortará por "sem sessão"
+        if "inicio" not in sessao:
             log.debug(f"parsear_sessao_bg: data de início não encontrada — texto: {texto[:300]}")
             sessao["inicio"] = f"sess_{datetime.now():%Y%m%d}"
 
@@ -1428,18 +1462,17 @@ if __name__ == "__main__":
     log.info(f"Dashboard: http://localhost:{DASHBOARD_PORT}/dashboard")
     log.info("=" * 50)
 
-    # Verifica se existe sessão BG ativa antes de iniciar
-    sessao_check = carregar_estado().get("sessao_bg", {})
-    if not sessao_check.get("inicio"):
-        log.warning("⚠ Nenhuma sessão BG anterior encontrada — continuando mesmo assim...")
-
-    # Verifica se há sessão BG ativa antes de iniciar
+    # Verifica se há sessão BG ativa — bot só para se a página /battleground/currentbattle/
+    # não carregou (eu={}) E não tem sessão salva no estado. Idiomas não-PT podem não
+    # parsear a data mas o fallback sess_YYYYMMDD garante que inicio esteja sempre preenchido.
     sessao_inicio = eu.get("sessao_inicio", "")
-    if not sessao_inicio:
-        log.error("❌ Nenhuma sessão BG ativa encontrada. Inscreva-se no BG primeiro.")
-        log.error("   Acesse o jogo → BattleGround → Iniciar sessão e reinicie o bot.")
+    if not sessao_inicio and not eu:
+        log.error("❌ Erro ao carregar status do BG — sem conexão ou sessão inválida.")
+        log.error("   Verifique cookies e se o personagem está inscrito no BG.")
         atualizar_ciclo("status", "sem_sessao")
         import sys; sys.exit(0)
+    if not sessao_inicio:
+        log.warning("⚠ Data de início da sessão não parseada (idioma não suportado?) — continuando mesmo assim...")
 
     # Inicia loop
     try:
