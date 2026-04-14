@@ -389,25 +389,41 @@ def parsear_sessao_bg(soup):
     return sessao
 
 def parsear_estatisticas_bg(soup):
-    """Extrai estatísticas da sessão BG."""
+    """Extrai estatísticas da sessão BG (multilíngua: PT/EN/DE/PL)."""
     stats = {}
     try:
         tds = soup.find_all("td", class_="tdn")
         i = 0
         while i < len(tds) - 1:
             label = tds[i].get_text(strip=True).lower()
-            valor = tds[i+1].get_text(strip=True)
-            m = re.search(r"[\d.]+", valor.replace(".", "").replace(",", ""))
+            valor = tds[i+1].get_text(strip=True).replace(".", "").replace(",", "")
+            m = re.search(r"\d+", valor)
             if m:
                 v = int(m.group())
-                if "ofensiva" in label: stats["batalhas"] = v
-                elif "vencido" in label: stats["vitorias"] = v
-                elif "derrota" in label: stats["derrotas"] = v
-                elif "empate" in label: stats["empates"] = v
-                elif "batalha ganho" in label: stats["pontos_batalha"] = v
-                elif "ouro ganho" in label: stats["gold"] = v
-                elif "certeiro" in label and "atribuído" in label: stats["dano_causado"] = v
-                elif "certeiro" in label and "sofrido" in label: stats["dano_recebido"] = v
+                # Batalhas ofensivas / Offensive battles / Offensive Kämpfe / Bitwy ofensywne
+                if any(x in label for x in ("ofensiva", "offensive", "offensiv", "ofensywn", "attack")):
+                    stats["batalhas"] = v
+                # Vencidos / Won / Gewonnen / Wygrane
+                elif any(x in label for x in ("vencido", "won", "gewonnen", "wygran", "victori", "win")):
+                    stats["vitorias"] = v
+                # Derrotas / Lost / Verloren / Przegrane
+                elif any(x in label for x in ("derrota", "lost", "verloren", "przegran", "defeat")):
+                    stats["derrotas"] = v
+                # Empates / Draws / Unentschieden / Remisy
+                elif any(x in label for x in ("empate", "draw", "unentschied", "remis")):
+                    stats["empates"] = v
+                # Pontos de batalha / Battle points / Kampfpunkte / Punkty bitewne
+                elif any(x in label for x in ("batalha ganho", "battle point", "kampfpunkt", "punkty bitew", "points earned")):
+                    stats["pontos_batalha"] = v
+                # Ouro ganho / Gold earned / Gold verdient / Złoto zdobyte
+                elif any(x in label for x in ("ouro ganho", "gold earned", "gold verdient", "złoto", "gold gain")):
+                    stats["gold"] = v
+                # Dano causado / Hit points dealt / Trefferpunkte verursacht
+                elif any(x in label for x in ("atribuíd", "dealt", "verursacht", "zadanych", "caused")):
+                    stats["dano_causado"] = v
+                # Dano recebido / Hit points received / Trefferpunkte erhalten
+                elif any(x in label for x in ("sofrido", "received", "erhalten", "otrzyman", "taken")):
+                    stats["dano_recebido"] = v
             i += 2
     except Exception as e:
         log.warning(f"parsear_estatisticas_bg: {e}")
@@ -1443,12 +1459,30 @@ if __name__ == "__main__":
         log.info(f"Sessão: {sessao.get('batalhas_feitas',0)}/{sessao.get('batalhas_total','?')} batalhas | Hoje: {sessao.get('batalhas_dia',0)}/100 | Restantes: {restantes}")
         atualizar_ciclo("sessao", sessao)
 
+        # Sincroniza contadores com estatísticas reais do servidor
+        try:
+            soup_stats = client.get_full("/battleground/statistics/")
+            stats_reais = parsear_estatisticas_bg(soup_stats)
+            if stats_reais.get("batalhas") is not None:
+                log.info(f"  Stats reais: {stats_reais.get('batalhas',0)} batalhas | "
+                         f"{stats_reais.get('vitorias',0)}V/{stats_reais.get('derrotas',0)}D | "
+                         f"{stats_reais.get('gold',0)}g")
+        except Exception as e_st:
+            log.debug(f"  Stats: erro ao carregar — {e_st}")
+            stats_reais = {}
+
         # Salva sessao no estado para verificação do limite diário
         estado = carregar_estado()
         estado["sessao_bg"] = sessao
-        # Usa batalhas do DIA como contador (reseta todo dia às 00h)
-        # Evita que estado acumulado bloqueie o bot ao reiniciar
-        estado["batalhas_feitas"] = sessao.get("batalhas_dia", 0)
+        # Usa contagem real do servidor quando disponível, senão usa batalhas_dia
+        batalhas_reais = stats_reais.get("batalhas", sessao.get("batalhas_dia", 0))
+        estado["batalhas_feitas"] = batalhas_reais
+        if stats_reais.get("vitorias") is not None:
+            estado["vitorias"]   = stats_reais["vitorias"]
+        if stats_reais.get("derrotas") is not None:
+            estado["derrotas"]   = stats_reais["derrotas"]
+        if stats_reais.get("gold") is not None:
+            estado["gold_total"] = stats_reais["gold"]
         estado["sessao_bg_id"] = sessao.get("inicio", "")
         salvar_estado(estado)
         # Propaga sessao_inicio para eu (usado pelo loop_bg para detectar nova sessão)
