@@ -1930,24 +1930,30 @@ def _parsear_shop_todos_itens(soup, tipo):
         if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
             continue
 
-        # Extrai preço de compra — pega o MAIOR valor entre todos os spans com ícone de gold
-        # (evita capturar preço de venda pequeno que aparece antes do preço de compra no HTML)
+        # Extrai preço de compra — pega o número imediatamente ANTES do ícone goldstueck.gif
+        # (evita capturar stats como "Defence: 0.5 - 1" que aparecem no mesmo span antes do preço)
         gold = 0
-        gold_candidatos = []
-        for span in tr.find_all("span"):
-            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
-                continue
-            m = re.search(r"[\d.,]+", span.get_text())
-            if m:
-                val = int(m.group().replace(".", "").replace(",", ""))
-                if val > 0:
-                    gold_candidatos.append(val)
-        if gold_candidatos:
-            gold = max(gold_candidatos)
-        if gold == 0:
-            m = re.search(r"\b(\d[\d.,]+)\b", tr.get_text())
-            if m:
-                gold = int(m.group(1).replace(".", "").replace(",", ""))
+        for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
+            node = img_gold.previous_sibling
+            while node is not None:
+                if isinstance(node, str):
+                    txt = node.replace("\xa0", " ").strip()
+                elif hasattr(node, "get_text"):
+                    txt = node.get_text(strip=True)
+                else:
+                    node = node.previous_sibling
+                    continue
+                if txt:
+                    nums = re.findall(r"\d[\d.,]*", txt)
+                    if nums:
+                        try:
+                            val = int(nums[-1].replace(".", "").replace(",", ""))
+                            if val >= 50:
+                                gold = max(gold, val)
+                        except (ValueError, IndexError):
+                            pass
+                    break
+                node = node.previous_sibling
         # Preços de itens no jogo custam no mínimo 50g — valor menor indica erro de parsing
         if 0 < gold < 50:
             log.debug(f"  Loja: preço {gold}g ignorado (< 50g, provável erro de parsing)")
