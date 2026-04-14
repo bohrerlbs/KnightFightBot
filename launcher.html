@@ -598,10 +598,16 @@ header {
         </div>
       </div>
       <div id="cfg-horario-aviso" style="display:none;font-size:10px;color:#e55;margin-bottom:6px;padding:4px 6px;background:rgba(200,50,50,0.15);border-radius:3px"></div>
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <input type="checkbox" id="cfg-horario-ativo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="validarHorario()">
         <label for="cfg-horario-ativo" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
-          Ativar — ao atingir Parada: compra armadura e entra na taverna ate Inicio
+          Ativar — ao atingir Parada entra na taverna ate Inicio
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-horario-gastar-gold" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-horario-gastar-gold" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Gastar gold — compra armadura barata antes de entrar na taverna
         </label>
       </div>
     </div>
@@ -764,6 +770,7 @@ function openCfgModal(name){
       document.getElementById('cfg-horario-inicio').value = cfg.horario_inicio || '08:00';
       document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
       document.getElementById('cfg-horario-ativo').checked = !!cfg.horario_ativo;
+      document.getElementById('cfg-horario-gastar-gold').checked = cfg.horario_gastar_gold !== false;
       document.getElementById('cfg-game-user').value   = cfg.game_user || '';
       document.getElementById('cfg-game-pass').value   = cfg.game_pass ? '••••••••' : '';
       document.getElementById('cfg-game-pass').dataset.hasPass = cfg.game_pass ? '1' : '';
@@ -788,9 +795,10 @@ function saveCfg(){
     distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
     build_tipo:          document.getElementById('cfg-build-tipo').value,
     comprar_equipamento: document.getElementById('cfg-comprar-equipamento').checked,
-    horario_inicio:  document.getElementById('cfg-horario-inicio').value || '08:00',
-    horario_parada:  document.getElementById('cfg-horario-parada').value || '22:00',
-    horario_ativo:   document.getElementById('cfg-horario-ativo').checked,
+    horario_inicio:       document.getElementById('cfg-horario-inicio').value || '08:00',
+    horario_parada:       document.getElementById('cfg-horario-parada').value || '22:00',
+    horario_ativo:        document.getElementById('cfg-horario-ativo').checked,
+    horario_gastar_gold:  document.getElementById('cfg-horario-gastar-gold').checked,
     game_user:       document.getElementById('cfg-game-user').value.trim(),
     game_pass:       (function(){
       var v = document.getElementById('cfg-game-pass').value;

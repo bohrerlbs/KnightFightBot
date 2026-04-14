@@ -161,7 +161,8 @@ BUILD_TIPO           = "2h"   # "1h" ou "2h" — define como distribuir skills e
 COMPRAR_EQUIPAMENTO  = False  # compra próximo equip quando acumula gold suficiente
 HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
-HORARIO_PARADA       = "22:00"  # hora local de parada (compra armadura + entra taverna)
+HORARIO_PARADA       = "22:00"  # hora local de parada (entra taverna)
+HORARIO_GASTAR_GOLD  = True   # ao parar: compra armadura barata com todo o gold antes de entrar taverna
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -3898,13 +3899,16 @@ def rotina_encerramento_noturno(client):
             time.sleep(seg_tav + 30)
         sair_taverna(client)
 
-    # 2. Compra armadura com todo o gold
-    try:
-        qtd, preco, nome = comprar_armadura_barata(client)
-        if qtd > 0:
-            log.info(f"  Gold gasto em armadura: {qtd}x {nome} @ {preco}g")
-    except Exception as e:
-        log.warning(f"  Compra armadura: erro — {e}")
+    # 2. Compra armadura com todo o gold (opcional)
+    if HORARIO_GASTAR_GOLD:
+        try:
+            qtd, preco, nome = comprar_armadura_barata(client)
+            if qtd > 0:
+                log.info(f"  Gold gasto em armadura: {qtd}x {nome} @ {preco}g")
+        except Exception as e:
+            log.warning(f"  Compra armadura: erro — {e}")
+    else:
+        log.info(f"  Gastar gold desativado — entrando na taverna com gold na conta")
 
     # 3. Entra na taverna em loop até voltar ao horário de operação
     while esta_fora_horario():
@@ -5688,6 +5692,8 @@ if __name__ == "__main__":
         globals()["HORARIO_INICIO"] = str(cfg["horario_inicio"])
     if "horario_parada" in cfg:
         globals()["HORARIO_PARADA"] = str(cfg["horario_parada"])
+    if "horario_gastar_gold" in cfg:
+        globals()["HORARIO_GASTAR_GOLD"] = bool(cfg["horario_gastar_gold"])
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:
