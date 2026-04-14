@@ -1846,20 +1846,28 @@ def _parsear_shop_listagem(soup, tipo):
         if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
             continue
 
-        # Extrai preço: procura número na span que contém goldstueck
+        # Extrai preço: número imediatamente antes do ícone goldstueck
+        # (evita capturar stat como "Shadow-Damage: 1" antes do "Sale price: 450")
         preco = 0
-        for span in tr.find_all("span"):
-            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
-                continue
-            m = re.search(r"[\d.,]+", span.get_text())
-            if m:
-                preco = int(m.group().replace(".", "").replace(",", ""))
-                break
-        # Fallback: primeiro número do tr
-        if preco == 0:
-            m = re.search(r"\b(\d[\d.,]+)\b", tr.get_text())
-            if m:
-                preco = int(m.group(1).replace(".", "").replace(",", ""))
+        for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
+            node = img_gold.previous_sibling
+            while node is not None:
+                if isinstance(node, str):
+                    txt = node.replace("\xa0", " ").strip()
+                elif hasattr(node, "get_text"):
+                    txt = node.get_text(strip=True)
+                else:
+                    node = node.previous_sibling
+                    continue
+                if txt:
+                    nums = re.findall(r"\d[\d.,]*", txt)
+                    if nums:
+                        try:
+                            preco = max(preco, int(nums[-1].replace(".", "").replace(",", "")))
+                        except (ValueError, IndexError):
+                            pass
+                    break
+                node = node.previous_sibling
 
         # Nome: tag <strong> ou <b> da td de info (class "t"), não da td com o botão
         nome = "Item"
@@ -2676,21 +2684,27 @@ def _parsear_pedra_bloqueada(soup):
         if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
             continue
 
-        # Extrai preço — busca número antes do goldstueck
+        # Extrai preço — número imediatamente antes do ícone goldstueck
         preco = 0
-        for span in tr.find_all("span"):
-            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
-                continue
-            m = re.search(r"[\d.,]+", span.get_text())
-            if m:
-                preco = int(m.group().replace(".", "").replace(",", ""))
-                break
-        if preco == 0:
-            # fallback: número mais próximo do goldstueck no texto do tr
-            txt_tr = tr.get_text(" ")
-            m = re.search(r"(\d[\d.,]*)\s*$", txt_tr.split("goldstueck")[0] if "goldstueck" in txt_tr else "")
-            if m:
-                preco = int(m.group(1).replace(".", "").replace(",", ""))
+        for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
+            node = img_gold.previous_sibling
+            while node is not None:
+                if isinstance(node, str):
+                    txt = node.replace("\xa0", " ").strip()
+                elif hasattr(node, "get_text"):
+                    txt = node.get_text(strip=True)
+                else:
+                    node = node.previous_sibling
+                    continue
+                if txt:
+                    nums = re.findall(r"\d[\d.,]*", txt)
+                    if nums:
+                        try:
+                            preco = max(preco, int(nums[-1].replace(".", "").replace(",", "")))
+                        except (ValueError, IndexError):
+                            pass
+                    break
+                node = node.previous_sibling
         if preco <= 0:
             continue
 
