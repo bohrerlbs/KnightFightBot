@@ -734,7 +734,22 @@ class Handler(BaseHTTPRequestHandler):
             # Verifica acesso ao perfil
             allowed = [pr.get("_name","").lower() for pr in filter_profiles(get_profiles(), session)]
             if pname.lower() not in allowed:
-                self.send_response(403); self.end_headers(); return
+                body = (
+                    b"<html><head><meta charset='utf-8'>"
+                    b"<title>Acesso negado</title></head><body style='font-family:sans-serif;padding:40px'>"
+                    b"<h2>Acesso negado</h2>"
+                    b"<p>Voc\xc3\xaa n\xc3\xa3o tem permiss\xc3\xa3o para este perfil, "
+                    b"ou a sess\xc3\xa3o expirou.</p>"
+                    b"<a href='/launcher'>Voltar ao launcher</a> &nbsp;|&nbsp; "
+                    b"<a href='/login'>Fazer login</a>"
+                    b"</body></html>"
+                )
+                self.send_response(403)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             port = get_profile_port(pname) + (1 if is_bg else 0)
             import urllib.request as _ur
             try:
@@ -849,7 +864,10 @@ class Handler(BaseHTTPRequestHandler):
         elif p.startswith("/api/bg/start/"):
             parts = [x for x in p.split("/") if x]
             name = parts[-1] if parts else ""
-            if not can_access(name): self._json({"ok":False,"error":"Sem permissão"}); return
+            if not can_access(name):
+                print(f"[BG] Sem permissão: user={session.get('user')} role={session.get('role')} "
+                      f"perfil={name} profiles={session.get('profiles')}", flush=True)
+                self._json({"ok":False,"error":"Sem permissão"}); return
             modo = d.get("modo", "free")  # d já lido em self._body() acima
             try:
                 result_bg = start_bg_bot(name, modo)
@@ -876,12 +894,19 @@ class Handler(BaseHTTPRequestHandler):
             uname = d.get("username","").strip()
             if not uname: self._json({"ok":False,"error":"Nome obrigatório"}); return
             users = load_users()
+            new_profs = d.get("profiles",[])
+            new_role  = d.get("role","user")
             users[uname] = {
                 "password": _hash_pw(d["password"]) if d.get("password") else users.get(uname,{}).get("password",""),
-                "role": d.get("role","user"),
-                "profiles": d.get("profiles",[])
+                "role": new_role,
+                "profiles": new_profs
             }
             save_users(users)
+            # Atualiza sessões em memória do usuário (evita "Sem permissão" stale)
+            for sess in SESSIONS.values():
+                if sess.get("user") == uname:
+                    sess["profiles"] = new_profs
+                    sess["role"]     = new_role
             self._json({"ok": True})
         elif p == "/api/users/delete":
             if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
