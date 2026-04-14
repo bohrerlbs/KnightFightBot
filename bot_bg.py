@@ -1275,6 +1275,7 @@ def iniciar_servidor_bg(porta):
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
+        def handle_error(self, request, client_address): pass  # suprime ConnectionAbortedError no log
 
         def do_GET(self):
             if self.path in ("/dados", "/dados/"):

@@ -634,6 +634,7 @@ def capture_cookie_browser(server="int7"):
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+    def handle_error(self, request, client_address): pass  # suprime ConnectionAbortedError no log
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
