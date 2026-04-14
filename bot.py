@@ -3955,6 +3955,13 @@ def rotina_encerramento_noturno(client):
 
     log.info(f"⏰ Horário de operação retomado ({HORARIO_INICIO}) — voltando ao ciclo normal")
 
+    # Limpa armaduras extras compradas durante o encerramento noturno
+    if HORARIO_GASTAR_GOLD:
+        try:
+            limpar_duplicatas_inventario(client)
+        except Exception as e:
+            log.warning(f"  Limpeza pós-noturno: erro — {e}")
+
 
 def verificar_treinamento(client):
     """
