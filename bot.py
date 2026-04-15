@@ -1953,12 +1953,24 @@ def _parsear_shop_todos_itens(soup, tipo):
     ]
 
     itens = []
+    req_skills_gema = set()  # req_skill de itens disponíveis APENAS por gema (nunca por gold)
     for tr in soup.find_all("tr", class_="mobile-cols-2"):
+        has_gold = bool(tr.find("img", src=lambda s: s and "goldstueck.gif" in s))
+        has_gem  = bool(tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)))
+        # Detecta item de gema pura: tem buy link, tem gema, NÃO tem gold
+        if has_gem and not has_gold and tr.find("a", href=lambda h: h and "wac=buy" in h):
+            tr_text_gem = tr.get_text(separator=" ", strip=True)
+            m_gem = re.search(
+                r"(?:condi[çc][aã]o|requirement|voraussetzung|condition|requisito|pr[eé]requis)\s*[-–]\s*[^:]+:\s*(\d+)",
+                tr_text_gem, re.IGNORECASE
+            )
+            if m_gem:
+                req_skills_gema.add(int(m_gem.group(1)))
         # Verifica se tem preço em gold
-        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+        if not has_gold:
             continue
         # Pula itens que custam gema
-        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+        if has_gem:
             continue
 
         # Extrai preço de compra — pega o número imediatamente ANTES do ícone goldstueck.gif
@@ -2080,7 +2092,7 @@ def _parsear_shop_todos_itens(soup, tipo):
             "categoria": tipo,
         })
 
-    return itens
+    return itens, req_skills_gema
 
 
 _CATALOGO_CACHE = None
@@ -2223,7 +2235,7 @@ def verificar_alvo_equipamento(client, estado):
             continue
 
         algum_shop_acessivel = True
-        todos = _parsear_shop_todos_itens(soup, tipo)
+        todos, req_skills_gema_loja = _parsear_shop_todos_itens(soup, tipo)
 
         # Item equipado atualmente (tem sell link na listagem da loja)
         item_eq = next((i for i in todos if i.get("equipado")), None)
@@ -2288,6 +2300,13 @@ def verificar_alvo_equipamento(client, estado):
             None
         )
         url_compra = shop_match["url_compra"] if shop_match else None
+
+        # Se não encontrou buy link em gold E o item existe na loja só como gema,
+        # é permanentemente indisponível por gold — ignora completamente
+        if url_compra is None and melhor_cat["req_skill"] in req_skills_gema_loja:
+            log.debug(f"  Catálogo {cat_key}: '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
+                      f"existe na loja apenas como item de gema — ignorando")
+            continue
 
         item_dict = {
             "nome":             melhor_cat["nome"],
@@ -2508,7 +2527,7 @@ def tentar_comprar_item_alvo(client, estado):
         log.info(f"  {alvo['nome']}: sem url_compra, re-escaneando /{categoria}/...")
         try:
             soup_loja = client.get(f"/shop/{categoria}/", fragment=False)
-            todos_loja = _parsear_shop_todos_itens(soup_loja, categoria)
+            todos_loja, _ = _parsear_shop_todos_itens(soup_loja, categoria)
             req_alvo  = alvo.get("req_skill_valor", 0)
             gold_alvo = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
             # Match por req_skill_valor + gold (robusto entre idiomas; nome varia por servidor)
