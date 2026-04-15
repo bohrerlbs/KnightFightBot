@@ -5264,6 +5264,34 @@ def _taverna_1h(client):
     imunizar_agora(client)
 
 
+def _tentar_ataque_continuo(client, estado):
+    """Executa um ataque contínuo usando o pool de candidatos de imunização (score_min=0)."""
+    cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
+    if not cache_ok:
+        log.info("Ataque contínuo: cache ainda sendo populado — aguardando")
+        return False
+    log.info("Ataque contínuo — buscando alvo do cache...")
+    alvos_tentados = set()
+    for _ in range(5):
+        alvo = buscar_alvo_imunizacao(client, estado, 0, excluir=alvos_tentados)
+        if not alvo:
+            log.warning("Ataque contínuo: nenhum alvo disponível no cache!")
+            return False
+        alvos_tentados.add(alvo["user_id"])
+        meu_clan = estado.get("meu_clan_id")
+        ok, _sc, motivo = verificar_alvo_antes_de_atacar(client, alvo["user_id"], 0, meu_clan)
+        if not ok:
+            log.warning(f"  Ataque contínuo: {alvo['nome']} indisponível ({motivo}) — próximo...")
+            continue
+        log.info(f"Ataque contínuo: atacando {alvo['nome']} Lv{alvo['level']}")
+        res = executar_ataque(client, alvo["user_id"])
+        if res.get("status") == "executado":
+            log.info("  Ataque contínuo: OK — aguardando CD")
+            return True
+        log.warning(f"  Ataque contínuo: falhou ({res.get('status')}) — próximo...")
+    return False
+
+
 def loop_acoes(client):
     """
     Loop de ações: dorme enquanto em taverna ou missão/CD, acorda quando libre.
@@ -5583,26 +5611,21 @@ def loop_acoes(client):
                         log.warning(f"  Pós-ataque sincronizar slots: erro — {e}")
                 break
 
-            # Precisa imunizar e não atacou pig? (ou modo ataque contínuo ativo)
-            if not ataque_feito and (precisa_imunizar or ATACAR_CONTINUO):
+            # Precisa imunizar e não atacou pig?
+            if not ataque_feito and precisa_imunizar:
                 # Verifica se cache já foi populado
                 cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
                 if not cache_ok:
                     log.info("Cache ainda sendo populado — aguardando para imunizar...")
                 else:
-                    if precisa_imunizar:
-                        log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
-                    else:
-                        log.info("Ataque contínuo — buscando alvo do cache...")
-                # Ataque contínuo não precisa de XP mínimo — usa score_min=0
-                _score_busca = score_min_imun if precisa_imunizar else 0
-                alvo = buscar_alvo_imunizacao(client, estado, _score_busca) if cache_ok else None
-                # Tenta até 5 alvos diferentes até conseguir imunizar/atacar
+                    log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
+                alvo = buscar_alvo_imunizacao(client, estado, score_min_imun) if cache_ok else None
+                # Tenta até 5 alvos diferentes até conseguir imunizar
                 alvos_tentados = set()
                 for _tentativa_imun in range(5):
                     if not alvo or alvo["user_id"] in alvos_tentados:
                         # Busca próximo alvo excluindo os já tentados
-                        alvo = buscar_alvo_imunizacao(client, estado, _score_busca,
+                        alvo = buscar_alvo_imunizacao(client, estado, score_min_imun,
                                                        excluir=alvos_tentados) if cache_ok else None
                     if not alvo:
                         log.warning("Nenhum alvo seguro encontrado no cache!")
@@ -5657,17 +5680,16 @@ def loop_acoes(client):
                         alvo = None
                         continue  # tenta próximo no loop
 
-            # Nada pra atacar → missão (requer ≥ 10g) ou taverna
+            # Nada pra atacar → missão (requer ≥ 10g) ou taverna/ataque contínuo
             if not ataque_feito:
-                if ATACAR_CONTINUO:
-                    # Modo contínuo: sem alvo encontrado neste ciclo — aguarda próximo
-                    log.info("  Ataque contínuo: nenhum alvo disponível agora — aguardando próximo ciclo")
-                elif gold_atual < 10:
-                    log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo → taverna")
+                if gold_atual < 10:
+                    log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo")
                     if TAVERNA_ATIVA:
                         _taverna_1h(client)
+                    elif ATACAR_CONTINUO:
+                        _tentar_ataque_continuo(client, estado)
                     else:
-                        log.info("  Taverna desativada — aguardando próximo ciclo")
+                        log.info("  Taverna/ataque desativados — aguardando próximo ciclo")
                 else:
                     res = gerenciar_missao(client)
                     log.info(f"Missão: {res['status']}")
@@ -5680,26 +5702,27 @@ def loop_acoes(client):
                             log.warning(f"  Treinamento pós-missão: erro — {e}")
 
                     # Se missão também indisponível (cota diária ou em CD longo)
-                    # → imuniza, entra na taverna 1h, dorme, sai e imuniza de novo
+                    # → taverna ou ataque contínuo
                     if res.get("status") in ("cota_diaria",) or (
                         res.get("status") == "em_cd" and res.get("segundos", 0) > 1800
                     ):
                         if TAVERNA_ATIVA:
                             _taverna_1h(client)
+                        elif ATACAR_CONTINUO:
+                            _tentar_ataque_continuo(client, estado)
                         else:
-                            log.info("  Taverna desativada — aguardando próximo ciclo")
+                            log.info("  Taverna/ataque desativados — aguardando próximo ciclo")
             elif imunizou_agora:
-                if ATACAR_CONTINUO:
-                    # Modo contínuo: atacou com sucesso — aguarda CD (já tratado no topo do loop)
-                    log.info("  Ataque contínuo: aguardando CD para próximo ataque")
                 # Acabou de imunizar — verifica se tem missão disponível (requer ≥ 10g)
-                # Se não tiver (ou gold insuficiente), vai para taverna sem esperar CD
-                elif gold_atual < 10:
-                    log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão → taverna")
+                # Se não tiver (ou gold insuficiente), vai para taverna/ataque contínuo
+                if gold_atual < 10:
+                    log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão")
                     if TAVERNA_ATIVA:
                         _taverna_1h(client)
+                    elif ATACAR_CONTINUO:
+                        _tentar_ataque_continuo(client, estado)
                     else:
-                        log.info("  Taverna desativada — aguardando próximo ciclo")
+                        log.info("  Taverna/ataque desativados — aguardando próximo ciclo")
                 else:
                     res_check = gerenciar_missao(client)
                     log.info(f"Pós-imunização — Missão: {res_check['status']}")
@@ -5709,8 +5732,10 @@ def loop_acoes(client):
                         if TAVERNA_ATIVA:
                             log.info("  Sem missão após imunizar — entrando na taverna sem esperar CD")
                             _taverna_1h(client)
+                        elif ATACAR_CONTINUO:
+                            _tentar_ataque_continuo(client, estado)
                         else:
-                            log.info("  Taverna desativada — aguardando próximo ciclo")
+                            log.info("  Taverna/ataque desativados — aguardando próximo ciclo")
 
         except SessaoExpiradaError as e:
             log.error(f"🔒 COOKIE VENCIDO: {e}")
