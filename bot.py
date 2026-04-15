@@ -159,6 +159,7 @@ BUILD_1MAO           = False  # derivado de BUILD_TIPO automaticamente (não alt
 DISTRIBUIR_SKILLS    = False  # distribui pontos de skill ao subir de level
 BUILD_TIPO           = "2h"   # "1h" ou "2h" — define como distribuir skills e se treina Agilidade
 COMPRAR_EQUIPAMENTO  = False  # compra próximo equip quando acumula gold suficiente
+ATACAR_CONTINUO      = False  # ataca continuamente sem parar (mutuamente exclusivo com TAVERNA_ATIVA)
 HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (entra taverna)
@@ -5582,21 +5583,26 @@ def loop_acoes(client):
                         log.warning(f"  Pós-ataque sincronizar slots: erro — {e}")
                 break
 
-            # Precisa imunizar e não atacou pig?
-            if not ataque_feito and precisa_imunizar:
+            # Precisa imunizar e não atacou pig? (ou modo ataque contínuo ativo)
+            if not ataque_feito and (precisa_imunizar or ATACAR_CONTINUO):
                 # Verifica se cache já foi populado
                 cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
                 if not cache_ok:
                     log.info("Cache ainda sendo populado — aguardando para imunizar...")
                 else:
-                    log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
-                alvo = buscar_alvo_imunizacao(client, estado, score_min_imun) if cache_ok else None
-                # Tenta até 5 alvos diferentes até conseguir imunizar
+                    if precisa_imunizar:
+                        log.warning(f"⚠ Imunidade expirando em {fmt_t(imun)} — buscando alvo do cache...")
+                    else:
+                        log.info("Ataque contínuo — buscando alvo do cache...")
+                # Ataque contínuo não precisa de XP mínimo — usa score_min=0
+                _score_busca = score_min_imun if precisa_imunizar else 0
+                alvo = buscar_alvo_imunizacao(client, estado, _score_busca) if cache_ok else None
+                # Tenta até 5 alvos diferentes até conseguir imunizar/atacar
                 alvos_tentados = set()
                 for _tentativa_imun in range(5):
                     if not alvo or alvo["user_id"] in alvos_tentados:
                         # Busca próximo alvo excluindo os já tentados
-                        alvo = buscar_alvo_imunizacao(client, estado, score_min_imun,
+                        alvo = buscar_alvo_imunizacao(client, estado, _score_busca,
                                                        excluir=alvos_tentados) if cache_ok else None
                     if not alvo:
                         log.warning("Nenhum alvo seguro encontrado no cache!")
@@ -5653,7 +5659,10 @@ def loop_acoes(client):
 
             # Nada pra atacar → missão (requer ≥ 10g) ou taverna
             if not ataque_feito:
-                if gold_atual < 10:
+                if ATACAR_CONTINUO:
+                    # Modo contínuo: sem alvo encontrado neste ciclo — aguarda próximo
+                    log.info("  Ataque contínuo: nenhum alvo disponível agora — aguardando próximo ciclo")
+                elif gold_atual < 10:
                     log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo → taverna")
                     if TAVERNA_ATIVA:
                         _taverna_1h(client)
@@ -5680,9 +5689,12 @@ def loop_acoes(client):
                         else:
                             log.info("  Taverna desativada — aguardando próximo ciclo")
             elif imunizou_agora:
+                if ATACAR_CONTINUO:
+                    # Modo contínuo: atacou com sucesso — aguarda CD (já tratado no topo do loop)
+                    log.info("  Ataque contínuo: aguardando CD para próximo ataque")
                 # Acabou de imunizar — verifica se tem missão disponível (requer ≥ 10g)
                 # Se não tiver (ou gold insuficiente), vai para taverna sem esperar CD
-                if gold_atual < 10:
+                elif gold_atual < 10:
                     log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão → taverna")
                     if TAVERNA_ATIVA:
                         _taverna_1h(client)
@@ -5864,6 +5876,10 @@ if __name__ == "__main__":
         globals()["MISSAO_ALINHAMENTO"] = cfg["missao_alinhamento"]
     if "taverna_ativa" in cfg:
         globals()["TAVERNA_ATIVA"] = bool(cfg["taverna_ativa"])
+    if "atacar_continuo" in cfg:
+        globals()["ATACAR_CONTINUO"] = bool(cfg["atacar_continuo"])
+        if globals()["ATACAR_CONTINUO"]:
+            globals()["TAVERNA_ATIVA"] = False  # mutuamente exclusivo
     if "treinar_atributos" in cfg:
         globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
     if "distribuir_skills" in cfg:
