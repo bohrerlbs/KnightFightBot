@@ -1832,9 +1832,11 @@ def comprar_armadura_barata(client):
 def _parsear_shop_listagem(soup, tipo):
     """
     Analisa página de listagem de loja (/shop/waffen/ ou /shop/schilde/).
-    Retorna dict {nome, gold_necessario, url_compra, categoria} para o PRIMEIRO item
-    com skill atendida (tem link wac=buy) e preço em gold (não gema).
+    Coleta todos os itens com buy link e preço em gold, aplica filtro de gema
+    (item com req maior mas preço < 60% do máximo anterior = drop de gema)
+    e retorna o melhor item válido (maior req_level).
     """
+    candidatos = []
     for tr in soup.find_all("tr", class_="mobile-cols-2"):
         # Precisa de link de compra (skill OK)
         buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
@@ -1889,14 +1891,34 @@ def _parsear_shop_listagem(soup, tipo):
             from urllib.parse import urlparse as _up
             _p = _up(url_compra)
             url_compra = _p.path + ("?" + _p.query if _p.query else "")
-        # Extrai nível de requisito (para comparação de upgrade em aneis/amuletos)
+        # Extrai nível de requisito
         req_level = 0
         m_rl = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr.get_text(separator=" "), re.IGNORECASE)
         if m_rl:
             req_level = int(m_rl.group(1))
-        return {"nome": nome, "gold_necessario": preco, "url_compra": url_compra, "categoria": tipo, "req_level": req_level}
+        if preco > 0:
+            candidatos.append({"nome": nome, "gold_necessario": preco, "url_compra": url_compra,
+                                "categoria": tipo, "req_level": req_level})
 
-    return None
+    if not candidatos:
+        return None
+
+    # Filtro de gema: ordena por req_level, remove itens cujo preço < 60% do máximo anterior
+    # (ex: Pedra do Dragão com req alto mas preço baixíssimo quebra a progressão crescente)
+    candidatos.sort(key=lambda x: (x["req_level"], x["gold_necessario"]))
+    gold_max = 0
+    validos = []
+    for item in candidatos:
+        if item["gold_necessario"] >= gold_max * 0.6:
+            if item["gold_necessario"] > gold_max:
+                gold_max = item["gold_necessario"]
+            validos.append(item)
+        else:
+            log.debug(f"  Shop {tipo}: pulando item de gema '{item['nome']}' "
+                      f"(req={item['req_level']}, gold={item['gold_necessario']} < "
+                      f"60% do max_anterior={gold_max})")
+
+    return validos[-1] if validos else None
 
 
 def _parsear_shop_todos_itens(soup, tipo):
@@ -2666,9 +2688,10 @@ def _parsear_pedra_bloqueada(soup):
     """
     Encontra a melhor pedra de alma com preço em gold mesmo sem botão de compra
     (quando o personagem não tem gold suficiente, o jogo oculta o botão Buy).
+    Aplica filtro de gema (preço < 60% do máximo anterior = drop de gema).
     Retorna dict compatível com _parsear_shop_listagem mas com url_compra=None.
     """
-    melhor = None
+    candidatos = []
     for tr in soup.find_all("tr"):
         # Deve ser uma linha de item (não de cabeçalho/rodapé)
         tds = tr.find_all("td")
@@ -2721,10 +2744,34 @@ def _parsear_pedra_bloqueada(soup):
                     nome = t[:80]
                     break
 
-        if melhor is None or preco < melhor["gold_necessario"]:
-            melhor = {"nome": nome, "gold_necessario": preco, "url_compra": None, "categoria": "steine"}
+        # Extrai nível de requisito
+        req_level = 0
+        m_rl = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr.get_text(separator=" "), re.IGNORECASE)
+        if m_rl:
+            req_level = int(m_rl.group(1))
 
-    return melhor
+        candidatos.append({"nome": nome, "gold_necessario": preco, "url_compra": None,
+                            "categoria": "steine", "req_level": req_level})
+
+    if not candidatos:
+        return None
+
+    # Filtro de gema: ordena por req_level, remove itens cujo preço < 60% do máximo anterior
+    candidatos.sort(key=lambda x: (x["req_level"], x["gold_necessario"]))
+    gold_max = 0
+    validos = []
+    for item in candidatos:
+        if item["gold_necessario"] >= gold_max * 0.6:
+            if item["gold_necessario"] > gold_max:
+                gold_max = item["gold_necessario"]
+            validos.append(item)
+        else:
+            log.debug(f"  Pedra bloqueada: pulando item de gema '{item['nome']}' "
+                      f"(req={item['req_level']}, gold={item['gold_necessario']} < "
+                      f"60% do max_anterior={gold_max})")
+
+    # Retorna a mais barata válida (meta de gold a acumular)
+    return min(validos, key=lambda x: x["gold_necessario"]) if validos else None
 
 
 def verificar_alvo_pedra(client, estado):
