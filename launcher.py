@@ -194,8 +194,17 @@ def get_profile_port(name):
 
 def start_bg_bot(name, modo="free"):
     import json as _json
-    profile_dir = BASE_DIR / "profiles" / name.upper()
-    if not profile_dir.exists():
+    from urllib.parse import unquote as _unquote
+    name = _unquote(name)  # decodifica %C2%B2 → ² e similares
+    # Tenta lowercase, original e uppercase para achar a pasta
+    profile_dir = None
+    for attempt in [name.lower(), name, name.upper()]:
+        d = BASE_DIR / "profiles" / attempt
+        if d.exists():
+            profile_dir = d
+            name = attempt  # usa o nome real da pasta
+            break
+    if profile_dir is None:
         return {"ok": False, "error": f"Perfil {name} não encontrado"}
     bot_bg = BASE_DIR / "bot_bg.py"
     if not bot_bg.exists():
@@ -257,6 +266,8 @@ def start_bg_bot(name, modo="free"):
         return {"ok": False, "error": f"Erro ao iniciar processo: {e}"}
 
 def stop_bg_bot(name):
+    from urllib.parse import unquote as _unquote
+    name = _unquote(name)
     bg_key = f"BG_{name.upper()}"
     pid = None
     if bg_key in running_bots:
@@ -863,8 +874,9 @@ class Handler(BaseHTTPRequestHandler):
             if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(download_update())
         elif p.startswith("/api/bg/start/"):
+            from urllib.parse import unquote as _uq
             parts = [x for x in p.split("/") if x]
-            name = parts[-1] if parts else ""
+            name = _uq(parts[-1]) if parts else ""
             if not can_access(name):
                 print(f"[BG] Sem permissão: user={session.get('user')} role={session.get('role')} "
                       f"perfil={name} profiles={session.get('profiles')}", flush=True)
@@ -950,7 +962,8 @@ class Handler(BaseHTTPRequestHandler):
                     }
             self._json(diag)
         elif p.startswith("/api/bg/stop/"):
-            name_bg = p.split("/")[-1] or p.split("/")[-2]
+            from urllib.parse import unquote as _uq2
+            name_bg = _uq2(p.split("/")[-1] or p.split("/")[-2])
             if not can_access(name_bg): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(stop_bg_bot(name_bg))
         elif p.startswith("/api/bg/status/"):
