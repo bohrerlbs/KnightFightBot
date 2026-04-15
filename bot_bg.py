@@ -846,19 +846,6 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         score += 10
         build_ruim = True
 
-    # ── 8. Ajuste por aprendizado (se tiver combates suficientes)
-    if combates and len(combates) >= 10:
-        # Busca combates similares (mesmo range de EF ±0.5)
-        ef_adv = ef_d
-        similares = [c for c in combates
-                     if abs(c.get("adv_ef", 0) - ef_adv) <= 0.5]
-        if len(similares) >= 3:
-            wr_similar = sum(1 for c in similares if c["resultado"] == "vitoria") / len(similares)
-            # Ajusta score pela experiência real (peso 30%)
-            score_aprendido = wr_similar * 100
-            score = round(score * 0.7 + score_aprendido * 0.3)
-            log.debug(f"  Aprendizado: {len(similares)} combates similares → WR {wr_similar*100:.0f}% → ajuste")
-
     score = max(0, min(100, score))
 
     # ── Simulação de combate ──────────────────────────────────────────────────
@@ -868,11 +855,45 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         from combat_sim import simular_combate
         sim = simular_combate(eu, adv)
         sim_score = sim["score"]
-        score = sim_score
-        score = max(0, min(100, score))
+
+        # Correções BG: simulador base usa só AC/BLQ e ignora EF e armadura
+        meu_ef_val = eu.get("ef", 0)
+        if meu_ef_val > 0 and ef_d > 0:
+            ratio_ef = ef_d / meu_ef_val
+            if ratio_ef >= 1.30:
+                sim_score -= 25
+                problemas.append(f"EF dele {ef_d} vs meu {meu_ef_val} (+30% dano/hit)")
+            elif ratio_ef >= 1.15:
+                sim_score -= 15
+                problemas.append(f"EF dele {ef_d} vs meu {meu_ef_val} (+15% dano/hit)")
+        if arm_d >= 80:
+            sim_score -= 20
+            problemas.append(f"Armadura {arm_d} — dano de Crixus muito reduzido")
+        elif arm_d >= 50:
+            sim_score -= 12
+        elif arm_d >= 25:
+            sim_score -= 6
+
+        score = max(0, min(100, sim_score))
         adv["_score_sim"] = sim_score  # salva para registro
     except Exception:
         pass
+
+    # ── 8. Ajuste por aprendizado — aplicado sobre sim corrigido ─────────────
+    if combates and len(combates) >= 10:
+        ef_adv = ef_d
+        similares = [c for c in combates
+                     if abs(c.get("adv_ef", 0) - ef_adv) <= 0.5]
+        if len(similares) >= 3:
+            wr_similar = sum(1 for c in similares if c["resultado"] == "vitoria") / len(similares)
+            score_aprendido = wr_similar * 100
+            # Peso do aprendizado cresce com número de combates (máx 60%)
+            peso = min(0.60, 0.30 + len(similares) * 0.005)
+            score = round(score * (1 - peso) + score_aprendido * peso)
+            log.debug(f"  Aprendizado: {len(similares)} similares → WR {wr_similar*100:.0f}% "
+                      f"(peso {peso:.0%}) → score {score}")
+
+    score = max(0, min(100, score))
 
     rec = "ATACAR" if score >= SCORE_MIN_ATACAR else "EVITAR"
 
