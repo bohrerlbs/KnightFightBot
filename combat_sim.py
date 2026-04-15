@@ -426,13 +426,13 @@ def simular_combate(eu, adv):
     eu_blq += eu_esc_def[2] if len(eu_esc_def) > 2 else 0
 
     # ── Taxa de acerto ────────────────────────────────────────────────────────
-    # Fórmula calibrada com 3530 combates reais:
-    # EU atacando:  exp=1.8, cap=100% quando ratio AC/Blq >= 3.0  (RMSE 13.2%)
-    # ADV atacando: exp=2.2                                         (RMSE 12.9%)
+    # Fórmula calibrada com 11009 combates reais (grid search Brier score):
+    # EU atacando:  exp=2.2, cap=100% quando ratio AC/Blq >= 3.5
+    # ADV atacando: exp=3.3
     # Fórmula: AC^exp / (AC^exp + Blq^exp)
-    EXP_EU  = 1.8
-    EXP_ADV = 2.2
-    CAP_EU  = 3.0   # ratio AC/Blq acima deste → 100% acerto
+    EXP_EU  = 2.2
+    EXP_ADV = 3.3
+    CAP_EU  = 3.5   # ratio AC/Blq acima deste → 100% acerto
 
     if (eu_ac + adv_blq) > 0:
         ratio_eu = eu_ac / adv_blq if adv_blq > 0 else 99
