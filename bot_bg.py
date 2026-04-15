@@ -43,6 +43,7 @@ EF_RANGE_ACIMA   = 2.0   # busca EF nossa até +2.0
 EF_RANGE_FALLBACK = 1.0  # se não achar bom, tenta com +1.0
 SCORE_MIN_ATACAR = 60    # score mínimo para atacar (simulador preciso)
 MAX_REBUSCAS     = 3     # tentativas de busca antes de desistir do ciclo
+EF_OFFSET_MAX    = 5.0   # começa buscando em minha_EF + offset e vai descendo até minha_EF
 
 # ── Arquivos de estado ──────────────────────────────────────────
 WORKDIR        = Path(".")
@@ -1144,7 +1145,7 @@ def loop_bg(client, eu, modo):
         # Busca: começa em minha_EF+5, desce 0.5 por vez até minha_EF
         # Cada nível tenta 3x antes de descer
         # Ao chegar na minha_EF: tenta 60%, depois 50%, depois maior %
-        ef_topo      = round(ef_minha + 5.0, 1)
+        ef_topo      = round(ef_minha + EF_OFFSET_MAX, 1)
         ef_busca     = ef_topo
         melhor       = None
         TENTATIVAS_POR_EF = 3
@@ -1433,6 +1434,8 @@ if __name__ == "__main__":
         MY_USER_ID     = cfg.get("userid", MY_USER_ID)
         DASHBOARD_PORT = cfg.get("port", DASHBOARD_PORT)
         MODO_BG        = cfg.get("modo", args.modo)
+        if cfg.get("ef_offset_max") is not None:
+            globals()["EF_OFFSET_MAX"] = float(cfg["ef_offset_max"])
         print(f"Config BG carregada:")
         print(f"  Perfil : {cfg.get('perfil', cfg.get('profile','?'))}")
         print(f"  Servidor: {servidor} -> {BASE_URL}")

@@ -192,7 +192,7 @@ def get_profile_port(name):
     except:
         return 8765
 
-def start_bg_bot(name, modo="free"):
+def start_bg_bot(name, modo="free", ef_offset_max=5.0):
     import json as _json
     from urllib.parse import unquote as _unquote
     name = _unquote(name)  # decodifica %C2%B2 → ² e similares
@@ -227,6 +227,7 @@ def start_bg_bot(name, modo="free"):
     cfg["port"] = porta_normal + 1
     cfg["modo"] = modo
     cfg["perfil"] = name
+    cfg["ef_offset_max"] = float(ef_offset_max)
     # Salva config_bg.json na pasta do perfil
     cfg_path = profile_dir / "config_bg.json"
     cfg_path.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -883,8 +884,9 @@ class Handler(BaseHTTPRequestHandler):
                       f"perfil={name} profiles={session.get('profiles')}", flush=True)
                 self._json({"ok":False,"error":"Sem permissão"}); return
             modo = d.get("modo", "free")  # d já lido em self._body() acima
+            ef_offset_max = float(d.get("ef_offset_max", 5.0))
             try:
-                result_bg = start_bg_bot(name, modo)
+                result_bg = start_bg_bot(name, modo, ef_offset_max)
                 print(f"[BG] start_bg_bot({name}, {modo}) = {result_bg}", flush=True)
                 self._json(result_bg)
             except Exception as e_bg:

@@ -1065,6 +1065,10 @@ function renderProfiles(profiles){
     if(bgRunning){
       html += '<button class="btn btn-stop" data-action="bgstop" data-name="'+name+'">[ Parar BG</button>';
     } else {
+      html += '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" title="Offset máximo de EF para busca de adversários (0=só EF igual, 5=até EF+5)">'
+            + 'EF+<input type="number" id="bg-ef-offset-'+name+'" min="0" max="10" step="0.5" value="5"'
+            + ' style="width:44px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;text-align:center">'
+            + '</label>';
       html += '<button class="btn btn-start" data-action="bgstart" data-name="'+name+'"> > Iniciar BG</button>';
     }
     html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'" data-name="'+name+'">Dashboard BG</button>';
@@ -1249,7 +1253,9 @@ function renderProfiles(profiles){
 
     if(action === 'del')     deleteProfile(name);
     if(action === 'bgstart'){
-      startBG(name, 'free');  // modo auto-detectado pelo bot via sessão BG
+      var efInput = document.getElementById('bg-ef-offset-'+name);
+      var efOffset = efInput ? parseFloat(efInput.value) || 5.0 : 5.0;
+      startBG(name, 'free', efOffset);  // modo auto-detectado pelo bot via sessão BG
     }
     if(action === 'bgstop')  stopBG(name);
     if(action === 'bgdash')  openDashBG(parseInt(port), name);
@@ -1332,13 +1338,14 @@ function stopBot(name){
     });
 }
 
-function startBG(name, modo){
+function startBG(name, modo, efOffsetMax){
   modo = modo || 'free';
+  efOffsetMax = (efOffsetMax != null) ? efOffsetMax : 5.0;
   toast('Iniciando BG Bot...');
   fetch('/api/bg/start/'+name+'/', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({modo: modo})
+    body: JSON.stringify({modo: modo, ef_offset_max: efOffsetMax})
   })
   .then(function(r){ return r.json(); })
   .then(function(d){
