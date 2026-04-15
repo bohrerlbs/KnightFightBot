@@ -855,25 +855,17 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
         from combat_sim import simular_combate
         sim = simular_combate(eu, adv)
-        sim_score = sim["score"]
 
-        # Correções BG: simulador base usa só AC/BLQ e ignora EF e armadura
-        meu_ef_val = eu.get("ef", 0)
-        if meu_ef_val > 0 and ef_d > 0:
-            ratio_ef = ef_d / meu_ef_val
-            if ratio_ef >= 1.30:
-                sim_score -= 25
-                problemas.append(f"EF dele {ef_d} vs meu {meu_ef_val} (+30% dano/hit)")
-            elif ratio_ef >= 1.15:
-                sim_score -= 15
-                problemas.append(f"EF dele {ef_d} vs meu {meu_ef_val} (+15% dano/hit)")
-        if arm_d >= 80:
-            sim_score -= 20
-            problemas.append(f"Armadura {arm_d} — dano de Crixus muito reduzido")
-        elif arm_d >= 50:
-            sim_score -= 12
-        elif arm_d >= 25:
-            sim_score -= 6
+        # Correção BG: o sim usa res_to_rounds(resistencia) para número de ataques,
+        # mas no BG ambos sempre lutam exatamente 30 rounds.
+        # O sim normal favorece quem tem mais resistência — no BG isso não acontece.
+        # Recalcula o score usando dano por round (rounds = 30 para ambos).
+        r_eu  = sim.get("rounds_eu",  1) or 1
+        r_adv = sim.get("rounds_adv", 1) or 1
+        dano_por_round_eu  = sim["total_eu"]  / r_eu
+        dano_por_round_adv = sim["total_adv"] / r_adv
+        total_bg = dano_por_round_eu + dano_por_round_adv
+        sim_score = round(dano_por_round_eu / total_bg * 100) if total_bg > 0 else 50
 
         score = max(0, min(100, sim_score))
         adv["_score_sim"] = sim_score  # salva para registro
