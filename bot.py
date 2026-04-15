@@ -2964,7 +2964,7 @@ def inserir_pedra_na_arma(client, alvo):
                 log.warning(f"  Inserir pedra: erro no POST — {e}")
                 return False
 
-        # Caso 2: Link de inserção na seção inventário
+        # Caso 2: Link de inserção na seção inventário (ex: /upgrade/einsetzen/?iid=X&wid=Y...)
         _insert_kw = ["setstone", "einsetzen", "insert", "wac=set", "sockel", "stein"]
         link = inv_bg.find("a", href=lambda h: h and any(k in h.lower() for k in _insert_kw))
         if not link:
@@ -2977,17 +2977,118 @@ def inserir_pedra_na_arma(client, alvo):
                 _p = _up(href)
                 href = _p.path + ("?" + _p.query if _p.query else "")
             try:
-                client.get(href, fragment=False)
-                log.info(f"  💎 Pedra inserida na arma via link (tentativa {tentativa})")
-                continue
+                # GET carrega página de confirmação
+                soup_conf = client.get(href, fragment=False)
             except Exception as e:
                 log.warning(f"  Inserir pedra: erro no GET link — {e}")
                 return False
+            # POST do formulário de confirmação
+            form_conf = soup_conf.find("form") if soup_conf and hasattr(soup_conf, "find") else None
+            if form_conf:
+                campos_conf = {}
+                for inp in form_conf.find_all("input"):
+                    n = inp.get("name")
+                    v = inp.get("value", "")
+                    if n:
+                        campos_conf[n] = v
+                action_conf = form_conf.get("action") or href
+                if action_conf.startswith("http"):
+                    from urllib.parse import urlparse as _up2
+                    _pc = _up2(action_conf)
+                    action_conf = _pc.path + ("?" + _pc.query if _pc.query else "")
+                try:
+                    client.post(action_conf, data=campos_conf, fragment=False)
+                    log.info(f"  💎 Pedra engastada na arma via link+confirm (tentativa {tentativa})")
+                    continue
+                except Exception as e:
+                    log.warning(f"  Inserir pedra: erro no POST confirmação — {e}")
+                    return False
+            else:
+                # Sem formulário de confirmação — GET já foi suficiente
+                log.info(f"  💎 Pedra inserida na arma via link (tentativa {tentativa})")
+                continue
 
         log.warning(f"  Inserir pedra: mecanismo de inserção não reconhecido. HTML: {inv_bg.prettify()[:400]}")
         return False
 
     return True
+
+
+def engastar_pedras_pendentes(client):
+    """
+    Verifica se há pedras de alma no inventário do ferreiro ainda não engastadas
+    e tenta engastá-las. Chamada no loop_acoes independentemente de compra nova.
+    Retorna True se engastou alguma.
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return False
+    try:
+        soup = client.get("/upgrade/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Engaste pendente: erro ao carregar /upgrade/ — {e}")
+        return False
+
+    # Verifica se há engastes vazios na arma
+    sockel_div = soup.find("div", class_=lambda c: c and "sockel" in c.lower())
+    if not sockel_div:
+        # Tenta encontrar via tooltip vazio
+        empty_sock = soup.find("a", attrs={"data-tooltip": lambda t: t and "empty" in t.lower()})
+        if not empty_sock:
+            empty_sock = soup.find("img", src=lambda s: s and "leeres_sockel" in s)
+        if not empty_sock:
+            return False  # sem engaste vazio
+
+    # Encontra seção inventário
+    inv_bg = None
+    for boxtop in soup.find_all("div", class_="box-top"):
+        if "invent" in boxtop.get_text().lower():
+            inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
+            break
+    if not inv_bg:
+        return False
+
+    # Encontra links "Set" / "einsetzen" no inventário
+    _insert_kw = ["einsetzen", "setstone", "insert", "wac=set"]
+    links = inv_bg.find_all("a", href=lambda h: h and any(k in h.lower() for k in _insert_kw))
+    if not links:
+        return False
+
+    inseridas = 0
+    for link in links:
+        href = link["href"]
+        if href.startswith("http"):
+            from urllib.parse import urlparse as _up
+            _p = _up(href)
+            href = _p.path + ("?" + _p.query if _p.query else "")
+        try:
+            soup_conf = client.get(href, fragment=False)
+        except Exception as e:
+            log.warning(f"  Engaste pendente: erro ao carregar confirmação — {e}")
+            continue
+        form_conf = soup_conf.find("form") if soup_conf and hasattr(soup_conf, "find") else None
+        if form_conf:
+            campos_conf = {}
+            for inp in form_conf.find_all("input"):
+                n = inp.get("name")
+                v = inp.get("value", "")
+                if n:
+                    campos_conf[n] = v
+            action_conf = form_conf.get("action") or href
+            if action_conf.startswith("http"):
+                from urllib.parse import urlparse as _up2
+                _pc = _up2(action_conf)
+                action_conf = _pc.path + ("?" + _pc.query if _pc.query else "")
+            try:
+                client.post(action_conf, data=campos_conf, fragment=False)
+                log.info(f"  💎 Pedra pendente engastada na arma!")
+                inseridas += 1
+            except Exception as e:
+                log.warning(f"  Engaste pendente: erro no POST — {e}")
+        else:
+            log.info(f"  💎 Pedra pendente engastada (sem confirmação)")
+            inseridas += 1
+
+    return inseridas > 0
 
 
 def verificar_alvo_anel(client, estado):
@@ -5178,6 +5279,10 @@ def loop_acoes(client):
                 tentar_comprar_pedra(client, carregar_estado())
             except Exception as e:
                 log.warning(f"Compra pedra alvo: erro — {e}")
+            try:
+                engastar_pedras_pendentes(client)
+            except Exception as e:
+                log.warning(f"Engaste pedra pendente: erro — {e}")
             try:
                 tentar_comprar_anel(client, carregar_estado())
             except Exception as e:
