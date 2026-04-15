@@ -856,19 +856,9 @@ def avaliar_adversario_bg(adv, eu, combates=None):
         from combat_sim import simular_combate
         sim = simular_combate(eu, adv)
 
-        # Correção BG: o sim usa res_to_rounds(resistencia) para número de ataques,
-        # mas no BG ambos sempre lutam exatamente 30 rounds.
-        # O sim normal favorece quem tem mais resistência — no BG isso não acontece.
-        # Recalcula o score usando dano por round (rounds = 30 para ambos).
-        r_eu  = sim.get("rounds_eu",  1) or 1
-        r_adv = sim.get("rounds_adv", 1) or 1
-        dano_por_round_eu  = sim["total_eu"]  / r_eu
-        dano_por_round_adv = sim["total_adv"] / r_adv
-        total_bg = dano_por_round_eu + dano_por_round_adv
-        sim_score = round(dano_por_round_eu / total_bg * 100) if total_bg > 0 else 50
-
+        sim_score = sim["score"]  # mecânica BG = PvP normal (rounds por resistência)
         score = max(0, min(100, sim_score))
-        adv["_score_sim"] = sim_score  # salva para registro
+        adv["_score_sim"] = sim_score
     except Exception:
         pass
 
