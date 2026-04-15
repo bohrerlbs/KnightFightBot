@@ -2287,19 +2287,28 @@ def verificar_alvo_equipamento(client, estado):
 
         # Melhor = maior req_skill; empate → maior gold (item mais caro = melhor em KF)
         melhor_cat = max(disponiveis, key=lambda x: (x["req_skill"], x["gold"]))
-        gold_liquido = max(0, melhor_cat["gold"] - gold_venda_eq)
 
-        # Busca buy link na listagem da loja para este item específico
-        # Match por req_skill_valor + gold (robusto entre idiomas; nome varia por servidor)
-        shop_match = next(
-            (i for i in todos
-             if not i.get("equipado")
-             and i.get("req_skill_valor") == melhor_cat["req_skill"]
-             and abs(i["gold"] - melhor_cat["gold"]) <= 50
-             and i.get("pode_comprar")),
-            None
-        )
+        # Busca buy link na listagem da loja para este item específico.
+        # Match por req_skill_valor apenas (robusto entre idiomas e servidores;
+        # nome e preço variam por servidor). Se múltiplos itens no mesmo req_skill,
+        # escolhe o de preço mais próximo do catálogo.
+        candidatos_match = [
+            i for i in todos
+            if not i.get("equipado")
+            and i.get("req_skill_valor") == melhor_cat["req_skill"]
+            and i.get("pode_comprar")
+        ]
+        if len(candidatos_match) == 1:
+            shop_match = candidatos_match[0]
+        elif len(candidatos_match) > 1:
+            shop_match = min(candidatos_match, key=lambda x: abs(x["gold"] - melhor_cat["gold"]))
+        else:
+            shop_match = None
         url_compra = shop_match["url_compra"] if shop_match else None
+
+        # Usa preço real da loja quando disponível (catálogo pode ter preço de outro servidor)
+        gold_bruto_real = shop_match["gold"] if shop_match else melhor_cat["gold"]
+        gold_liquido = max(0, gold_bruto_real - gold_venda_eq)
 
         # Se não encontrou buy link em gold E o item existe na loja só como gema,
         # é permanentemente indisponível por gold — ignora completamente
@@ -2311,7 +2320,7 @@ def verificar_alvo_equipamento(client, estado):
         item_dict = {
             "nome":             melhor_cat["nome"],
             "gold_necessario":  gold_liquido,
-            "gold_bruto":       melhor_cat["gold"],
+            "gold_bruto":       gold_bruto_real,
             "gold_venda_atual": gold_venda_eq,
             "url_compra":       url_compra,
             "url_venda_atual":  url_venda_eq,
@@ -2324,11 +2333,11 @@ def verificar_alvo_equipamento(client, estado):
         if url_compra:
             candidatos.append(item_dict)
             log.debug(f"  Catálogo {cat_key}: alvo '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
-                      f"{melhor_cat['gold']}g (buy link disponível)")
+                      f"{gold_bruto_real}g (buy link disponível)")
         else:
             ouro_bloqueados.append(item_dict)
             log.debug(f"  Catálogo {cat_key}: alvo '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
-                      f"{melhor_cat['gold']}g (acumulando gold)")
+                      f"{gold_bruto_real}g (acumulando gold)")
 
     # Determina item_alvo — por categoria pega o melhor (maior req_skill/gold_bruto),
     # depois entre categorias pega o MAIS BARATO (gold_necessario) para comprar logo
@@ -2531,13 +2540,17 @@ def tentar_comprar_item_alvo(client, estado):
             req_alvo  = alvo.get("req_skill_valor", 0)
             gold_alvo = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
             # Match por req_skill_valor + gold (robusto entre idiomas; nome varia por servidor)
-            match = next(
-                (i for i in todos_loja
-                 if i.get("req_skill_valor") == req_alvo
-                 and abs(i["gold"] - gold_alvo) <= 50
-                 and i.get("url_compra")),
-                None
-            )
+            # Match por req_skill_valor apenas — preço pode variar por servidor
+            candidatos_loja = [
+                i for i in todos_loja
+                if i.get("req_skill_valor") == req_alvo and i.get("url_compra")
+            ]
+            if len(candidatos_loja) == 1:
+                match = candidatos_loja[0]
+            elif len(candidatos_loja) > 1:
+                match = min(candidatos_loja, key=lambda x: abs(x["gold"] - gold_alvo))
+            else:
+                match = None
             if not match:
                 # Fallback: nome (funciona quando catálogo e servidor têm o mesmo idioma)
                 match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
