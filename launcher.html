@@ -554,9 +554,15 @@ header {
     </div>
     <div style="margin-top:6px;display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="cfg-taverna-ativa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <input type="checkbox" id="cfg-taverna-ativa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-atacar-continuo').checked=false">
         <label for="cfg-taverna-ativa" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Taverna automática quando sem pig e sem missão
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-taverna-ativa').checked=false">
+        <label for="cfg-atacar-continuo" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Ataques contínuos quando sem pig e sem missão (exclusivo com taverna)
         </label>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -762,6 +768,7 @@ function openCfgModal(name){
       document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
+      document.getElementById('cfg-atacar-continuo').checked = !!cfg.atacar_continuo;
       document.getElementById('cfg-treinar-atributos').checked = !!cfg.treinar_atributos;
       document.getElementById('cfg-distribuir-skills').checked = !!cfg.distribuir_skills;
       document.getElementById('cfg-build-tipo').value = cfg.build_tipo || '2h';
@@ -791,6 +798,7 @@ function saveCfg(){
     hora_cache:          parseInt(document.getElementById('cfg-hora-cache').value||3),
     missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
+    atacar_continuo:     document.getElementById('cfg-atacar-continuo').checked,
     treinar_atributos:   document.getElementById('cfg-treinar-atributos').checked,
     distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
     build_tipo:          document.getElementById('cfg-build-tipo').value,
