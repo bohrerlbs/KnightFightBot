@@ -2444,31 +2444,31 @@ def tentar_comprar_item_alvo(client, estado):
     gold_bruto = alvo.get("gold_bruto", alvo["gold_necessario"])
     url_venda_atual = alvo.get("url_venda_atual")
 
-    # Se item era gold-bloqueado (url_compra=None), re-escaneia loja para obter buy link.
-    # O jogo só exibe buy link quando o personagem tem o gold bruto no bolso.
-    # Se ainda não tem o bruto mas tem o líquido (gold_atual + venda_atual >= bruto),
-    # vende o item atual primeiro para desbloquear o buy link e então compra.
+    # Se item era gold-bloqueado (url_compra=None), re-escaneia loja ANTES de vender
+    # qualquer coisa — evita vender item atual sem conseguir comprar o novo.
+    # O jogo só exibe buy link quando o personagem tem o gold bruto no bolso:
+    # bot acumula até gold_bruto; quando buy link aparecer, compra e depois vende o antigo.
     url_compra = alvo.get("url_compra")
     if not url_compra:
         categoria = alvo.get("categoria", "waffen")
-        gold_bruto_alvo = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
-        gold_venda_eq   = alvo.get("gold_venda_atual", 0)
-
-        def _rescan_buy_link(soup_loja):
-            todos_loja, _ = _parsear_shop_todos_itens(soup_loja, categoria)
-            req_alvo  = alvo.get("req_skill_valor", 0)
-            cands = [i for i in todos_loja if i.get("req_skill_valor") == req_alvo and i.get("url_compra")]
-            if len(cands) == 1:
-                return cands[0], todos_loja
-            if len(cands) > 1:
-                return min(cands, key=lambda x: abs(x["gold"] - gold_bruto_alvo)), todos_loja
-            fallback = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
-            return fallback, todos_loja
-
         log.info(f"  {alvo['nome']}: sem url_compra, re-escaneando /{categoria}/...")
         try:
             soup_loja = client.get(f"/shop/{categoria}/", fragment=False)
-            match, todos_loja = _rescan_buy_link(soup_loja)
+            todos_loja, _ = _parsear_shop_todos_itens(soup_loja, categoria)
+            req_alvo  = alvo.get("req_skill_valor", 0)
+            gold_alvo = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
+            candidatos_loja = [
+                i for i in todos_loja
+                if i.get("req_skill_valor") == req_alvo and i.get("url_compra")
+            ]
+            if len(candidatos_loja) == 1:
+                match = candidatos_loja[0]
+            elif len(candidatos_loja) > 1:
+                match = min(candidatos_loja, key=lambda x: abs(x["gold"] - gold_alvo))
+            else:
+                match = None
+            if not match:
+                match = next((i for i in todos_loja if i["nome"] == alvo["nome"] and i.get("url_compra")), None)
             if match:
                 url_compra = match["url_compra"]
                 alvo["url_compra"] = url_compra
@@ -2476,35 +2476,8 @@ def tentar_comprar_item_alvo(client, estado):
                 salvar_estado(estado)
                 log.info(f"  Buy link obtido: {url_compra}")
             else:
-                # Buy link ausente porque gold_atual < gold_bruto (jogo não exibe sem ter o valor).
-                # Se item existe na loja E vender atual + gold_atual >= bruto: vende primeiro.
-                req_alvo = alvo.get("req_skill_valor", 0)
-                item_visivel = any(i.get("req_skill_valor") == req_alvo for i in todos_loja) or \
-                               any(i["nome"] == alvo["nome"] for i in todos_loja)
-                if url_venda_atual and gold_venda_eq > 0 and item_visivel \
-                        and (gold_atual + gold_venda_eq >= gold_bruto_alvo):
-                    log.info(f"  {alvo['nome']}: vendendo item atual ({gold_venda_eq}g) para desbloquear buy link...")
-                    gold_recebido = vender_item_atual(client, url_venda_atual)
-                    if gold_recebido <= 0:
-                        log.warning(f"  Venda falhou — abortando compra de {alvo['nome']}")
-                        return False
-                    gold_atual     += gold_recebido
-                    url_venda_atual = None  # já vendido, não vender de novo abaixo
-                    log.info(f"  Venda ok: +{gold_recebido}g → total {gold_atual}g — re-escaneando...")
-                    soup_loja2 = client.get(f"/shop/{categoria}/", fragment=False)
-                    match2, _ = _rescan_buy_link(soup_loja2)
-                    if match2:
-                        url_compra = match2["url_compra"]
-                        alvo["url_compra"] = url_compra
-                        estado["item_alvo"] = alvo
-                        salvar_estado(estado)
-                        log.info(f"  Buy link obtido após venda: {url_compra}")
-                    else:
-                        log.warning(f"  {alvo['nome']}: buy link não encontrado mesmo após venda — item sumiu da loja?")
-                        return False
-                else:
-                    log.info(f"  {alvo['nome']}: ainda sem buy link — aguardando gold suficiente")
-                    return False
+                log.info(f"  {alvo['nome']}: ainda sem buy link — acumulando até gold_bruto={gold_alvo}g")
+                return False
         except Exception as e:
             log.warning(f"  Re-scan /{categoria}/ para '{alvo['nome']}': erro — {e}")
             return False
