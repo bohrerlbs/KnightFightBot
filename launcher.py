@@ -157,6 +157,19 @@ def get_profiles():
                     cfg["_level"]       = est.get("level", 0)
                 except:
                     pass
+            # Lê status do bot BG (bg_ciclo.json)
+            bg_ciclo_path = d / "bg_ciclo.json"
+            if bg_ciclo_path.exists():
+                try:
+                    bg_ciclo = json.loads(bg_ciclo_path.read_text(encoding="utf-8"))
+                    cfg["_bg_status"]  = bg_ciclo.get("status", "")
+                    bg_est = bg_ciclo.get("estado", {})
+                    cfg["_bg_feitas"]  = bg_est.get("batalhas_feitas", 0)
+                    cfg["_bg_modo"]    = bg_est.get("modo", "free")
+                    # proximo_bg = cooldown fim; proximo_ataque = próximo combate
+                    cfg["_bg_proximo"] = bg_ciclo.get("proximo_bg") or bg_ciclo.get("proximo_ataque")
+                except:
+                    pass
             profiles.append(cfg)
         except:
             pass

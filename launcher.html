@@ -277,6 +277,16 @@ header {
 .bg-modo-sel{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:11px;flex:1;min-width:120px;}
 .btn-bg{background:linear-gradient(135deg,#4a3a1a,#6b5420);color:var(--gold);border:1px solid var(--gold);padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;}
 .btn-bg:hover{background:linear-gradient(135deg,#6b5420,#8a6b2a);}
+.bg-status-badge{
+  margin-top:6px;padding:4px 8px;border-radius:3px;
+  display:flex;align-items:center;gap:6px;
+  background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);
+  font-size:11px;
+}
+.bg-status-badge .bg-cd-timer{
+  margin-left:auto;font-family:'Courier New',monospace;
+  font-size:10px;color:var(--gold2);letter-spacing:.5px;
+}
 .taverna-badge{background:linear-gradient(135deg,#2a1f0a,#3d2e10);border:1px solid #8a6b2a;color:#e8c96a;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;}
 .taverna-icon{font-size:14px;}
 .taverna-timer{font-weight:500;font-size:12px;color:#ffd97d;margin-left:auto;}
@@ -1073,6 +1083,34 @@ function renderProfiles(profiles){
     }
     html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'" data-name="'+name+'">Dashboard BG</button>';
     html += '</div>';
+    // ── BG Status badge ──────────────────────────────────────────
+    if(bgRunning){
+      var bgSt = p._bg_status || '';
+      var bgF  = (p._bg_feitas != null ? p._bg_feitas : 0);
+      var bgMx = ({'free':100,'medio':200,'premium':400}[p._bg_modo||'free'] || 100);
+      var bgPx = p._bg_proximo || null;
+      var bgTxt='', bgColor='var(--muted)', bgIcon='', bgTimer=false;
+      if     (bgSt==='aguardando_nivel')      { bgIcon='⏳'; bgTxt='Aguardando Lv10';            bgColor='#e08080'; }
+      else if(bgSt==='cooldown_bg')           { bgIcon='⏸'; bgTxt='Cooldown BG';                bgColor='var(--gold)'; bgTimer=true; }
+      else if(bgSt==='aguardando_equipamento'
+           || bgSt==='sem_equipamento')       { bgIcon='⚔'; bgTxt='Aguardando itens melhores';  bgColor='#e09050'; }
+      else if(bgSt==='aguardando_entrada'
+           || bgSt==='entrando_bg')           { bgIcon='→'; bgTxt='Entrando no BG...';           bgColor='var(--gold)'; }
+      else if(bgSt==='raffle')                { bgIcon='★'; bgTxt='Sorteio...';                  bgColor='#f0c060'; }
+      else if(bgSt==='concluido')             { bgIcon='✓'; bgTxt='Sessão concluída';            bgColor='var(--green2)'; }
+      else if(bgSt==='sem_alvo')              { bgIcon='⚔'; bgTxt=bgF+'/'+bgMx+' — sem alvos';  bgColor='var(--gold3)'; bgTimer=true; }
+      else if(bgSt==='limite_diario')         { bgIcon='⏸'; bgTxt=bgF+'/'+bgMx+' — limite/dia'; bgColor='var(--gold)'; bgTimer=true; }
+      else if(bgSt==='erro_entrada')          { bgIcon='✗'; bgTxt='Erro de entrada — verifique config'; bgColor='#e08080'; }
+      else if(bgF>0||bgSt)                    { bgIcon='⚔'; bgTxt=bgF+'/'+bgMx;                 bgColor='var(--green2)'; bgTimer=true; }
+      if(bgTxt){
+        var fimAttr = (bgPx&&bgTimer) ? ' data-bgfim="'+bgPx+'"' : '';
+        html += '<div class="bg-status-badge"'+fimAttr+'>';
+        html += '<span>'+bgIcon+'</span>';
+        html += '<span class="bg-cd-txt" style="color:'+bgColor+'">'+bgTxt+'</span>';
+        if(bgPx&&bgTimer) html += '<span class="bg-cd-timer"></span>';
+        html += '</div>';
+      }
+    }
     html += '</div>';
 
     // Slots equipados
@@ -1675,6 +1713,21 @@ setInterval(function(){
     var countStr = (hh>0?hh+'h ':'') + mm+'m '+(hh==0?ss+'s':'');
     var timer = el.querySelector('.taverna-timer');
     if(timer) timer.textContent = restaSeg > 0 ? countStr : 'concluído';
+  });
+}, 1000);
+
+// Atualiza countdown do BG a cada segundo
+setInterval(function(){
+  document.querySelectorAll('.bg-status-badge[data-bgfim]').forEach(function(el){
+    var fim = new Date(el.dataset.bgfim);
+    var diff = Math.max(0, Math.floor((fim - new Date()) / 1000));
+    var timer = el.querySelector('.bg-cd-timer');
+    if(!timer) return;
+    if(diff <= 0){ timer.textContent = ''; return; }
+    var hh = Math.floor(diff/3600);
+    var mm = Math.floor((diff%3600)/60);
+    var ss = diff % 60;
+    timer.textContent = hh>0 ? hh+'h '+mm+'m' : mm+'m '+ss+'s';
   });
 }, 1000);
 </script>
