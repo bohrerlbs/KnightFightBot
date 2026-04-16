@@ -957,7 +957,7 @@ def entrar_bg(client, modo, alignment="light"):
         soup = client.get_main("/battleground/enter/")
     except Exception as e:
         log.error(f"entrar_bg: erro ao acessar página de entrada: {e}")
-        return "falha"
+        return ("falha", 0)
 
     texto = soup.get_text(" ", strip=True)
 
@@ -970,13 +970,13 @@ def entrar_bg(client, modo, alignment="light"):
     ])
     if tem_landsitz and tem_aviso_equip:
         log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
-        return "sem_equipamento"
+        return ("sem_equipamento", 0)
 
     # Extrai csrf do form
     csrf_input = soup.find("input", {"name": "csrftoken"})
     if not csrf_input:
         log.error("entrar_bg: csrftoken não encontrado na página de entrada")
-        return "falha"
+        return ("falha", 0)
     csrf = csrf_input.get("value", "")
 
     # Verifica se o botão do modo escolhido existe
@@ -986,16 +986,42 @@ def entrar_bg(client, modo, alignment="light"):
         disponiveis = [b["name"] for b in soup.find_all("button", class_="startbs") if b.get("name")]
         if disponiveis:
             log.info(f"  Botões disponíveis: {disponiveis}")
-        return "falha"
+        return ("falha", 0)
 
-    # Verifica requisitos (ok.gif = OK, nok.gif = não atende)
+    # Verifica requisitos (ok.gif = OK, notok.gif = não atende)
     tds = soup.find_all("td", class_="bsseltd")
     idx_botao = {"bp1": 0, "bp2": 1, "bp3": 2}.get(botao, 0)
+    dias_requeridos = {"bp1": 2, "bp2": 1, "bp3": 0}.get(botao, 0)
     if idx_botao < len(tds):
         nok = [img for img in tds[idx_botao].find_all("img") if "nok.gif" in img.get("src", "")]
         if nok:
-            log.warning(f"entrar_bg: {len(nok)} requisito(s) não atendido(s) para {botao}")
-            return "falha"
+            # Calcula tempo de espera a partir da data da última sessão
+            wait_seg = dias_requeridos * 86400  # fallback: N dias completos
+            # Tenta parsear: "terminou X dia(s) atrás (DD.MM.YYYY HH:MM:SS)"
+            # ou "ended X days ago (DD.MM.YYYY HH:MM:SS)"
+            m_data = re.search(
+                r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                texto, re.IGNORECASE,
+            )
+            if not m_data:
+                m_data = re.search(
+                    r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                    texto, re.IGNORECASE,
+                )
+            if m_data:
+                try:
+                    dt_fim = datetime.strptime(m_data.group(1), "%d.%m.%Y %H:%M:%S")
+                    dt_pode_entrar = dt_fim + timedelta(days=dias_requeridos)
+                    wait_seg = max(0, int((dt_pode_entrar - datetime.now()).total_seconds()) + 60)
+                    log.warning(
+                        f"entrar_bg: cooldown ativo — última sessão em {dt_fim:%d/%m %H:%M} | "
+                        f"pode entrar em {dt_pode_entrar:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
+                    )
+                except Exception:
+                    log.warning(f"entrar_bg: cooldown ativo — aguardando {fmt_t(wait_seg)} (fallback)")
+            else:
+                log.warning(f"entrar_bg: requisito não atendido — aguardando {fmt_t(wait_seg)} (fallback)")
+            return ("cooldown", wait_seg)
 
     # 2. POST para entrar
     try:
@@ -1006,22 +1032,22 @@ def entrar_bg(client, modo, alignment="light"):
         )
     except Exception as e:
         log.error(f"entrar_bg: erro no POST: {e}")
-        return "falha"
+        return ("falha", 0)
 
     texto_r = soup_result.get_text(" ", strip=True)
 
     # Detecta tela de equipamento na resposta também
     if soup_result.find("a", href=lambda h: h and "/landsitz/" in h):
         log.warning("entrar_bg: resposta é tela de aviso de equipamento")
-        return "sem_equipamento"
+        return ("sem_equipamento", 0)
 
     for p in ["not eligible", "não elegível", "last battle session", "última sessão de batalha deverá"]:
         if p.lower() in texto_r.lower():
             log.error(f"entrar_bg: falha — '{p}' na resposta")
-            return "falha"
+            return ("falha", 0)
 
     log.info(f"✓ Entrou no BG com sucesso (modo={modo})")
-    return "ok"
+    return ("ok", 0)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1717,7 +1743,7 @@ if __name__ == "__main__":
         retry_sem_equip_seg = int(cfg.get("retry_sem_equip_seg", 1800)) if "cfg" in dir() else 1800
 
         while True:
-            status_entrada = entrar_bg(client, MODO_BG, alignment)
+            status_entrada, wait_extra = entrar_bg(client, MODO_BG, alignment)
 
             if status_entrada == "ok":
                 # Aguarda o servidor processar a entrada
@@ -1742,6 +1768,24 @@ if __name__ == "__main__":
                 except Exception as e2:
                     log.warning(f"  Erro ao re-coletar sessão: {e2}")
                 break  # entrou com sucesso
+
+            elif status_entrada == "cooldown":
+                # Cooldown pós-sessão — dorme até o horário calculado
+                dt_alvo = datetime.now() + timedelta(seconds=wait_extra)
+                log.info(f"  Aguardando cooldown de {fmt_t(wait_extra)} — próxima tentativa às {dt_alvo:%d/%m %H:%M:%S}")
+                atualizar_ciclo("status", "cooldown_bg")
+                atualizar_ciclo("proximo_bg", dt_alvo.isoformat())
+                # Dorme em fatias de 30min para poder ser interrompido pelo dashboard
+                restante = wait_extra
+                while restante > 0:
+                    estado_cd = carregar_estado()
+                    if estado_cd.get("parar_bot"):
+                        log.info("  🛑 Bot parado durante cooldown BG")
+                        import sys; sys.exit(0)
+                    fatia = min(1800, restante)
+                    time.sleep(fatia)
+                    restante -= fatia
+                log.info("  Cooldown encerrado — retentando entrada no BG...")
 
             elif status_entrada == "sem_equipamento":
                 log.info(f"  Personagem sem equipamento adequado para o BG.")
