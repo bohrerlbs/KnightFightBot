@@ -2191,7 +2191,8 @@ def verificar_alvo_equipamento(client, estado):
                 todos, req_skills_gema = _parsear_shop_todos_itens(soup, tipo)
                 fonte = "loja"
 
-                # ── Persiste no catálogo global: apenas itens com buy link ──
+                # ── Persiste no catálogo global: todos os itens visíveis ──
+                # url_compra=None para itens sem gold suficiente (sem buy link)
                 itens_catalog = [
                     {"nome": i["nome"], "gold": i["gold"],
                      "req_skill_valor": i.get("req_skill_valor", 0),
@@ -2200,7 +2201,7 @@ def verificar_alvo_equipamento(client, estado):
                      "url_compra":      i["url_compra"],
                      "categoria":       tipo}
                     for i in todos
-                    if i.get("pode_comprar") and not i.get("equipado")
+                    if not i.get("equipado")
                     and i.get("req_skill_valor", 0) not in req_skills_gema
                 ]
                 _atualizar_shop_catalog(tipo, itens_catalog)
@@ -2209,9 +2210,9 @@ def verificar_alvo_equipamento(client, estado):
         if todos is None:
             cat_entry = catalog.get(tipo, {})
             if cat_entry.get("itens"):
-                # Reconstrói formato de "todos" a partir do catálogo
-                todos = [dict(i, pode_comprar=True, equipado=False,
-                              gold_venda=0, url_venda=None)
+                # Reconstrói formato de "todos": pode_comprar baseado em url_compra
+                todos = [dict(i, pode_comprar=bool(i.get("url_compra")),
+                              equipado=False, gold_venda=0, url_venda=None)
                          for i in cat_entry["itens"]]
                 req_skills_gema = set()
                 ts = cat_entry.get("atualizado_em", "?")[:16]
@@ -2262,15 +2263,18 @@ def verificar_alvo_equipamento(client, estado):
             req_eq        = eq_cached.get("req", 0)
             urgente       = not bool(eq_cached)
 
-        # ── Filtra upgrades com buy link ───────────────────────────
-        compraveis = [
+        # ── Filtra upgrades: buy link (comprar agora) ou sem (acumular gold) ──
+        _filtro_base = [
             i for i in todos
-            if i.get("pode_comprar") and not i.get("equipado")
+            if not i.get("equipado")
             and i.get("req_skill_valor", 0) <= sk_atual
             and (urgente or i.get("req_skill_valor", 0) > req_eq)
         ]
+        compraveis_agora = [i for i in _filtro_base if i.get("pode_comprar")]
+        acumular         = [i for i in _filtro_base if not i.get("pode_comprar")]
+        compraveis = compraveis_agora or acumular
         if not compraveis:
-            log.debug(f"  Loja {tipo} ({fonte}): nenhum upgrade com buy link "
+            log.debug(f"  Loja {tipo} ({fonte}): nenhum upgrade disponível "
                       f"(sk={sk_atual}, req_eq={req_eq})")
             continue
 
@@ -2754,11 +2758,11 @@ def verificar_alvo_pedra(client, estado):
             melhor = _parsear_pedra_bloqueada(soup_shop)
             if melhor:
                 log.info(f"  Pedra: '{melhor['nome']}' @ {melhor['gold_necessario']}g bloqueada — salvando meta")
-        # Persiste no catálogo se encontrou com buy link
-        if melhor and melhor.get("url_compra"):
+        # Persiste no catálogo (url_compra=None se gold insuficiente)
+        if melhor:
             _atualizar_shop_catalog("steine", [{
                 "nome": melhor["nome"], "gold": melhor["gold_necessario"],
-                "url_compra": melhor["url_compra"], "req_skill_valor": 0,
+                "url_compra": melhor.get("url_compra"), "req_skill_valor": 0,
                 "req_level": 0, "categoria": "steine",
             }])
     else:
@@ -3225,13 +3229,13 @@ def verificar_alvo_anel(client, estado):
                     "url_compra": url_compra, "categoria": "ringe"}
             if buy_a:
                 candidatos.append(item)
-                itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
-                                      "url_compra": url_compra, "categoria": "ringe"})
             else:
                 ouro_bloq.append(item)
+            # Salva todos no catálogo (url_compra=None para itens sem gold suficiente)
+            itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
+                                  "url_compra": url_compra, "categoria": "ringe"})
 
-        if itens_catalog:
-            _atualizar_shop_catalog("ringe", itens_catalog)
+        _atualizar_shop_catalog("ringe", itens_catalog)
 
     else:
         # ── Fallback: catálogo global ────────────────────────────────────
@@ -3261,9 +3265,13 @@ def verificar_alvo_anel(client, estado):
                 continue
             if req_lv > 0 and req_lv > player_level:
                 continue
-            candidatos.append({"nome": i["nome"], "gold_necessario": i["gold"],
-                               "req_level": req_lv, "url_compra": i["url_compra"],
-                               "categoria": "ringe"})
+            item = {"nome": i["nome"], "gold_necessario": i["gold"],
+                    "req_level": req_lv, "url_compra": i.get("url_compra"),
+                    "categoria": "ringe"}
+            if i.get("url_compra"):
+                candidatos.append(item)
+            else:
+                ouro_bloq.append(item)
 
     # ── Seleção ──────────────────────────────────────────────────────────
     pior_level_eq = min(levels_equipados) if levels_equipados else -1
@@ -3524,13 +3532,13 @@ def verificar_alvo_amuleto(client, estado):
                     "url_compra": url_compra, "categoria": "amulette"}
             if buy_a:
                 candidatos.append(item)
-                itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
-                                      "url_compra": url_compra, "categoria": "amulette"})
             else:
                 ouro_bloq.append(item)
+            # Salva todos no catálogo (url_compra=None para itens sem gold suficiente)
+            itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
+                                  "url_compra": url_compra, "categoria": "amulette"})
 
-        if itens_catalog:
-            _atualizar_shop_catalog("amulette", itens_catalog)
+        _atualizar_shop_catalog("amulette", itens_catalog)
 
     else:
         # ── Fallback: catálogo global ────────────────────────────────────
@@ -3555,9 +3563,13 @@ def verificar_alvo_amuleto(client, estado):
                 continue
             if req_lv > 0 and req_lv > player_level:
                 continue
-            candidatos.append({"nome": i["nome"], "gold_necessario": i["gold"],
-                               "req_level": req_lv, "url_compra": i["url_compra"],
-                               "categoria": "amulette"})
+            item = {"nome": i["nome"], "gold_necessario": i["gold"],
+                    "req_level": req_lv, "url_compra": i.get("url_compra"),
+                    "categoria": "amulette"}
+            if i.get("url_compra"):
+                candidatos.append(item)
+            else:
+                ouro_bloq.append(item)
 
     # ── Seleção ──────────────────────────────────────────────────────────
     log.debug(f"  Amuleto: level_eq={level_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
