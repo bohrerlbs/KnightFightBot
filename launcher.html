@@ -1083,12 +1083,13 @@ function renderProfiles(profiles){
     }
     html += '<button class="btn btn-dash" data-action="bgdash" data-port="'+bgPort+'" data-name="'+name+'">Dashboard BG</button>';
     html += '</div>';
-    // ── BG Status badge ──────────────────────────────────────────
-    if(bgRunning){
+    // ── BG Status badge — aparece sempre que houver dado no bg_ciclo.json ───────
+    (function(){
       var bgSt = p._bg_status || '';
       var bgF  = (p._bg_feitas != null ? p._bg_feitas : 0);
       var bgMx = ({'free':100,'medio':200,'premium':400}[p._bg_modo||'free'] || 100);
       var bgPx = p._bg_proximo || null;
+      if(!bgSt && !bgF) return;  // sem dados ainda
       var bgTxt='', bgColor='var(--muted)', bgIcon='', bgTimer=false;
       if     (bgSt==='aguardando_nivel')      { bgIcon='⏳'; bgTxt='Aguardando Lv10';            bgColor='#e08080'; }
       else if(bgSt==='cooldown_bg')           { bgIcon='⏸'; bgTxt='Cooldown BG';                bgColor='var(--gold)'; bgTimer=true; }
@@ -1101,16 +1102,16 @@ function renderProfiles(profiles){
       else if(bgSt==='sem_alvo')              { bgIcon='⚔'; bgTxt=bgF+'/'+bgMx+' — sem alvos';  bgColor='var(--gold3)'; bgTimer=true; }
       else if(bgSt==='limite_diario')         { bgIcon='⏸'; bgTxt=bgF+'/'+bgMx+' — limite/dia'; bgColor='var(--gold)'; bgTimer=true; }
       else if(bgSt==='erro_entrada')          { bgIcon='✗'; bgTxt='Erro de entrada — verifique config'; bgColor='#e08080'; }
+      else if(bgSt==='parado')               { bgIcon='■'; bgTxt='BG parado';                   bgColor='var(--muted)'; }
       else if(bgF>0||bgSt)                    { bgIcon='⚔'; bgTxt=bgF+'/'+bgMx;                 bgColor='var(--green2)'; bgTimer=true; }
-      if(bgTxt){
-        var fimAttr = (bgPx&&bgTimer) ? ' data-bgfim="'+bgPx+'"' : '';
-        html += '<div class="bg-status-badge"'+fimAttr+'>';
-        html += '<span>'+bgIcon+'</span>';
-        html += '<span class="bg-cd-txt" style="color:'+bgColor+'">'+bgTxt+'</span>';
-        if(bgPx&&bgTimer) html += '<span class="bg-cd-timer"></span>';
-        html += '</div>';
-      }
-    }
+      if(!bgTxt) return;
+      var fimAttr = (bgPx&&bgTimer) ? ' data-bgfim="'+bgPx+'"' : '';
+      html += '<div class="bg-status-badge"'+fimAttr+'>';
+      html += '<span>'+bgIcon+'</span>';
+      html += '<span class="bg-cd-txt" style="color:'+bgColor+'">'+bgTxt+'</span>';
+      if(bgPx&&bgTimer) html += '<span class="bg-cd-timer"></span>';
+      html += '</div>';
+    })();
     html += '</div>';
 
     // Slots equipados
