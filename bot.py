@@ -2293,18 +2293,36 @@ def verificar_alvo_equipamento(client, estado):
         # Match por req_skill_valor apenas (robusto entre idiomas e servidores;
         # nome e preço variam por servidor). Se múltiplos itens no mesmo req_skill,
         # escolhe o de preço mais próximo do catálogo.
-        candidatos_match = [
-            i for i in todos
-            if not i.get("equipado")
-            and i.get("req_skill_valor") == melhor_cat["req_skill"]
-            and i.get("pode_comprar")
-        ]
-        if len(candidatos_match) == 1:
-            shop_match = candidatos_match[0]
-        elif len(candidatos_match) > 1:
-            shop_match = min(candidatos_match, key=lambda x: abs(x["gold"] - melhor_cat["gold"]))
-        else:
-            shop_match = None
+        def _encontrar_shop_match(cat_item):
+            matches = [
+                i for i in todos
+                if not i.get("equipado")
+                and i.get("req_skill_valor") == cat_item["req_skill"]
+                and i.get("pode_comprar")
+            ]
+            if len(matches) == 1:
+                return matches[0]
+            if len(matches) > 1:
+                return min(matches, key=lambda x: abs(x["gold"] - cat_item["gold"]))
+            return None
+
+        shop_match = _encontrar_shop_match(melhor_cat)
+
+        # Fallback cascata: se o melhor item do catálogo não tem buy link na loja
+        # (ex: item não existe neste servidor ou é bazar neste servidor),
+        # tenta o próximo melhor item do catálogo que tenha buy link disponível.
+        if shop_match is None:
+            for candidato_cat in sorted(disponiveis, key=lambda x: (x["req_skill"], x["gold"]), reverse=True):
+                if candidato_cat["req_skill"] == melhor_cat["req_skill"]:
+                    continue  # já tentado acima
+                fb = _encontrar_shop_match(candidato_cat)
+                if fb:
+                    log.debug(f"  Catálogo {cat_key}: '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
+                              f"sem buy link — fallback para '{candidato_cat['nome']}' req={candidato_cat['req_skill']}")
+                    melhor_cat = candidato_cat
+                    shop_match = fb
+                    break
+
         url_compra = shop_match["url_compra"] if shop_match else None
 
         # Usa preço real da loja quando disponível (catálogo pode ter preço de outro servidor)
