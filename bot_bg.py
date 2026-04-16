@@ -1113,17 +1113,22 @@ def buscar_adversarios(client, eu, ef_range, ef_offset=0):
             csrf = csrf_input.get("value", "")
     log.debug(f"  csrf: {'OK len='+str(len(csrf)) if csrf else 'VAZIO'}")
 
-    soup = client.post({
-        "csrftoken": csrf,
-        "ac": "raubzug",
-        "sac": "gegner",
-        "searchtype": "random",
-        "fpfrom": str(ef_from),
-        "fpto": str(ef_to),
-        "slots": "0",
-        "showOwnBaseValues": "on",
-        "search_npcs": "on",
-    })
+    try:
+        soup = client.post({
+            "csrftoken": csrf,
+            "ac": "raubzug",
+            "sac": "gegner",
+            "searchtype": "random",
+            "fpfrom": str(ef_from),
+            "fpto": str(ef_to),
+            "slots": "0",
+            "showOwnBaseValues": "on",
+            "search_npcs": "on",
+        })
+    except Exception as e:
+        log.warning(f"  buscar_adversarios: erro HTTP ({type(e).__name__}) — aguardando 10min antes de tentar novamente")
+        time.sleep(600)
+        return []
     # Debug: salva HTML recebido para análise
     try:
         html_debug = str(soup)
@@ -1829,7 +1834,14 @@ if __name__ == "__main__":
             log.info(f"\n{'='*50}")
             log.info(f"Iniciando sessão BG — Modo: {MODOS_BG[MODO_BG]['nome']}")
             log.info(f"{'='*50}")
-            loop_bg(client, eu, MODO_BG)
+            try:
+                loop_bg(client, eu, MODO_BG)
+            except Exception as e_loop:
+                log.error(f"Erro inesperado no loop BG: {type(e_loop).__name__}: {e_loop}")
+                log.info("Aguardando 10min antes de reiniciar...")
+                atualizar_ciclo("status", "erro_loop")
+                time.sleep(600)
+                continue  # volta ao topo do while True
 
             # ── 5. Sessão concluída — volta ao topo do loop ───────
             # entrar_bg() detectará o cooldown de 2 dias na próxima iteração
