@@ -210,6 +210,25 @@ class ClienteBG:
         r.raise_for_status()
         return BeautifulSoup(r.text, "html.parser")
 
+    def get_main(self, path):
+        """GET no site principal (não no battleserver)."""
+        url = self.base_url + path
+        r = self.session.get(url, timeout=15)
+        r.raise_for_status()
+        return BeautifulSoup(r.text, "html.parser")
+
+    def post_main(self, path, data, referer=None):
+        """POST no site principal (não no battleserver)."""
+        url = self.base_url + path
+        headers = {
+            "Referer": referer or (self.base_url + "/battleground/"),
+            "Origin":  self.base_url,
+            "Accept":  "text/html,application/xhtml+xml,*/*",
+        }
+        r = self.session.post(url, data=data, headers=headers, timeout=15)
+        r.raise_for_status()
+        return BeautifulSoup(r.text, "html.parser")
+
 # ═══════════════════════════════════════════════════════════════
 # PARSERS
 # ═══════════════════════════════════════════════════════════════
@@ -918,6 +937,97 @@ def escolher_melhor_alvo(adversarios, eu, combates=None):
     return atacaveis[0], avaliados
 
 # ═══════════════════════════════════════════════════════════════
+# ENTRADA NO BG
+# ═══════════════════════════════════════════════════════════════
+_MODO_PARA_BOTAO = {"free": "bp1", "medio": "bp2", "premium": "bp3"}
+
+def entrar_bg(client, modo, alignment="light"):
+    """
+    Entra no BG submetendo o form da tela de entrada.
+    Retorna True se entrou com sucesso, False caso contrário.
+    """
+    botao = _MODO_PARA_BOTAO.get(modo, "bp1")
+    log.info(f"Tentando entrar no BG — modo={modo} ({botao}), alignment={alignment}")
+
+    # 1. GET na tela de entrada para pegar csrf e confirmar que opção está disponível
+    try:
+        soup = client.get_main("/battleground/enter/")
+    except Exception as e:
+        log.error(f"entrar_bg: erro ao acessar página de entrada: {e}")
+        return False
+
+    # Extrai csrf do form
+    csrf_input = soup.find("input", {"name": "csrftoken"})
+    if not csrf_input:
+        log.error("entrar_bg: csrftoken não encontrado na página de entrada")
+        return False
+    csrf = csrf_input.get("value", "")
+
+    # Verifica se o botão do modo escolhido existe na página
+    botao_tag = soup.find("button", {"name": botao})
+    if not botao_tag:
+        log.error(f"entrar_bg: botão {botao} não encontrado — modo {modo} indisponível?")
+        # Tenta mostrar quais botões estão disponíveis
+        disponiveis = [b["name"] for b in soup.find_all("button", class_="startbs") if b.get("name")]
+        if disponiveis:
+            log.info(f"  Botões disponíveis: {disponiveis}")
+        return False
+
+    # Verifica se os requisitos estão OK (todos os ícones devem ser ok.gif, não nok.gif)
+    # Cada coluna td.bsseltd contém imgs ok.gif/nok.gif para cada requisito
+    tds = soup.find_all("td", class_="bsseltd")
+    idx_botao = {"bp1": 0, "bp2": 1, "bp3": 2}.get(botao, 0)
+    if idx_botao < len(tds):
+        td = tds[idx_botao]
+        nok_imgs = [img for img in td.find_all("img") if "nok.gif" in img.get("src", "")]
+        if nok_imgs:
+            log.warning(f"entrar_bg: modo {modo} tem {len(nok_imgs)} requisito(s) não atendido(s)")
+            # Não bloqueia — tenta mesmo assim
+
+    # 2. POST para entrar
+    data = {
+        "csrftoken": csrf,
+        "alignment": alignment,
+        botao: "",
+    }
+    try:
+        soup_result = client.post_main(
+            "/battleground/enter/",
+            data=data,
+            referer=client.base_url + "/battleground/enter/",
+        )
+    except Exception as e:
+        log.error(f"entrar_bg: erro no POST: {e}")
+        return False
+
+    # Verifica sucesso — após entrar, o servidor redireciona para o battleserver
+    # A resposta costuma ter texto de confirmação ou redirecionamento implícito
+    texto = soup_result.get_text(" ", strip=True)
+    # Indicadores de sucesso: menção a batalhas/sessão iniciada
+    sucesso_pistas = [
+        "sessão de batalha", "battle session", "battleground", "currentbattle",
+        "batalhas ofensivas", "offensive battles", "session start",
+    ]
+    falha_pistas = [
+        "not eligible", "não elegível", "requisito", "requirement",
+        "last battle session", "última sessão",
+    ]
+    for p in falha_pistas:
+        if p.lower() in texto.lower():
+            log.error(f"entrar_bg: falha ao entrar — '{p}' detectado na resposta")
+            return False
+
+    for p in sucesso_pistas:
+        if p.lower() in texto.lower():
+            log.info(f"✓ Entrou no BG com sucesso (modo={modo})")
+            return True
+
+    # Se chegou aqui sem pistas claras, assume sucesso pelo código HTTP 200
+    log.info(f"✓ Entrou no BG (sem confirmação textual clara, assumindo sucesso)")
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════
 # BUSCA E ATAQUE
 # ═══════════════════════════════════════════════════════════════
 def buscar_adversarios(client, eu, ef_range, ef_offset=0):
@@ -1424,6 +1534,7 @@ if __name__ == "__main__":
         print(f"  UserID : {MY_USER_ID}")
         print(f"  Porta  : {DASHBOARD_PORT}")
         print(f"  Modo   : {MODO_BG}")
+        print(f"  Alignment: {cfg.get('alignment', 'light')}")
         print(f"  Cookies: {'OK' if COOKIES_RAW and COOKIES_RAW != 'COLE_SEUS_COOKIES_AQUI' else 'FALTANDO!'}")
     else:
         MODO_BG = args.modo
@@ -1503,16 +1614,51 @@ if __name__ == "__main__":
     log.info(f"Dashboard: http://localhost:{DASHBOARD_PORT}/dashboard")
     log.info("=" * 50)
 
-    # Verifica se há sessão BG ativa — bot só para se a página /battleground/currentbattle/
-    # não carregou (eu={}) E não tem sessão salva no estado. Idiomas não-PT podem não
-    # parsear a data mas o fallback sess_YYYYMMDD garante que inicio esteja sempre preenchido.
+    # Verifica se há sessão BG ativa
     sessao_inicio = eu.get("sessao_inicio", "")
-    if not sessao_inicio and not eu:
+    sessao_tem_batalhas = estado.get("sessao_bg", {}).get("batalhas_total") is not None
+
+    # Se não detectou sessão ativa → tenta entrar no BG automaticamente
+    if not sessao_tem_batalhas and not sessao_inicio.startswith("sess_"):
+        # Sem sessão real detectada: tentamos entrar
+        log.info("Nenhuma sessão BG ativa detectada — tentando entrar automaticamente...")
+        atualizar_ciclo("status", "entrando_bg")
+        alignment = cfg.get("alignment", "light") if "cfg" in dir() else "light"
+        entrou = entrar_bg(client, MODO_BG, alignment)
+        if entrou:
+            # Aguarda o servidor processar a entrada
+            log.info("  Aguardando 5s para sessão ser confirmada...")
+            time.sleep(5)
+            # Re-coleta sessão
+            try:
+                soup_sessao2 = client.get_full("/battleground/currentbattle/")
+                sessao2 = parsear_sessao_bg(soup_sessao2)
+                if sessao2.get("batalhas_total") or sessao2.get("batalhas_feitas") is not None:
+                    sessao = sessao2
+                    eu["sessao_inicio"] = sessao2.get("inicio", f"sess_{datetime.now():%Y%m%d}")
+                    sessao_inicio = eu["sessao_inicio"]
+                    estado["sessao_bg"] = sessao
+                    estado["sessao_bg_id"] = sessao_inicio
+                    estado["batalhas_feitas"] = sessao2.get("batalhas_feitas", 0)
+                    salvar_estado(estado)
+                    log.info(f"  Sessão confirmada: {sessao2.get('batalhas_feitas',0)}/{sessao2.get('batalhas_total','?')} batalhas")
+                else:
+                    log.warning("  Sessão ainda não visível após entrada — continuando mesmo assim...")
+                    sessao_inicio = eu.get("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
+                    eu["sessao_inicio"] = sessao_inicio
+            except Exception as e2:
+                log.warning(f"  Erro ao re-coletar sessão: {e2}")
+        else:
+            log.error("❌ Não foi possível entrar no BG automaticamente.")
+            log.error("   Verifique cookies, requisitos do modo escolhido e se o personagem está elegível.")
+            atualizar_ciclo("status", "sem_sessao")
+            import sys; sys.exit(0)
+    elif not sessao_inicio and not eu:
         log.error("❌ Erro ao carregar status do BG — sem conexão ou sessão inválida.")
         log.error("   Verifique cookies e se o personagem está inscrito no BG.")
         atualizar_ciclo("status", "sem_sessao")
         import sys; sys.exit(0)
-    if not sessao_inicio:
+    elif not sessao_inicio:
         log.warning("⚠ Data de início da sessão não parseada (idioma não suportado?) — continuando mesmo assim...")
 
     # Inicia loop
