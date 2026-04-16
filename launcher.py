@@ -65,7 +65,7 @@ def get_version():
     except:
         return "1.0.0"
 
-GITHUB_RAW    = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/main"
+GITHUB_RAW    = "https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/master"
 LAUNCHER_PORT = 8764
 running_bots  = {}
 _bg_start_lock = threading.Lock()
