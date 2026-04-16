@@ -3195,12 +3195,14 @@ def verificar_alvo_anel(client, estado):
                 continue
 
             gold = 0
-            for span in tr.find_all("span"):
-                if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
-                    continue
-                m = re.search(r"[\d.,]+", span.get_text())
-                if m:
-                    gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
+            for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
+                prev = img_gold.previous_sibling
+                if prev:
+                    nums = re.findall(r"[\d.,]+", str(prev))
+                    if nums:
+                        val = int(nums[-1].replace(".", "").replace(",", ""))
+                        if val > 0:
+                            gold = max(gold, val)
             if gold == 0:
                 m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
                 if m:
@@ -3525,12 +3527,14 @@ def verificar_alvo_amuleto(client, estado):
                 continue
 
             gold = 0
-            for span in tr.find_all("span"):
-                if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
-                    continue
-                m = re.search(r"[\d.,]+", span.get_text())
-                if m:
-                    gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
+            for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
+                prev = img_gold.previous_sibling
+                if prev:
+                    nums = re.findall(r"[\d.,]+", str(prev))
+                    if nums:
+                        val = int(nums[-1].replace(".", "").replace(",", ""))
+                        if val > 0:
+                            gold = max(gold, val)
             if gold == 0:
                 m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
                 if m:
