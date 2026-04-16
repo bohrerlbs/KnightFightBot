@@ -1829,10 +1829,30 @@ if __name__ == "__main__":
                 salvar_estado(estado)
 
             else:
-                # ── 4. Sem sessão — tenta entrar (1 request em entrar_bg) ──
+                # ── 4. Sem sessão — verifica nível antes de tentar entrar ──
                 log.info("Sem sessão BG ativa — tentando entrar...")
                 atualizar_ciclo("status", "aguardando_entrada")
                 _checar_parar()
+
+                # Se nível ainda desconhecido (0), busca via /status/ agora
+                nivel_atual = _nivel_local()
+                if nivel_atual == 0:
+                    try:
+                        eu_tmp = parsear_status_bg(client.get_full("/status/"))
+                        nivel_atual = eu_tmp.get("level", 0)
+                        estado2 = carregar_estado()
+                        estado2["level"] = nivel_atual
+                        salvar_estado(estado2)
+                        log.info(f"  Nível obtido: {nivel_atual}")
+                    except Exception as e:
+                        log.warning(f"  Erro ao obter nível: {e}")
+
+                if 0 < nivel_atual < 10:
+                    log.info(f"  Nível {nivel_atual} < 10 — BG requer Lv10. Aguardando 1h...")
+                    atualizar_ciclo("status", "aguardando_nivel")
+                    if not _dormir_fatias(3600):
+                        raise KeyboardInterrupt
+                    continue
 
                 status_entrada, wait_extra = entrar_bg(client, MODO_BG, alignment)
 
