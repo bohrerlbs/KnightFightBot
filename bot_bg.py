@@ -944,87 +944,84 @@ _MODO_PARA_BOTAO = {"free": "bp1", "medio": "bp2", "premium": "bp3"}
 def entrar_bg(client, modo, alignment="light"):
     """
     Entra no BG submetendo o form da tela de entrada.
-    Retorna True se entrou com sucesso, False caso contrário.
+    Retorna:
+      "ok"             — entrou com sucesso
+      "sem_equipamento"— personagem sem equipamento adequado (aguardar bot principal)
+      "falha"          — erro ou requisito não atendido
     """
     botao = _MODO_PARA_BOTAO.get(modo, "bp1")
     log.info(f"Tentando entrar no BG — modo={modo} ({botao}), alignment={alignment}")
 
-    # 1. GET na tela de entrada para pegar csrf e confirmar que opção está disponível
+    # 1. GET na tela de entrada
     try:
         soup = client.get_main("/battleground/enter/")
     except Exception as e:
         log.error(f"entrar_bg: erro ao acessar página de entrada: {e}")
-        return False
+        return "falha"
+
+    texto = soup.get_text(" ", strip=True)
+
+    # Detecta tela de "equipe seu cavaleiro" — personagem sem itens adequados
+    # Indicadores: link /landsitz/ (trocar equipamento) junto com aviso em vermelho
+    tem_landsitz = soup.find("a", href=lambda h: h and "/landsitz/" in h)
+    tem_aviso_equip = any(p in texto for p in [
+        "Equip your knight", "otimamente", "equipe", "amuleto", "arma",
+        "skill disponíveis", "optimally",
+    ])
+    if tem_landsitz and tem_aviso_equip:
+        log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
+        return "sem_equipamento"
 
     # Extrai csrf do form
     csrf_input = soup.find("input", {"name": "csrftoken"})
     if not csrf_input:
         log.error("entrar_bg: csrftoken não encontrado na página de entrada")
-        return False
+        return "falha"
     csrf = csrf_input.get("value", "")
 
-    # Verifica se o botão do modo escolhido existe na página
+    # Verifica se o botão do modo escolhido existe
     botao_tag = soup.find("button", {"name": botao})
     if not botao_tag:
         log.error(f"entrar_bg: botão {botao} não encontrado — modo {modo} indisponível?")
-        # Tenta mostrar quais botões estão disponíveis
         disponiveis = [b["name"] for b in soup.find_all("button", class_="startbs") if b.get("name")]
         if disponiveis:
             log.info(f"  Botões disponíveis: {disponiveis}")
-        return False
+        return "falha"
 
-    # Verifica se os requisitos estão OK (todos os ícones devem ser ok.gif, não nok.gif)
-    # Cada coluna td.bsseltd contém imgs ok.gif/nok.gif para cada requisito
+    # Verifica requisitos (ok.gif = OK, nok.gif = não atende)
     tds = soup.find_all("td", class_="bsseltd")
     idx_botao = {"bp1": 0, "bp2": 1, "bp3": 2}.get(botao, 0)
     if idx_botao < len(tds):
-        td = tds[idx_botao]
-        nok_imgs = [img for img in td.find_all("img") if "nok.gif" in img.get("src", "")]
-        if nok_imgs:
-            log.warning(f"entrar_bg: modo {modo} tem {len(nok_imgs)} requisito(s) não atendido(s)")
-            # Não bloqueia — tenta mesmo assim
+        nok = [img for img in tds[idx_botao].find_all("img") if "nok.gif" in img.get("src", "")]
+        if nok:
+            log.warning(f"entrar_bg: {len(nok)} requisito(s) não atendido(s) para {botao}")
+            return "falha"
 
     # 2. POST para entrar
-    data = {
-        "csrftoken": csrf,
-        "alignment": alignment,
-        botao: "",
-    }
     try:
         soup_result = client.post_main(
             "/battleground/enter/",
-            data=data,
+            data={"csrftoken": csrf, "alignment": alignment, botao: ""},
             referer=client.base_url + "/battleground/enter/",
         )
     except Exception as e:
         log.error(f"entrar_bg: erro no POST: {e}")
-        return False
+        return "falha"
 
-    # Verifica sucesso — após entrar, o servidor redireciona para o battleserver
-    # A resposta costuma ter texto de confirmação ou redirecionamento implícito
-    texto = soup_result.get_text(" ", strip=True)
-    # Indicadores de sucesso: menção a batalhas/sessão iniciada
-    sucesso_pistas = [
-        "sessão de batalha", "battle session", "battleground", "currentbattle",
-        "batalhas ofensivas", "offensive battles", "session start",
-    ]
-    falha_pistas = [
-        "not eligible", "não elegível", "requisito", "requirement",
-        "last battle session", "última sessão",
-    ]
-    for p in falha_pistas:
-        if p.lower() in texto.lower():
-            log.error(f"entrar_bg: falha ao entrar — '{p}' detectado na resposta")
-            return False
+    texto_r = soup_result.get_text(" ", strip=True)
 
-    for p in sucesso_pistas:
-        if p.lower() in texto.lower():
-            log.info(f"✓ Entrou no BG com sucesso (modo={modo})")
-            return True
+    # Detecta tela de equipamento na resposta também
+    if soup_result.find("a", href=lambda h: h and "/landsitz/" in h):
+        log.warning("entrar_bg: resposta é tela de aviso de equipamento")
+        return "sem_equipamento"
 
-    # Se chegou aqui sem pistas claras, assume sucesso pelo código HTTP 200
-    log.info(f"✓ Entrou no BG (sem confirmação textual clara, assumindo sucesso)")
-    return True
+    for p in ["not eligible", "não elegível", "last battle session", "última sessão de batalha deverá"]:
+        if p.lower() in texto_r.lower():
+            log.error(f"entrar_bg: falha — '{p}' na resposta")
+            return "falha"
+
+    log.info(f"✓ Entrou no BG com sucesso (modo={modo})")
+    return "ok"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1123,6 +1120,97 @@ def atacar(client, adversario):
     return soup
 
 
+def _extrair_ticket_bg(soup):
+    """Extrai os dígitos do bilhete de loteria do BG a partir das imagens numbers/bX.png."""
+    ticket = ""
+    div = soup.find("div", id="tickets")
+    if div:
+        for img in div.find_all("img"):
+            src = img.get("src", "")
+            m = re.search(r"/numbers/b(\d)\.png", src)
+            if m:
+                ticket += m.group(1)
+    return ticket or "?"
+
+
+def fazer_raffle_e_sair(client):
+    """
+    Executa o raffle (tômbola) e encerra a sessão BG.
+    Chamado quando as batalhas foram concluídas.
+    Retorna True se encerrou normalmente.
+    """
+    log.info("🎰 Iniciando raffle e encerramento de sessão BG...")
+
+    # Pega csrf da página atual do battleserver
+    try:
+        soup = client.get_full("/")
+    except Exception as e:
+        log.error(f"fazer_raffle_e_sair: erro ao carregar página: {e}")
+        return False
+
+    # Passo 1: Start Raffle
+    raffle_input = soup.find("input", {"name": "start_raffle"})
+    if raffle_input:
+        csrf_tag = soup.find("input", {"name": "csrftoken"})
+        csrf = csrf_tag["value"] if csrf_tag else ""
+        ticket = _extrair_ticket_bg(soup)
+        log.info(f"  Bilhete de loteria: {ticket}")
+        try:
+            soup2 = client.post(
+                {"csrftoken": csrf, "start_raffle": "true"},
+                referer=client.bs_url + "/",
+                fragment=False,
+            )
+            log.info("  ✓ Raffle iniciado")
+        except Exception as e:
+            log.error(f"  Erro ao iniciar raffle: {e}")
+            soup2 = soup
+    else:
+        log.info("  Raffle não encontrado na página — talvez já concluído")
+        soup2 = soup
+
+    # Passo 2: End battle session (botão "end")
+    # A página do raffle pode ser a mesma ou uma nova resposta
+    end_input = soup2.find("input", {"name": "end"})
+    if not end_input:
+        # Aguarda um pouco e recarrega (o raffle pode ter sido POST que retornou nova página)
+        time.sleep(3)
+        try:
+            soup2 = client.get_full("/")
+            end_input = soup2.find("input", {"name": "end"})
+        except Exception:
+            pass
+
+    if end_input:
+        csrf_tag2 = soup2.find("input", {"name": "csrftoken"})
+        csrf2 = csrf_tag2["value"] if csrf_tag2 else ""
+        end_val = end_input.get("value", "End battle session")
+        try:
+            soup3 = client.post(
+                {"csrftoken": csrf2, "end": end_val},
+                referer=client.bs_url + "/",
+                fragment=False,
+            )
+            log.info("  ✓ Sessão BG encerrada")
+            # Loga resumo final da sessão
+            texto3 = soup3.get_text(" ", strip=True)
+            for linha in ["Batalhas ofensivas", "Vencidos", "Derrotas", "Ouro ganho", "Pontos de batalha"]:
+                for p in [linha, linha.lower()]:
+                    if p in texto3:
+                        # Tenta extrair valor após o label
+                        m = re.search(rf"{re.escape(p)}[^:]*:\s*([\d.,]+)", texto3, re.IGNORECASE)
+                        if m:
+                            log.info(f"  {linha}: {m.group(1)}")
+                        break
+            return True
+        except Exception as e:
+            log.error(f"  Erro ao encerrar sessão: {e}")
+            return False
+    else:
+        log.warning("  Botão 'End battle session' não encontrado — sessão pode já ter sido encerrada")
+        return True
+
+
 def loop_bg(client, eu, modo):
     """Loop principal do bot BG."""
     # Auto-detecta modo pela sessão real (ignora parâmetro modo)
@@ -1186,10 +1274,12 @@ def loop_bg(client, eu, modo):
         feitas = estado.get("batalhas_feitas", 0)
 
         if feitas >= max_batalhas:
-            log.info(f"✅ Limite de {max_batalhas} batalhas atingido! Bot encerrado.")
-            atualizar_ciclo("status", "concluido")
+            log.info(f"✅ Limite de {max_batalhas} batalhas atingido!")
+            atualizar_ciclo("status", "raffle")
+            fazer_raffle_e_sair(client)
             log.info("Limpando dados da sessão encerrada...")
             resetar_dados_sessao_bg()
+            atualizar_ciclo("status", "concluido")
             break
 
         # Verifica limite diário (sempre 100/dia independente do modo)
@@ -1620,39 +1710,51 @@ if __name__ == "__main__":
 
     # Se não detectou sessão ativa → tenta entrar no BG automaticamente
     if not sessao_tem_batalhas and not sessao_inicio.startswith("sess_"):
-        # Sem sessão real detectada: tentamos entrar
         log.info("Nenhuma sessão BG ativa detectada — tentando entrar automaticamente...")
         atualizar_ciclo("status", "entrando_bg")
         alignment = cfg.get("alignment", "light") if "cfg" in dir() else "light"
-        entrou = entrar_bg(client, MODO_BG, alignment)
-        if entrou:
-            # Aguarda o servidor processar a entrada
-            log.info("  Aguardando 5s para sessão ser confirmada...")
-            time.sleep(5)
-            # Re-coleta sessão
-            try:
-                soup_sessao2 = client.get_full("/battleground/currentbattle/")
-                sessao2 = parsear_sessao_bg(soup_sessao2)
-                if sessao2.get("batalhas_total") or sessao2.get("batalhas_feitas") is not None:
-                    sessao = sessao2
-                    eu["sessao_inicio"] = sessao2.get("inicio", f"sess_{datetime.now():%Y%m%d}")
-                    sessao_inicio = eu["sessao_inicio"]
-                    estado["sessao_bg"] = sessao
-                    estado["sessao_bg_id"] = sessao_inicio
-                    estado["batalhas_feitas"] = sessao2.get("batalhas_feitas", 0)
-                    salvar_estado(estado)
-                    log.info(f"  Sessão confirmada: {sessao2.get('batalhas_feitas',0)}/{sessao2.get('batalhas_total','?')} batalhas")
-                else:
-                    log.warning("  Sessão ainda não visível após entrada — continuando mesmo assim...")
-                    sessao_inicio = eu.get("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
-                    eu["sessao_inicio"] = sessao_inicio
-            except Exception as e2:
-                log.warning(f"  Erro ao re-coletar sessão: {e2}")
-        else:
-            log.error("❌ Não foi possível entrar no BG automaticamente.")
-            log.error("   Verifique cookies, requisitos do modo escolhido e se o personagem está elegível.")
-            atualizar_ciclo("status", "sem_sessao")
-            import sys; sys.exit(0)
+        # Intervalo de retry quando sem equipamento adequado (padrão 30min)
+        retry_sem_equip_seg = int(cfg.get("retry_sem_equip_seg", 1800)) if "cfg" in dir() else 1800
+
+        while True:
+            status_entrada = entrar_bg(client, MODO_BG, alignment)
+
+            if status_entrada == "ok":
+                # Aguarda o servidor processar a entrada
+                log.info("  Aguardando 5s para sessão ser confirmada...")
+                time.sleep(5)
+                try:
+                    soup_sessao2 = client.get_full("/battleground/currentbattle/")
+                    sessao2 = parsear_sessao_bg(soup_sessao2)
+                    if sessao2.get("batalhas_total") or sessao2.get("batalhas_feitas") is not None:
+                        sessao = sessao2
+                        eu["sessao_inicio"] = sessao2.get("inicio", f"sess_{datetime.now():%Y%m%d}")
+                        sessao_inicio = eu["sessao_inicio"]
+                        estado["sessao_bg"] = sessao
+                        estado["sessao_bg_id"] = sessao_inicio
+                        estado["batalhas_feitas"] = sessao2.get("batalhas_feitas", 0)
+                        salvar_estado(estado)
+                        log.info(f"  Sessão confirmada: {sessao2.get('batalhas_feitas',0)}/{sessao2.get('batalhas_total','?')} batalhas")
+                    else:
+                        log.warning("  Sessão ainda não visível após entrada — continuando mesmo assim...")
+                        sessao_inicio = eu.get("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
+                        eu["sessao_inicio"] = sessao_inicio
+                except Exception as e2:
+                    log.warning(f"  Erro ao re-coletar sessão: {e2}")
+                break  # entrou com sucesso
+
+            elif status_entrada == "sem_equipamento":
+                log.info(f"  Personagem sem equipamento adequado para o BG.")
+                log.info(f"  Bot principal deve estar equipando — aguardando {fmt_t(retry_sem_equip_seg)} para retentar...")
+                atualizar_ciclo("status", "aguardando_equipamento")
+                time.sleep(retry_sem_equip_seg)
+                log.info("  Retentando entrada no BG...")
+
+            else:  # "falha"
+                log.error("❌ Não foi possível entrar no BG automaticamente.")
+                log.error("   Verifique cookies, requisitos do modo escolhido e se o personagem está elegível.")
+                atualizar_ciclo("status", "sem_sessao")
+                import sys; sys.exit(0)
     elif not sessao_inicio and not eu:
         log.error("❌ Erro ao carregar status do BG — sem conexão ou sessão inválida.")
         log.error("   Verifique cookies e se o personagem está inscrito no BG.")
