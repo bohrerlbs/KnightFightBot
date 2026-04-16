@@ -3235,6 +3235,22 @@ def verificar_alvo_anel(client, estado):
             itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
                                   "url_compra": url_compra, "categoria": "ringe"})
 
+        # ── Slot vazio + shop listing vazio: recupera URL do anel equipado do catálogo ──
+        # O jogo remove o anel da listagem quando já possui 1 (sem preço de compra visível).
+        # Preserva a URL salva na compra anterior para poder comprar a segunda cópia.
+        if a_comprar_live == 1 and not candidatos and not ouro_bloq and nomes_equipados:
+            cat_prev = _carregar_shop_catalog().get("ringe", {}).get("itens", [])
+            nomes_eq_set  = set(nomes_equipados)
+            nomes_catalog = {i["nome"] for i in itens_catalog}
+            for ci in cat_prev:
+                if ci.get("nome") in nomes_eq_set and ci.get("nome") not in nomes_catalog and ci.get("url_compra"):
+                    log.debug(f"  Anel: shop sem duplicata visível — reutilizando URL de '{ci['nome']}' para segunda cópia")
+                    candidatos.append({"nome": ci["nome"], "gold_necessario": ci["gold"],
+                                       "req_level": ci.get("req_level", 0),
+                                       "url_compra": ci["url_compra"], "categoria": "ringe"})
+                    itens_catalog.append(ci)  # preserva no catálogo para próximos ciclos
+                    break
+
         _atualizar_shop_catalog("ringe", itens_catalog)
 
     else:
@@ -3259,6 +3275,7 @@ def verificar_alvo_anel(client, estado):
 
         pior_level_cat = min(levels_equipados) if levels_equipados else -1
         a_comprar_cat  = max(0, MAX_ANEIS - total_aneis)
+        nomes_eq_set   = set(nomes_equipados)
         for i in itens_cat:
             req_lv = i.get("req_level", 0)
             if a_comprar_cat == 0 and req_lv <= pior_level_cat:
@@ -3272,6 +3289,16 @@ def verificar_alvo_anel(client, estado):
                 candidatos.append(item)
             else:
                 ouro_bloq.append(item)
+
+        # Slot vazio + sem candidatos: inclui anel equipado (duplicata) se tiver URL no catálogo
+        if a_comprar_cat == 1 and not candidatos and not ouro_bloq:
+            for i in itens_cat:
+                if i.get("nome") in nomes_eq_set and i.get("url_compra"):
+                    log.debug(f"  Anel (catálogo): sem candidatos — duplicata de '{i['nome']}'")
+                    candidatos.append({"nome": i["nome"], "gold_necessario": i["gold"],
+                                       "req_level": i.get("req_level", 0),
+                                       "url_compra": i["url_compra"], "categoria": "ringe"})
+                    break
 
     # ── Seleção ──────────────────────────────────────────────────────────
     pior_level_eq = min(levels_equipados) if levels_equipados else -1
