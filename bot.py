@@ -3118,7 +3118,8 @@ def verificar_alvo_anel(client, estado):
         return
 
     MAX_ANEIS = 2
-    player_level = MY_STATS.get("level", estado.get("level", 0))
+    player_level     = MY_STATS.get("level", estado.get("level", 0))
+    player_alignment = MY_STATS.get("alignment", None)
 
     soup = None
     try:
@@ -3134,6 +3135,16 @@ def verificar_alvo_anel(client, estado):
     ouro_bloq = []
 
     if soup is not None and not _esta_bloqueado_por_missao(soup):
+        # ── Extrai alinhamento do personagem da página ───────────────────
+        for _tag in soup.find_all(attrs={"data-tooltip": True}):
+            _tip = _tag.get("data-tooltip", "")
+            if re.search(r"(?:alignment|alinhamento|gesinnung)", _tip, re.IGNORECASE):
+                _m_al = re.search(r"\((-?\d+)\)", _tip)
+                if _m_al:
+                    player_alignment = int(_m_al.group(1))
+                    MY_STATS["alignment"] = player_alignment
+                    break
+
         # ── Scan ao vivo ────────────────────────────────────────────────
         inv_boxbg = None
         for _boxtop in soup.find_all("div", class_="box-top"):
@@ -3194,6 +3205,15 @@ def verificar_alvo_anel(client, estado):
             if req_lv > 0 and req_lv > player_level:
                 continue
 
+            # Filtro de alinhamento
+            m_align = re.search(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", tr_txt, re.IGNORECASE)
+            req_alignment = int(m_align.group(1)) if m_align else 0
+            if req_alignment != 0:
+                if (player_alignment is None
+                        or (req_alignment > 0 and player_alignment < req_alignment)
+                        or (req_alignment < 0 and player_alignment > req_alignment)):
+                    continue
+
             gold = 0
             for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
                 prev = img_gold.previous_sibling
@@ -3234,6 +3254,7 @@ def verificar_alvo_anel(client, estado):
                 ouro_bloq.append(item)
             # Salva todos no catálogo (url_compra=None para itens sem gold suficiente)
             itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
+                                  "req_alignment": req_alignment,
                                   "url_compra": url_compra, "categoria": "ringe"})
 
         # ── Slot vazio + shop listing vazio: recupera URL do anel equipado do catálogo ──
@@ -3282,6 +3303,11 @@ def verificar_alvo_anel(client, estado):
             if a_comprar_cat == 0 and req_lv <= pior_level_cat:
                 continue
             if req_lv > 0 and req_lv > player_level:
+                continue
+            req_al = i.get("req_alignment", 0)
+            if req_al != 0 and (player_alignment is None
+                                or (req_al > 0 and player_alignment < req_al)
+                                or (req_al < 0 and player_alignment > req_al)):
                 continue
             item = {"nome": i["nome"], "gold_necessario": i["gold"],
                     "req_level": req_lv, "url_compra": i.get("url_compra"),
@@ -3456,7 +3482,8 @@ def verificar_alvo_amuleto(client, estado):
     if not COMPRAR_EQUIPAMENTO:
         return
 
-    player_level = MY_STATS.get("level", estado.get("level", 0))
+    player_level     = MY_STATS.get("level", estado.get("level", 0))
+    player_alignment = MY_STATS.get("alignment", None)
 
     soup = None
     try:
@@ -3472,6 +3499,16 @@ def verificar_alvo_amuleto(client, estado):
     ouro_bloq  = []
 
     if soup is not None and not _esta_bloqueado_por_missao(soup):
+        # ── Extrai alinhamento do personagem da página ───────────────────
+        for _tag in soup.find_all(attrs={"data-tooltip": True}):
+            _tip = _tag.get("data-tooltip", "")
+            if re.search(r"(?:alignment|alinhamento|gesinnung)", _tip, re.IGNORECASE):
+                _m_al = re.search(r"\((-?\d+)\)", _tip)
+                if _m_al:
+                    player_alignment = int(_m_al.group(1))
+                    MY_STATS["alignment"] = player_alignment
+                    break
+
         # ── Scan ao vivo ────────────────────────────────────────────────
         inv_boxbg = None
         for _boxtop in soup.find_all("div", class_="box-top"):
@@ -3526,6 +3563,15 @@ def verificar_alvo_amuleto(client, estado):
             if req_lv > 0 and req_lv > player_level:
                 continue
 
+            # Filtro de alinhamento
+            m_align = re.search(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", tr_txt, re.IGNORECASE)
+            req_alignment = int(m_align.group(1)) if m_align else 0
+            if req_alignment != 0:
+                if (player_alignment is None
+                        or (req_alignment > 0 and player_alignment < req_alignment)
+                        or (req_alignment < 0 and player_alignment > req_alignment)):
+                    continue
+
             gold = 0
             for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
                 prev = img_gold.previous_sibling
@@ -3566,6 +3612,7 @@ def verificar_alvo_amuleto(client, estado):
                 ouro_bloq.append(item)
             # Salva todos no catálogo (url_compra=None para itens sem gold suficiente)
             itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
+                                  "req_alignment": req_alignment,
                                   "url_compra": url_compra, "categoria": "amulette"})
 
         _atualizar_shop_catalog("amulette", itens_catalog)
@@ -3592,6 +3639,11 @@ def verificar_alvo_amuleto(client, estado):
             if req_lv <= level_amuleto_eq:
                 continue
             if req_lv > 0 and req_lv > player_level:
+                continue
+            req_al = i.get("req_alignment", 0)
+            if req_al != 0 and (player_alignment is None
+                                or (req_al > 0 and player_alignment < req_al)
+                                or (req_al < 0 and player_alignment > req_al)):
                 continue
             item = {"nome": i["nome"], "gold_necessario": i["gold"],
                     "req_level": req_lv, "url_compra": i.get("url_compra"),
@@ -4719,6 +4771,16 @@ def parsear_status(soup):
             m = re.search(r"Moral:\s*(.+?)\s*\(", tip)
             if m: moral = m.group(1).strip()
 
+    # Extrai alinhamento
+    alignment = None
+    for tag in soup.find_all(attrs={"data-tooltip": True}):
+        tip = tag.get("data-tooltip", "")
+        if re.search(r"(?:alignment|alinhamento|gesinnung)", tip, re.IGNORECASE):
+            m_al = re.search(r"\((-?\d+)\)", tip)
+            if m_al:
+                alignment = int(m_al.group(1))
+                break
+
     # Extrai gold atual da página (valor da mercadoria ou similar)
     # O gold atual fica na seção de estatísticas
     gold_atual = 0
@@ -4765,6 +4827,7 @@ def parsear_status(soup):
         "gold_perdido":  ex("Ouro perdido:"),
         "preciosidades": ex("Total das preciosidades:"),
         "moral": moral,
+        "alignment": alignment,
         "forca": forca, "resistencia": resistencia,
         "agilidade": agilidade, "arte_combate": arte_comb, "bloqueio": bloqueio,
         "sk_armadura": sk_armadura, "sk_1mao": sk_1mao, "sk_2maos": sk_2maos,
@@ -4775,6 +4838,8 @@ def parsear_status(soup):
     if level > 0:
         global MY_STATS
         MY_STATS["level"] = level
+        if alignment is not None:
+            MY_STATS["alignment"] = alignment
         if forca > 0:
             MY_STATS["forca"]        = forca
             MY_STATS["resistencia"]  = resistencia
