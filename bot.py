@@ -177,14 +177,21 @@ HORA_CACHE_PERFIS    = 3      # 3h da manhã
 PAUSA_CACHE_SEG      = 0.5   # pausa entre perfis
 RANKING_MAX_PLAYERS  = 500   # quantos jogadores do ranking varrer (100-10000)
 
-RANKING_FILE  = "ranking_snapshots.json"
-PIG_LIST_FILE = "pig_list.json"
-PERFIS_CACHE  = "perfis_cache.json"
-ESTADO_FILE   = "estado.json"
-CICLO_FILE    = "ultimo_ciclo.json"
-COMBATES_FILE = "combates_srv.json"
-MODELO_FILE   = "modelo_combate.json"
-LOG_FILE      = "bot.log"
+RANKING_FILE   = "ranking_snapshots.json"
+PIG_LIST_FILE  = "pig_list.json"
+PERFIS_CACHE   = "perfis_cache.json"
+ESTADO_FILE    = "estado.json"
+CICLO_FILE     = "ultimo_ciclo.json"
+COMBATES_FILE  = "combates_srv.json"
+MODELO_FILE    = "modelo_combate.json"
+LOG_FILE       = "bot.log"
+
+# Catálogo global de itens da loja — compartilhado entre todos os perfis.
+# Armazena apenas itens com buy link (gold) por categoria, sem dados de equipados
+# (esses são por-perfil em slots_equipados). As URLs de compra são relativas e
+# funcionam em qualquer servidor, então um único arquivo serve para todos.
+_BOT_DIR          = os.path.dirname(os.path.abspath(__file__))
+SHOP_CATALOG_FILE = os.path.join(_BOT_DIR, "shop_catalog.json")
 
 # ═══════════════════════════════════════════
 # LOG
@@ -2096,348 +2103,234 @@ def _parsear_shop_todos_itens(soup, tipo):
     return itens, req_skills_gema
 
 
-_CATALOGO_CACHE = None
 
 
-def _carregar_catalogo():
-    """Carrega catálogo local de itens (Itens/*.txt). Resultado cacheado em memória.
-    Retorna dict: chave → lista de dicts com nome, gold, req_skill, req_skill_tipo, categoria
-    ordenada por req_skill ascendente.
-    """
-    global _CATALOGO_CACHE
-    if _CATALOGO_CACHE is not None:
-        return _CATALOGO_CACHE
-
-    base = Path(__file__).parent / "Itens"
-
-    def _parse_file(fname, col_gold, col_req, req_tipo, categoria, req_fn=None, filtro_gema=False):
-        """filtro_gema=True: após ordenar por req_skill, remove itens cujo preço é inferior
-        ao item anterior (req menor). Itens de gema quebram a progressão crescente de preço
-        — uma arma com req=76 não pode custar 1900g se a de req=72 custa 31500g.
-        Funciona em qualquer faixa de req, não depende de threshold fixo."""
-        itens = []
-        path = base / fname
-        if not path.exists():
-            log.warning(f"  Catálogo: arquivo não encontrado — {path}")
-            return itens
+def _carregar_shop_catalog():
+    """Carrega catálogo global de itens da loja (shop_catalog.json no diretório do bot).
+    Compartilhado entre todos os perfis — atualizado por qualquer perfil que escanear a loja."""
+    if os.path.exists(SHOP_CATALOG_FILE):
         try:
-            with open(path, encoding="utf-8") as f:
-                lines = f.readlines()
-        except Exception as e:
-            log.warning(f"  Catálogo: erro ao ler {fname} — {e}")
-            return itens
-        for line in lines[1:]:  # pula cabeçalho
-            cols = [c.strip() for c in line.split(",")]
-            if len(cols) <= max(col_gold, col_req):
-                continue
-            nome = cols[0]
-            if not nome or "[Bazar]" in nome:
-                continue
-            try:
-                gold = int(cols[col_gold].replace(".", "").replace(" ", ""))
-            except ValueError:
-                continue
-            if gold <= 0:
-                continue
-            try:
-                req = req_fn(cols[col_req]) if req_fn else int(cols[col_req])
-            except (ValueError, TypeError, AttributeError):
-                req = 0
-            itens.append({
-                "nome": nome,
-                "gold": gold,
-                "req_skill": req,
-                "req_skill_tipo": req_tipo,
-                "categoria": categoria,
-            })
-        itens.sort(key=lambda x: x["req_skill"])
-        if filtro_gema and len(itens) > 1:
-            # Remove itens que quebram a progressão crescente de preço:
-            # itera do mais barato (req menor) para o mais caro, mantendo o
-            # máximo de gold visto até agora. Item que custa menos de 60% do
-            # máximo anterior é item de gema (drops reais de gema chegam a 5-25%
-            # do valor de itens gold equivalentes; variações legítimas ficam acima de 80%).
-            filtrados = []
-            gold_max = 0
-            for item in itens:
-                threshold = gold_max * 0.6
-                if item["gold"] >= threshold:
-                    if item["gold"] > gold_max:
-                        gold_max = item["gold"]
-                    filtrados.append(item)
-                else:
-                    log.debug(f"  Catálogo {fname}: pulando item de gema '{item['nome']}' "
-                              f"(req={item['req_skill']}, gold={item['gold']} < "
-                              f"60% do max_anterior={gold_max})")
-            itens = filtrados
-        return itens
+            with open(SHOP_CATALOG_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
 
-    def _level_req(s):
-        m = re.search(r"(\d+)", s)
-        return int(m.group(1)) if m else 0
-
-    _CATALOGO_CACHE = {
-        "waffen_einhand":  _parse_file("1h.txt",       6, 7, "einhand",  "waffen",  filtro_gema=True),
-        "waffen_zweihand": _parse_file("2h.txt",       6, 7, "zweihand", "waffen",  filtro_gema=True),
-        "ruestungen":      _parse_file("armadura.txt", 4, 5, "ruestung", "ruestungen", filtro_gema=True),
-        "schilde":         _parse_file("escudos.txt",  6, 7, "ruestung", "schilde",    filtro_gema=True),
-        "aneis":           _parse_file("aneis.txt",    6, 7, None,       "aneis",    req_fn=_level_req, filtro_gema=True),
-        "amuletos":        _parse_file("amuletos.txt", 7, 8, None,       "amuletos", filtro_gema=True),
+def _atualizar_shop_catalog(tipo, itens_compraveis):
+    """Salva itens disponíveis (com buy link) de uma categoria no catálogo global.
+    Apenas itens não-equipados (shop puro): url_compra, gold, req. Sem dados de personagem."""
+    catalog = _carregar_shop_catalog()
+    catalog[tipo] = {
+        "itens":        itens_compraveis,
+        "atualizado_em": datetime.now().isoformat(),
     }
-    totais = ", ".join(f"{k}={len(v)}" for k, v in _CATALOGO_CACHE.items())
-    log.debug(f"  Catálogo carregado: {totais}")
-    return _CATALOGO_CACHE
+    try:
+        tmp = SHOP_CATALOG_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(catalog, f, ensure_ascii=False)
+        os.replace(tmp, SHOP_CATALOG_FILE)
+    except Exception as e:
+        log.debug(f"  shop_catalog: erro ao salvar {tipo} — {e}")
 
 
 def verificar_alvo_equipamento(client, estado):
     """
-    Determina o próximo item a comprar usando o catálogo local (Itens/*.txt).
-    Escaneia a loja apenas para detectar o item equipado atual e o buy link quando disponível.
-    Salva em estado["item_alvo"] o melhor item atingível (maior req_skill dentro da skill atual).
-    - 2h: waffen_zweihand + ruestungen
-    - 1h: waffen_einhand + schilde + ruestungen
+    Determina o próximo item a comprar escaneando a loja diretamente (shop-first).
+    Quando a loja está inacessível (missão/CD/erro), usa shop_catalog.json (catálogo global
+    compartilhado entre todos os perfis). Apenas itens com buy link (gold) são considerados.
+
+    Cobre: waffen, schilde (1h), ruestungen.
+    Rings/amulets/stones têm funções próprias que também usam o catálogo global.
+    Salva em estado["item_alvo"] o melhor upgrade disponível.
     """
     if not COMPRAR_EQUIPAMENTO:
         return
+
     paginas = [("/shop/waffen/", "waffen"), ("/shop/ruestungen/", "ruestungen")]
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
 
-    # Skills atuais do personagem
     sk_2maos    = MY_STATS.get("sk_2maos", 0)
     sk_1mao     = MY_STATS.get("sk_1mao", 0)
     sk_armadura = MY_STATS.get("sk_armadura", 0)
 
-    catalogo = _carregar_catalogo()
+    catalog = _carregar_shop_catalog()
+    candidatos  = []
+    algum_shop_acessivel  = False
+    algum_fonte_disponivel = False
 
-    candidatos    = []  # buy link disponível (gold suficiente)
-    ouro_bloqueados = []  # gold insuficiente — acumula ouro
-
-    algum_shop_acessivel = False
     for url_loja, tipo in paginas:
+        todos           = None
+        req_skills_gema = set()
+        fonte           = "?"
+        is_fresh        = False
+
+        # ── Scan ao vivo ───────────────────────────────────────────
+        soup = None
         try:
             soup = client.get(url_loja, fragment=False)
         except Exception as e:
             log.warning(f"  Loja {tipo}: erro ao carregar — {e}")
-            continue
 
-        # Dump diagnóstico da loja (apenas uma vez por perfil)
-        _dump_loja = os.path.join(os.path.dirname(ESTADO_FILE), f"debug_loja_{tipo}.html")
-        if not os.path.exists(_dump_loja):
-            try:
-                with open(_dump_loja, "w", encoding="utf-8") as _f:
-                    _f.write(str(soup))
-                log.info(f"  [DIAG] HTML da loja {tipo} salvo em {_dump_loja}")
-            except Exception:
-                pass
+        if soup is not None:
+            _dump = os.path.join(os.path.dirname(ESTADO_FILE), f"debug_loja_{tipo}.html")
+            if not os.path.exists(_dump):
+                try:
+                    with open(_dump, "w", encoding="utf-8") as _f:
+                        _f.write(str(soup))
+                    log.info(f"  [DIAG] HTML da loja {tipo} salvo em {_dump}")
+                except Exception:
+                    pass
 
-        if _esta_bloqueado_por_missao(soup):
-            log.debug(f"  Loja {tipo}: bloqueada por missão ativa — pulando scan")
-            continue
-
-        algum_shop_acessivel = True
-        todos, req_skills_gema_loja = _parsear_shop_todos_itens(soup, tipo)
-
-        # Item equipado atualmente (tem sell link na listagem da loja)
-        item_eq = next((i for i in todos if i.get("equipado")), None)
-        gold_venda_eq = item_eq["gold_venda"] if item_eq else 0
-        url_venda_eq  = item_eq["url_venda"]  if item_eq else None
-        req_eq = item_eq.get("req_skill_valor", 0) if item_eq else 0
-        urgente = item_eq is None
-        if item_eq:
-            log.debug(f"  Loja {tipo}: equipado='{item_eq['nome']}' req={req_eq} venda={gold_venda_eq}g")
-
-        # Armazena slot equipado no estado para o dashboard
-        slot_key = {"waffen": "weapon", "schilde": "shield", "ruestungen": "armor"}.get(tipo)
-        if slot_key:
-            slots = estado.setdefault("slots_equipados", {})
-            if item_eq:
-                slots[slot_key] = {"nome": item_eq["nome"], "req": req_eq}
+            if _esta_bloqueado_por_missao(soup):
+                log.debug(f"  Loja {tipo}: bloqueada por missão — usando catálogo")
+                soup = None
             else:
-                slots[slot_key] = None
+                algum_shop_acessivel = True
+                is_fresh = True
+                todos, req_skills_gema = _parsear_shop_todos_itens(soup, tipo)
+                fonte = "loja"
 
-        # Chave do catálogo e skill correspondente ao tipo de loja
+                # ── Persiste no catálogo global: apenas itens com buy link ──
+                itens_catalog = [
+                    {"nome": i["nome"], "gold": i["gold"],
+                     "req_skill_valor": i.get("req_skill_valor", 0),
+                     "req_skill_tipo":  i.get("req_skill_tipo"),
+                     "req_level":       i.get("req_level", 0),
+                     "url_compra":      i["url_compra"],
+                     "categoria":       tipo}
+                    for i in todos
+                    if i.get("pode_comprar") and not i.get("equipado")
+                    and i.get("req_skill_valor", 0) not in req_skills_gema
+                ]
+                _atualizar_shop_catalog(tipo, itens_catalog)
+
+        # ── Fallback: catálogo global ──────────────────────────────
+        if todos is None:
+            cat_entry = catalog.get(tipo, {})
+            if cat_entry.get("itens"):
+                # Reconstrói formato de "todos" a partir do catálogo
+                todos = [dict(i, pode_comprar=True, equipado=False,
+                              gold_venda=0, url_venda=None)
+                         for i in cat_entry["itens"]]
+                req_skills_gema = set()
+                ts = cat_entry.get("atualizado_em", "?")[:16]
+                fonte = f"catálogo {ts}"
+                log.debug(f"  Loja {tipo}: sem acesso — usando {fonte}")
+            else:
+                log.debug(f"  Loja {tipo}: sem acesso e sem catálogo — pulando")
+                continue
+
+        algum_fonte_disponivel = True
+
+        # ── Determina skill/level e tipo ───────────────────────────
         if tipo == "waffen":
-            cat_key  = "waffen_zweihand" if BUILD_TIPO == "2h" else "waffen_einhand"
             sk_atual = sk_2maos if BUILD_TIPO == "2h" else sk_1mao
             req_tipo = "zweihand" if BUILD_TIPO == "2h" else "einhand"
-        elif tipo == "ruestungen":
-            cat_key  = "ruestungen"
+        elif tipo in ("ruestungen", "schilde"):
             sk_atual = sk_armadura
             req_tipo = "ruestung"
-        elif tipo == "schilde":
-            cat_key  = "schilde"
-            sk_atual = sk_armadura
-            req_tipo = "ruestung"
+            if sk_armadura == 0:
+                log.debug(f"  Loja {tipo}: sk_armadura=0 — pulando")
+                continue
         else:
             continue
 
-        # Sem skill de armadura: req=0 items dão 0 defesa — inúteis, pulamos completamente
-        if tipo in ("ruestungen", "schilde") and sk_armadura == 0:
-            log.debug(f"  Catálogo {cat_key}: sk_armadura=0 — pulando (itens req=0 dão 0 defesa)")
-            continue
+        # ── Equipado: detecta via scan ao vivo; usa slots_equipados como fallback ──
+        if is_fresh:
+            item_eq       = next((i for i in todos if i.get("equipado")), None)
+            gold_venda_eq = item_eq["gold_venda"] if item_eq else 0
+            url_venda_eq  = item_eq["url_venda"]  if item_eq else None
+            req_eq        = item_eq.get("req_skill_valor", 0) if item_eq else 0
+            urgente       = (item_eq is None)
+            # Persiste sell info para quando shop estiver em CD
+            slot_key = {"waffen": "weapon", "schilde": "shield", "ruestungen": "armor"}.get(tipo)
+            if slot_key:
+                slots = estado.setdefault("slots_equipados", {})
+                slots[slot_key] = ({
+                    "nome": item_eq["nome"], "req": req_eq,
+                    "gold_venda": gold_venda_eq, "url_venda": url_venda_eq,
+                } if item_eq else None)
+                if item_eq:
+                    log.debug(f"  Loja {tipo} (loja): equipado='{item_eq['nome']}' "
+                              f"req={req_eq} venda={gold_venda_eq}g")
+        else:
+            slot_key  = {"waffen": "weapon", "schilde": "shield", "ruestungen": "armor"}.get(tipo)
+            eq_cached = (estado.get("slots_equipados") or {}).get(slot_key) or {}
+            gold_venda_eq = eq_cached.get("gold_venda", 0)
+            url_venda_eq  = eq_cached.get("url_venda")
+            req_eq        = eq_cached.get("req", 0)
+            urgente       = not bool(eq_cached)
 
-        # Melhores itens do catálogo que o personagem pode usar E que são upgrade do equipado
-        disponiveis = [
-            it for it in catalogo.get(cat_key, [])
-            if it["req_skill"] <= sk_atual and (urgente or it["req_skill"] > req_eq)
+        # ── Filtra upgrades com buy link ───────────────────────────
+        compraveis = [
+            i for i in todos
+            if i.get("pode_comprar") and not i.get("equipado")
+            and i.get("req_skill_valor", 0) <= sk_atual
+            and (urgente or i.get("req_skill_valor", 0) > req_eq)
         ]
-        if not disponiveis:
-            log.debug(f"  Catálogo {cat_key}: nenhum item disponível (sk={sk_atual}, req_eq={req_eq})")
+        if not compraveis:
+            log.debug(f"  Loja {tipo} ({fonte}): nenhum upgrade com buy link "
+                      f"(sk={sk_atual}, req_eq={req_eq})")
             continue
 
-        # Melhor = maior req_skill; empate → maior gold (item mais caro = melhor em KF)
-        melhor_cat = max(disponiveis, key=lambda x: (x["req_skill"], x["gold"]))
-
-        # Busca buy link na listagem da loja para este item específico.
-        # Match por req_skill_valor apenas (robusto entre idiomas e servidores;
-        # nome e preço variam por servidor). Se múltiplos itens no mesmo req_skill,
-        # escolhe o de preço mais próximo do catálogo.
-        def _encontrar_shop_match(cat_item):
-            matches = [
-                i for i in todos
-                if not i.get("equipado")
-                and i.get("req_skill_valor") == cat_item["req_skill"]
-                and i.get("pode_comprar")
-            ]
-            if len(matches) == 1:
-                return matches[0]
-            if len(matches) > 1:
-                return min(matches, key=lambda x: abs(x["gold"] - cat_item["gold"]))
-            return None
-
-        shop_match = _encontrar_shop_match(melhor_cat)
-
-        # Fallback cascata: se o melhor item do catálogo não tem buy link na loja
-        # (ex: item não existe neste servidor ou é bazar neste servidor),
-        # tenta o próximo melhor item do catálogo que tenha buy link disponível.
-        if shop_match is None:
-            for candidato_cat in sorted(disponiveis, key=lambda x: (x["req_skill"], x["gold"]), reverse=True):
-                if candidato_cat["req_skill"] == melhor_cat["req_skill"]:
-                    continue  # já tentado acima
-                fb = _encontrar_shop_match(candidato_cat)
-                if fb:
-                    log.debug(f"  Catálogo {cat_key}: '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
-                              f"sem buy link — fallback para '{candidato_cat['nome']}' req={candidato_cat['req_skill']}")
-                    melhor_cat = candidato_cat
-                    shop_match = fb
-                    break
-
-        url_compra = shop_match["url_compra"] if shop_match else None
-
-        # Usa preço real da loja quando disponível (catálogo pode ter preço de outro servidor)
-        gold_bruto_real = shop_match["gold"] if shop_match else melhor_cat["gold"]
-        gold_liquido = max(0, gold_bruto_real - gold_venda_eq)
-
-        # Se não encontrou buy link em gold E o item existe na loja só como gema,
-        # é permanentemente indisponível por gold — ignora completamente
-        if url_compra is None and melhor_cat["req_skill"] in req_skills_gema_loja:
-            log.debug(f"  Catálogo {cat_key}: '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
-                      f"existe na loja apenas como item de gema — ignorando")
-            continue
-
+        melhor_loja  = max(compraveis, key=lambda x: (x.get("req_skill_valor", 0), x.get("gold", 0)))
+        gold_bruto   = melhor_loja["gold"]
+        gold_liquido = max(0, gold_bruto - gold_venda_eq)
         item_dict = {
-            "nome":             melhor_cat["nome"],
+            "nome":             melhor_loja["nome"],
             "gold_necessario":  gold_liquido,
-            "gold_bruto":       gold_bruto_real,
+            "gold_bruto":       gold_bruto,
             "gold_venda_atual": gold_venda_eq,
-            "url_compra":       url_compra,
+            "url_compra":       melhor_loja["url_compra"],
             "url_venda_atual":  url_venda_eq,
             "categoria":        tipo,
-            "req_skill_valor":  melhor_cat["req_skill"],
-            "req_skill_tipo":   req_tipo,
+            "req_skill_valor":  melhor_loja.get("req_skill_valor", 0),
+            "req_skill_tipo":   melhor_loja.get("req_skill_tipo") or req_tipo,
             "urgente":          urgente,
         }
+        candidatos.append(item_dict)
+        log.debug(f"  Loja {tipo} ({fonte}): alvo '{melhor_loja['nome']}' "
+                  f"req={melhor_loja.get('req_skill_valor',0)} "
+                  f"{gold_bruto}g ({gold_liquido}g líq)")
 
-        if url_compra:
-            candidatos.append(item_dict)
-            log.debug(f"  Catálogo {cat_key}: alvo '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
-                      f"{gold_bruto_real}g (buy link disponível)")
-        else:
-            ouro_bloqueados.append(item_dict)
-            log.debug(f"  Catálogo {cat_key}: alvo '{melhor_cat['nome']}' req={melhor_cat['req_skill']} "
-                      f"{gold_bruto_real}g (acumulando gold)")
+    # ── Nenhuma fonte disponível ───────────────────────────────────
+    if not algum_fonte_disponivel:
+        log.debug("  Alvo equipamento: nenhuma fonte disponível — mantendo alvos anteriores")
+        return
 
-    # Determina item_alvo — por categoria pega o melhor (maior req_skill/gold_bruto),
-    # depois entre categorias pega o MAIS BARATO (gold_necessario) para comprar logo
-    # e equipar todas as categorias o mais rápido possível.
+    # ── Seleciona melhor weapon/shield/armor ───────────────────────
     def _melhor_da_lista(lista):
-        """Por categoria: melhor item (max req_skill_valor, gold_bruto).
-        Entre categorias: slots vazios (urgente) têm prioridade; empate → mais barato."""
         por_cat = {}
         for c in lista:
-            cat = c["categoria"]
+            cat  = c["categoria"]
             prev = por_cat.get(cat)
             c_key = (c.get("req_skill_valor", 0), c["gold_bruto"])
             if prev is None or c_key > (prev.get("req_skill_valor", 0), prev["gold_bruto"]):
                 por_cat[cat] = c
         if not por_cat:
             return None
-        # Slots vazios têm prioridade absoluta sobre upgrades
         urgentes = [v for v in por_cat.values() if v.get("urgente")]
         if urgentes:
             return min(urgentes, key=lambda x: x["gold_necessario"])
         return min(por_cat.values(), key=lambda x: x["gold_necessario"])
 
     if candidatos:
-        log.debug(f"  Candidatos ({len(candidatos)}): " +
-                  ", ".join(
-                      f"{c['nome']} req={c.get('req_skill_valor',0)} {c['gold_bruto']}g"
-                      for c in sorted(candidatos, key=lambda x: (x.get("req_skill_valor", 0), x["gold_bruto"]), reverse=True)
-                  ))
-    if ouro_bloqueados:
-        log.debug(f"  Gold-bloqueados ({len(ouro_bloqueados)}): " +
-                  ", ".join(
-                      f"{o['nome']} req={o.get('req_skill_valor',0)} {o['gold_bruto']}g"
-                      for o in sorted(ouro_bloqueados, key=lambda x: (x.get("req_skill_valor", 0), x["gold_bruto"]), reverse=True)
-                  ))
-
-    if not algum_shop_acessivel:
-        log.debug("  Alvo equipamento: todos shops bloqueados — mantendo item_alvo anterior")
-        return
-
-    # Urgentes em ouro_bloqueados (slot vazio, sem buy link ainda) têm prioridade
-    # sobre candidatos não-urgentes — preencher slot vazio é mais importante do que
-    # comprar upgrade quando o personagem já tem algo equipado.
-    urgentes_bloqueados = [o for o in ouro_bloqueados if o.get("urgente")]
-
-    if urgentes_bloqueados:
-        melhor = min(urgentes_bloqueados, key=lambda x: x["gold_necessario"])
-        alvo_anterior = estado.get("item_alvo")
-        if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
-            log.info(
-                f"  Alvo equipamento (slot vazio — acumulando gold): {melhor['nome']} "
-                f"@ {melhor['gold_necessario']}g líquido "
-                f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
-            )
-    elif candidatos:
         melhor = _melhor_da_lista(candidatos)
-        alvo_anterior = estado.get("item_alvo")
-        if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
-            log.info(
-                f"  Alvo de equipamento: {melhor['nome']} @ {melhor['gold_necessario']}g líquido "
-                f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
-            )
-    elif ouro_bloqueados:
-        # Tem skill mas não tem gold ainda — salva alvo para acumular ouro
-        melhor = _melhor_da_lista(ouro_bloqueados)
-        alvo_anterior = estado.get("item_alvo")
-        if not alvo_anterior or alvo_anterior.get("nome") != melhor["nome"]:
-            log.info(
-                f"  Alvo equipamento (acumulando gold): {melhor['nome']} @ {melhor['gold_necessario']}g líquido "
-                f"({melhor['gold_bruto']}g bruto, req_skill={melhor.get('req_skill_valor',0)}, cat={melhor['categoria']})"
-            )
-    else:
+        if melhor:
+            ant = estado.get("item_alvo")
+            if not ant or ant.get("nome") != melhor["nome"]:
+                prefixo = "slot vazio — " if melhor.get("urgente") else ""
+                log.info(f"  Alvo equipamento ({prefixo}loja): {melhor['nome']} "
+                         f"@ {melhor['gold_necessario']}g líq "
+                         f"({melhor['gold_bruto']}g bruto, req={melhor.get('req_skill_valor',0)}, "
+                         f"{melhor['categoria']})")
+            estado["item_alvo"] = melhor
+    elif algum_shop_acessivel:
         if estado.get("item_alvo"):
-            log.info("  Alvo de equipamento: nenhum disponível (já usa o melhor) — limpando")
+            log.info("  Alvo equipamento: nenhum upgrade disponível na loja — limpando")
             del estado["item_alvo"]
-            salvar_estado(estado)
-        melhor = None
 
-    if melhor:
-        estado["item_alvo"] = melhor
-
-    # Remove item_proximo legado se existir
     if estado.get("item_proximo"):
         del estado["item_proximo"]
 
@@ -2829,9 +2722,8 @@ def verificar_alvo_pedra(client, estado):
     """
     Verifica engastes vazios na arma e determina pedras a comprar.
     - Conta engastes vazios via ferreiro
-    - Desconta pedras já no inventário
-    - Busca melhor pedra por gold em /shop/steine/ (sem gemas, com buy button)
-    - Fallback: pedra bloqueada por gold insuficiente (sem buy button ainda)
+    - Busca melhor pedra por gold em /shop/steine/ (com buy button)
+    - Usa catálogo global como fallback quando loja está inacessível
     - Salva em estado["pedra_alvo"]
     """
     if not COMPRAR_EQUIPAMENTO:
@@ -2846,24 +2738,46 @@ def verificar_alvo_pedra(client, estado):
         return
 
     engastes_vazios = info["engastes_vazios"]
-    a_comprar = engastes_vazios  # pedras vão direto para a arma, não ficam no inventário
+    a_comprar = engastes_vazios
 
-    # Melhor pedra disponível por gold (com buy button = já comprável)
+    # ── Tenta scan ao vivo; fallback: catálogo global ──────────────
+    soup_shop = None
     try:
         soup_shop = client.get("/shop/steine/", fragment=False)
     except Exception as e:
         log.warning(f"  Pedra: erro ao carregar loja — {e}")
-        return
 
-    melhor = _parsear_shop_listagem(soup_shop, "steine")
-    if not melhor:
-        # Fallback: pedra com preço gold mas sem buy link (gold insuficiente por ora)
-        melhor = _parsear_pedra_bloqueada(soup_shop)
-        if melhor:
-            log.info(f"  Pedra: '{melhor['nome']}' @ {melhor['gold_necessario']}g ainda bloqueada (gold insuficiente) — salvando meta")
+    melhor = None
+    if soup_shop is not None and not _esta_bloqueado_por_missao(soup_shop):
+        melhor = _parsear_shop_listagem(soup_shop, "steine")
+        if not melhor:
+            melhor = _parsear_pedra_bloqueada(soup_shop)
+            if melhor:
+                log.info(f"  Pedra: '{melhor['nome']}' @ {melhor['gold_necessario']}g bloqueada — salvando meta")
+        # Persiste no catálogo se encontrou com buy link
+        if melhor and melhor.get("url_compra"):
+            _atualizar_shop_catalog("steine", [{
+                "nome": melhor["nome"], "gold": melhor["gold_necessario"],
+                "url_compra": melhor["url_compra"], "req_skill_valor": 0,
+                "req_level": 0, "categoria": "steine",
+            }])
+    else:
+        # Fallback: catálogo global
+        cat = _carregar_shop_catalog().get("steine", {})
+        itens_cat = cat.get("itens", [])
+        if itens_cat:
+            i0 = itens_cat[0]
+            ts = cat.get("atualizado_em", "?")[:16]
+            log.debug(f"  Pedra: loja inacessível — usando catálogo ({ts})")
+            melhor = {"nome": i0["nome"], "gold_necessario": i0["gold"],
+                      "url_compra": i0["url_compra"]}
         else:
-            log.debug("  Pedra: nenhuma pedra de alma com preço gold encontrada na loja")
+            log.debug("  Pedra: loja inacessível e sem catálogo — mantendo alvo anterior")
             return
+
+    if not melhor:
+        log.debug("  Pedra: nenhuma pedra de alma com preço gold encontrada")
+        return
 
     gold_total = melhor["gold_necessario"] * a_comprar
     anterior   = estado.get("pedra_alvo", {})
@@ -3195,127 +3109,167 @@ def verificar_alvo_anel(client, estado):
     Lógica de upgrade por level:
       - level_equipado >= level_loja → ignora (atual já é melhor ou igual)
       - level_equipado < level_loja E level_loja <= level_personagem → compra/acumula gold
+    Usa catálogo global como fallback quando loja está inacessível.
     """
     if not COMPRAR_EQUIPAMENTO:
         return
 
     MAX_ANEIS = 2
+    player_level = MY_STATS.get("level", estado.get("level", 0))
+
+    soup = None
     try:
         soup = client.get("/shop/ringe/", fragment=False)
     except Exception as e:
         log.warning(f"  Anel: erro ao carregar loja — {e}")
-        return
 
-    player_level = MY_STATS.get("level", estado.get("level", 0))
-
-    # Localiza seção inventário para contagem real e levels equipados
     total_aneis = 0
     levels_equipados = []
-    inv_boxbg = None
-    for _boxtop in soup.find_all("div", class_="box-top"):
-        if "invent" in _boxtop.get_text().strip().lower():
-            inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
-            break
-    sell_info_equipados = []  # {"level": lv, "sell_url": url, "sell_val": val}
+    sell_info_equipados = []
     nomes_equipados = []
-    if inv_boxbg:
-        for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
-            _tr_txt = tr.get_text(separator=" ", strip=True)
-            _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
-            qty = int(_m_qty.group(1)) if _m_qty else 1
-            total_aneis += qty
-            if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
-                _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
-                lv = int(_m_lv.group(1)) if _m_lv else 0
-                levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
-                sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
-                sell_url = sell_a["href"] if sell_a else None
-                m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
-                sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
-                sell_info_equipados.append({"level": lv, "sell_url": sell_url, "sell_val": sell_val})
-                _strong = tr.find("strong") or tr.find("b")
-                _nome = _strong.get_text(strip=True) if _strong else "Anel"
-                nomes_equipados.extend([_nome] * min(qty, MAX_ANEIS))
+    candidatos = []
+    ouro_bloq = []
 
-    # Armazena aneis equipados no estado para o dashboard
-    slots = estado.setdefault("slots_equipados", {})
-    slots["rings"] = [{"nome": nomes_equipados[i] if i < len(nomes_equipados) else "Anel",
-                       "level": levels_equipados[i]}
-                      for i in range(len(levels_equipados))]
+    if soup is not None and not _esta_bloqueado_por_missao(soup):
+        # ── Scan ao vivo ────────────────────────────────────────────────
+        inv_boxbg = None
+        for _boxtop in soup.find_all("div", class_="box-top"):
+            if "invent" in _boxtop.get_text().strip().lower():
+                inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
+                break
+        if inv_boxbg:
+            for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
+                _tr_txt = tr.get_text(separator=" ", strip=True)
+                _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+                qty = int(_m_qty.group(1)) if _m_qty else 1
+                total_aneis += qty
+                if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
+                    _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                    lv = int(_m_lv.group(1)) if _m_lv else 0
+                    levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
+                    sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+                    sell_url = sell_a["href"] if sell_a else None
+                    m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
+                    sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
+                    sell_info_equipados.append({"level": lv, "sell_url": sell_url, "sell_val": sell_val})
+                    _strong = tr.find("strong") or tr.find("b")
+                    _nome = _strong.get_text(strip=True) if _strong else "Anel"
+                    nomes_equipados.extend([_nome] * min(qty, MAX_ANEIS))
 
-    log.debug(f"  Anel: {total_aneis} total (equipados+bolsa), levels equipados: {levels_equipados}, sell_info: {sell_info_equipados}, player_lv={player_level}")
+        # Persiste equipados (com sell_url/sell_val) para fallback de catálogo
+        slots = estado.setdefault("slots_equipados", {})
+        slots["rings"] = [
+            {"nome":     nomes_equipados[i] if i < len(nomes_equipados) else "Anel",
+             "level":    levels_equipados[i],
+             "sell_url": sell_info_equipados[i]["sell_url"] if i < len(sell_info_equipados) else None,
+             "sell_val": sell_info_equipados[i]["sell_val"] if i < len(sell_info_equipados) else 0}
+            for i in range(len(levels_equipados))
+        ]
 
-    a_comprar = max(0, MAX_ANEIS - total_aneis)
-    pior_level_eq = min(levels_equipados) if levels_equipados else -1
+        # Varre shop listing
+        inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
+        a_comprar_live = max(0, MAX_ANEIS - total_aneis)
+        pior_level_live = min(levels_equipados) if levels_equipados else -1
+        itens_catalog = []
 
-    # Varre shop listing (pula TRs da seção inventário para não misturar dados)
-    inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
-    candidatos = []    # tem level certo + buy link (pode comprar agora)
-    ouro_bloq  = []    # tem level certo mas sem buy link (acumular gold)
-
-    for tr in soup.find_all("tr", class_="mobile-cols-2"):
-        if id(tr) in inv_tr_ids:
-            continue
-        # Pula itens cujo preço é gema
-        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
-            continue
-        # Precisa ter preço em gold
-        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
-            continue
-        # Em modo upgrade (slots cheios), pula aneis já possuídos (sell link = já tem esse)
-        # Em modo compra (slot vazio), permite duplicata — jogo aceita 2 anéis iguais
-        if a_comprar == 0 and tr.find("a", href=lambda h: h and "/shop/sell/" in h):
-            continue
-
-        tr_txt = tr.get_text(separator=" ", strip=True)
-        m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
-        req_lv = int(m_lv.group(1)) if m_lv else 0
-
-        # Modo upgrade (slots cheios): só anéis melhores que o pior equipado
-        # Modo compra (slot vazio): qualquer anel que o personagem possa usar
-        if a_comprar == 0 and req_lv <= pior_level_eq:
-            continue
-        # Personagem deve poder usar: req_level <= player_level (0 = sem requisito)
-        if req_lv > 0 and req_lv > player_level:
-            continue
-
-        # Extrai preço (maior valor entre spans com goldstueck)
-        gold = 0
-        for span in tr.find_all("span"):
-            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+        for tr in soup.find_all("tr", class_="mobile-cols-2"):
+            if id(tr) in inv_tr_ids:
                 continue
-            m = re.search(r"[\d.,]+", span.get_text())
-            if m:
-                gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
-        if gold == 0:
-            m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
-            if m:
-                gold = int(m.group(1).replace(".", "").replace(",", ""))
-        if 0 < gold < 50:
-            continue  # preço inválido
+            if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+                continue
+            if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            if a_comprar_live == 0 and tr.find("a", href=lambda h: h and "/shop/sell/" in h):
+                continue
 
-        nome = "Anel"
-        strong = tr.find("strong") or tr.find("b")
-        if strong:
-            nome = strong.get_text(strip=True)[:80]
+            tr_txt = tr.get_text(separator=" ", strip=True)
+            m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
+            req_lv = int(m_lv.group(1)) if m_lv else 0
 
-        buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
-        url_compra = None
-        if buy_a:
-            href = buy_a["href"]
-            if href.startswith("http"):
-                from urllib.parse import urlparse as _up
-                _p = _up(href)
-                url_compra = _p.path + ("?" + _p.query if _p.query else "")
+            if a_comprar_live == 0 and req_lv <= pior_level_live:
+                continue
+            if req_lv > 0 and req_lv > player_level:
+                continue
+
+            gold = 0
+            for span in tr.find_all("span"):
+                if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                    continue
+                m = re.search(r"[\d.,]+", span.get_text())
+                if m:
+                    gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
+            if gold == 0:
+                m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
+                if m:
+                    gold = int(m.group(1).replace(".", "").replace(",", ""))
+            if 0 < gold < 50:
+                continue
+
+            nome = "Anel"
+            strong = tr.find("strong") or tr.find("b")
+            if strong:
+                nome = strong.get_text(strip=True)[:80]
+
+            buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+            url_compra = None
+            if buy_a:
+                href = buy_a["href"]
+                if href.startswith("http"):
+                    from urllib.parse import urlparse as _up
+                    _p = _up(href)
+                    url_compra = _p.path + ("?" + _p.query if _p.query else "")
+                else:
+                    url_compra = href
+
+            item = {"nome": nome, "gold_necessario": gold, "req_level": req_lv,
+                    "url_compra": url_compra, "categoria": "ringe"}
+            if buy_a:
+                candidatos.append(item)
+                itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
+                                      "url_compra": url_compra, "categoria": "ringe"})
             else:
-                url_compra = href
+                ouro_bloq.append(item)
 
-        item = {"nome": nome, "gold_necessario": gold, "req_level": req_lv,
-                "url_compra": url_compra, "categoria": "ringe"}
-        if buy_a:
-            candidatos.append(item)
-        else:
-            ouro_bloq.append(item)
+        if itens_catalog:
+            _atualizar_shop_catalog("ringe", itens_catalog)
+
+    else:
+        # ── Fallback: catálogo global ────────────────────────────────────
+        cat = _carregar_shop_catalog().get("ringe", {})
+        itens_cat = cat.get("itens", [])
+        if not itens_cat:
+            log.debug("  Anel: loja inacessível e sem catálogo — mantendo alvo anterior")
+            return
+        ts = cat.get("atualizado_em", "?")[:16]
+        log.debug(f"  Anel: loja inacessível — usando catálogo ({ts})")
+
+        slots = estado.get("slots_equipados", {})
+        rings_eq = slots.get("rings", [])
+        levels_equipados = [r.get("level", 0) for r in rings_eq]
+        nomes_equipados   = [r.get("nome", "Anel") for r in rings_eq]
+        sell_info_equipados = [{"level": r.get("level", 0),
+                                "sell_url": r.get("sell_url"),
+                                "sell_val": r.get("sell_val", 0)}
+                               for r in rings_eq]
+        total_aneis = len(rings_eq)
+
+        pior_level_cat = min(levels_equipados) if levels_equipados else -1
+        a_comprar_cat  = max(0, MAX_ANEIS - total_aneis)
+        for i in itens_cat:
+            req_lv = i.get("req_level", 0)
+            if a_comprar_cat == 0 and req_lv <= pior_level_cat:
+                continue
+            if req_lv > 0 and req_lv > player_level:
+                continue
+            candidatos.append({"nome": i["nome"], "gold_necessario": i["gold"],
+                               "req_level": req_lv, "url_compra": i["url_compra"],
+                               "categoria": "ringe"})
+
+    # ── Seleção ──────────────────────────────────────────────────────────
+    pior_level_eq = min(levels_equipados) if levels_equipados else -1
+    a_comprar = max(0, MAX_ANEIS - total_aneis)
+
+    log.debug(f"  Anel: {total_aneis} total, levels equipados: {levels_equipados}, sell_info: {sell_info_equipados}, player_lv={player_level}")
 
     lista = candidatos or ouro_bloq
     if not lista:
@@ -3461,113 +3415,152 @@ def verificar_alvo_amuleto(client, estado):
       - level_equipado >= level_loja → ignora (atual já é melhor ou igual)
       - level_equipado < level_loja E level_loja <= level_personagem → compra/acumula gold
     Se já tem 1 amuleto mas não é upgrade, não compra.
+    Usa catálogo global como fallback quando loja está inacessível.
     """
     if not COMPRAR_EQUIPAMENTO:
         return
 
+    player_level = MY_STATS.get("level", estado.get("level", 0))
+
+    soup = None
     try:
         soup = client.get("/shop/amulette/", fragment=False)
     except Exception as e:
         log.warning(f"  Amuleto: erro ao carregar loja — {e}")
-        return
 
-    player_level = MY_STATS.get("level", estado.get("level", 0))
-
-    # Localiza seção inventário para contagem e level do equipado
-    total_amuletos = 0
-    level_amuleto_eq = -1
+    level_amuleto_eq    = -1
     sell_url_amuleto_eq = None
     sell_val_amuleto_eq = 0
-    inv_boxbg = None
-    for _boxtop in soup.find_all("div", class_="box-top"):
-        if "invent" in _boxtop.get_text().strip().lower():
-            inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
-            break
-    nome_amuleto_eq = None
-    if inv_boxbg:
-        for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
-            _tr_txt = tr.get_text(separator=" ", strip=True)
-            _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
-            qty = int(_m_qty.group(1)) if _m_qty else 1
-            total_amuletos += qty
-            if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
-                _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
-                level_amuleto_eq = int(_m_lv.group(1)) if _m_lv else 0
-                sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
-                sell_url_amuleto_eq = sell_a["href"] if sell_a else None
-                m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
-                sell_val_amuleto_eq = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
-                _strong = tr.find("strong") or tr.find("b")
-                nome_amuleto_eq = _strong.get_text(strip=True) if _strong else None
-
-    # Armazena amuleto equipado no estado para o dashboard
-    slots = estado.setdefault("slots_equipados", {})
-    slots["amulet"] = {"nome": nome_amuleto_eq, "level": level_amuleto_eq} if level_amuleto_eq >= 0 else None
-
-    log.debug(f"  Amuleto: {total_amuletos} total, level_eq={level_amuleto_eq}, sell_url={sell_url_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
-
-    # Varre shop listing (pula TRs da seção inventário)
-    inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
+    nome_amuleto_eq     = None
     candidatos = []
     ouro_bloq  = []
 
-    for tr in soup.find_all("tr", class_="mobile-cols-2"):
-        if id(tr) in inv_tr_ids:
-            continue
-        if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
-            continue
-        if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
-            continue
-        if tr.find("a", href=lambda h: h and "/shop/sell/" in h):
-            continue
+    if soup is not None and not _esta_bloqueado_por_missao(soup):
+        # ── Scan ao vivo ────────────────────────────────────────────────
+        inv_boxbg = None
+        for _boxtop in soup.find_all("div", class_="box-top"):
+            if "invent" in _boxtop.get_text().strip().lower():
+                inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
+                break
+        if inv_boxbg:
+            for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
+                _tr_txt = tr.get_text(separator=" ", strip=True)
+                if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
+                    _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                    level_amuleto_eq = int(_m_lv.group(1)) if _m_lv else 0
+                    sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+                    sell_url_amuleto_eq = sell_a["href"] if sell_a else None
+                    m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
+                    sell_val_amuleto_eq = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
+                    _strong = tr.find("strong") or tr.find("b")
+                    nome_amuleto_eq = _strong.get_text(strip=True) if _strong else None
+                    break
 
-        tr_txt = tr.get_text(separator=" ", strip=True)
-        m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
-        req_lv = int(m_lv.group(1)) if m_lv else 0
+        # Persiste equipado (com sell_url/sell_val) para fallback de catálogo
+        slots = estado.setdefault("slots_equipados", {})
+        slots["amulet"] = {
+            "nome":     nome_amuleto_eq,
+            "level":    level_amuleto_eq,
+            "sell_url": sell_url_amuleto_eq,
+            "sell_val": sell_val_amuleto_eq,
+        } if level_amuleto_eq >= 0 else None
 
-        # Deve ser upgrade: req_level > level do equipado atual
-        if req_lv <= level_amuleto_eq:
-            continue
-        # Personagem deve poder usar: req_level <= player_level
-        if req_lv > 0 and req_lv > player_level:
-            continue
+        log.debug(f"  Amuleto: level_eq={level_amuleto_eq}, sell_url={sell_url_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
 
-        gold = 0
-        for span in tr.find_all("span"):
-            if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+        # Varre shop listing (pula TRs da seção inventário)
+        inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
+        itens_catalog = []
+
+        for tr in soup.find_all("tr", class_="mobile-cols-2"):
+            if id(tr) in inv_tr_ids:
                 continue
-            m = re.search(r"[\d.,]+", span.get_text())
-            if m:
-                gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
-        if gold == 0:
-            m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
-            if m:
-                gold = int(m.group(1).replace(".", "").replace(",", ""))
-        if 0 < gold < 50:
-            continue
+            if tr.find("img", src=lambda s: s and ("edelstein.gif" in s or "coin.png" in s)):
+                continue
+            if not tr.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                continue
+            if tr.find("a", href=lambda h: h and "/shop/sell/" in h):
+                continue
 
-        nome = "Amuleto"
-        strong = tr.find("strong") or tr.find("b")
-        if strong:
-            nome = strong.get_text(strip=True)[:80]
+            tr_txt = tr.get_text(separator=" ", strip=True)
+            m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
+            req_lv = int(m_lv.group(1)) if m_lv else 0
 
-        buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
-        url_compra = None
-        if buy_a:
-            href = buy_a["href"]
-            if href.startswith("http"):
-                from urllib.parse import urlparse as _up
-                _p = _up(href)
-                url_compra = _p.path + ("?" + _p.query if _p.query else "")
+            if req_lv <= level_amuleto_eq:
+                continue
+            if req_lv > 0 and req_lv > player_level:
+                continue
+
+            gold = 0
+            for span in tr.find_all("span"):
+                if not span.find("img", src=lambda s: s and "goldstueck.gif" in s):
+                    continue
+                m = re.search(r"[\d.,]+", span.get_text())
+                if m:
+                    gold = max(gold, int(m.group().replace(".", "").replace(",", "")))
+            if gold == 0:
+                m = re.search(r"\b(\d[\d.,]+)\b", tr_txt)
+                if m:
+                    gold = int(m.group(1).replace(".", "").replace(",", ""))
+            if 0 < gold < 50:
+                continue
+
+            nome = "Amuleto"
+            strong = tr.find("strong") or tr.find("b")
+            if strong:
+                nome = strong.get_text(strip=True)[:80]
+
+            buy_a = tr.find("a", href=lambda h: h and "wac=buy" in h)
+            url_compra = None
+            if buy_a:
+                href = buy_a["href"]
+                if href.startswith("http"):
+                    from urllib.parse import urlparse as _up
+                    _p = _up(href)
+                    url_compra = _p.path + ("?" + _p.query if _p.query else "")
+                else:
+                    url_compra = href
+
+            item = {"nome": nome, "gold_necessario": gold, "req_level": req_lv,
+                    "url_compra": url_compra, "categoria": "amulette"}
+            if buy_a:
+                candidatos.append(item)
+                itens_catalog.append({"nome": nome, "gold": gold, "req_level": req_lv,
+                                      "url_compra": url_compra, "categoria": "amulette"})
             else:
-                url_compra = href
+                ouro_bloq.append(item)
 
-        item = {"nome": nome, "gold_necessario": gold, "req_level": req_lv,
-                "url_compra": url_compra, "categoria": "amulette"}
-        if buy_a:
-            candidatos.append(item)
-        else:
-            ouro_bloq.append(item)
+        if itens_catalog:
+            _atualizar_shop_catalog("amulette", itens_catalog)
+
+    else:
+        # ── Fallback: catálogo global ────────────────────────────────────
+        cat = _carregar_shop_catalog().get("amulette", {})
+        itens_cat = cat.get("itens", [])
+        if not itens_cat:
+            log.debug("  Amuleto: loja inacessível e sem catálogo — mantendo alvo anterior")
+            return
+        ts = cat.get("atualizado_em", "?")[:16]
+        log.debug(f"  Amuleto: loja inacessível — usando catálogo ({ts})")
+
+        slots = estado.get("slots_equipados", {})
+        amu_eq = slots.get("amulet") or {}
+        level_amuleto_eq    = amu_eq.get("level", -1)
+        sell_url_amuleto_eq = amu_eq.get("sell_url")
+        sell_val_amuleto_eq = amu_eq.get("sell_val", 0)
+        nome_amuleto_eq     = amu_eq.get("nome")
+
+        for i in itens_cat:
+            req_lv = i.get("req_level", 0)
+            if req_lv <= level_amuleto_eq:
+                continue
+            if req_lv > 0 and req_lv > player_level:
+                continue
+            candidatos.append({"nome": i["nome"], "gold_necessario": i["gold"],
+                               "req_level": req_lv, "url_compra": i["url_compra"],
+                               "categoria": "amulette"})
+
+    # ── Seleção ──────────────────────────────────────────────────────────
+    log.debug(f"  Amuleto: level_eq={level_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
 
     lista = candidatos or ouro_bloq
     if not lista:
