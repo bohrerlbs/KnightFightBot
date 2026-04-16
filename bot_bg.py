@@ -1720,117 +1720,185 @@ if __name__ == "__main__":
 
     # ══════════════════════════════════════════════════════════════
     # LOOP ETERNO — entrar → batalhas → raffle → cooldown → repetir
+    # Decisões locais primeiro: zero requests desnecessários
     # ══════════════════════════════════════════════════════════════
+    eu = {}
+
+    def _checar_parar():
+        """Levanta KeyboardInterrupt se parar_bot estiver setado."""
+        est = carregar_estado()
+        if est.get("parar_bot"):
+            log.info("🛑 Bot parado pelo dashboard")
+            est.pop("parar_bot", None)
+            salvar_estado(est)
+            raise KeyboardInterrupt
+
+    def _nivel_local():
+        """Lê o nível do personagem do bg_estado.json sem fazer request."""
+        est = carregar_estado()
+        return est.get("level", est.get("lv", 0))
+
+    def _cooldown_restante_local():
+        """
+        Lê bg_ciclo.json sem request.
+        Retorna segundos restantes se ainda em cooldown, 0 caso contrário.
+        """
+        try:
+            ciclo = carregar_json(CICLO_FILE, {})
+            if ciclo.get("status") == "cooldown_bg":
+                proximo = ciclo.get("proximo_bg") or ciclo.get("proximo_ataque")
+                if proximo:
+                    dt_alvo = datetime.fromisoformat(proximo)
+                    restante = (dt_alvo - datetime.now()).total_seconds()
+                    if restante > 0:
+                        return int(restante)
+        except Exception:
+            pass
+        return 0
+
     try:
         while True:
-            # ── 1. Coleta status atual do personagem ───────────────
-            log.info("Coletando status no BG...")
-            eu     = {}
+            _checar_parar()
+
+            # ── 1. Nível local (sem request) ──────────────────────
+            nivel = _nivel_local()
+            if nivel and nivel < 10:
+                log.info(f"  Nível local {nivel} < 10 — BG requer Lv10. Aguardando 1h sem requests...")
+                atualizar_ciclo("status", "aguardando_nivel")
+                if not _dormir_fatias(3600):
+                    raise KeyboardInterrupt
+                continue
+
+            # ── 2. Cooldown local (sem request) ───────────────────
+            cd_seg = _cooldown_restante_local()
+            if cd_seg > 0:
+                ciclo = carregar_json(CICLO_FILE, {})
+                proximo_str = ciclo.get("proximo_bg") or ciclo.get("proximo_ataque", "")
+                try:
+                    dt_alvo = datetime.fromisoformat(proximo_str)
+                    log.info(f"  Cooldown BG (cache) — próxima entrada às {dt_alvo:%d/%m %H:%M:%S} ({fmt_t(cd_seg)})")
+                except Exception:
+                    log.info(f"  Cooldown BG (cache) — {fmt_t(cd_seg)} restantes")
+                atualizar_ciclo("status", "cooldown_bg")
+                if not _dormir_fatias(cd_seg):
+                    raise KeyboardInterrupt
+                log.info("  Cooldown encerrado — verificando sessão...")
+                continue
+
+            # ── 3. Verifica sessão ativa (1 request) ─────────────
+            log.info("Verificando sessão BG ativa...")
             sessao = {}
             estado = carregar_estado()
             try:
-                eu = parsear_status_bg(client.get_full("/status/"))
-                log.info(f"Personagem: Lv{eu.get('level','?')} | EF {eu.get('ef','?')} | "
-                         f"AC {eu.get('arte_combate','?')} Blq {eu.get('bloqueio','?')}")
-                atualizar_ciclo("eu", eu)
-
                 sessao = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
                 atualizar_ciclo("sessao", sessao)
+                estado["sessao_bg"] = sessao
+                salvar_estado(estado)
+            except Exception as e:
+                log.warning(f"Erro ao verificar sessão: {e}")
 
-                stats_reais = {}
+            sessao_ativa = sessao.get("batalhas_total") is not None or \
+                           sessao.get("batalhas_feitas") is not None
+
+            if sessao_ativa:
+                # Sessão já ativa — sincroniza stats e vai às batalhas
+                log.info("Sessão BG ativa detectada — sincronizando stats...")
+                try:
+                    eu = parsear_status_bg(client.get_full("/status/"))
+                    log.info(f"  Personagem: Lv{eu.get('level','?')} | EF {eu.get('ef','?')} | "
+                             f"AC {eu.get('arte_combate','?')} Blq {eu.get('bloqueio','?')}")
+                    # Salva level no estado para futuras checagens locais
+                    estado["level"] = eu.get("level", 0)
+                    atualizar_ciclo("eu", eu)
+                except Exception as e:
+                    log.warning(f"  Erro ao coletar status: {e}")
+
                 try:
                     stats_reais = parsear_estatisticas_bg(client.get_full("/battleground/statistics/"))
-                    if stats_reais.get("batalhas") is not None:
-                        log.info(f"  Stats: {stats_reais.get('batalhas',0)} batalhas | "
-                                 f"{stats_reais.get('vitorias',0)}V/{stats_reais.get('derrotas',0)}D | "
-                                 f"{stats_reais.get('gold',0)}g")
+                    estado["batalhas_feitas"] = stats_reais.get("batalhas", sessao.get("batalhas_dia", 0))
+                    if stats_reais.get("vitorias") is not None: estado["vitorias"]   = stats_reais["vitorias"]
+                    if stats_reais.get("derrotas") is not None: estado["derrotas"]   = stats_reais["derrotas"]
+                    if stats_reais.get("gold")     is not None: estado["gold_total"] = stats_reais["gold"]
+                    log.info(f"  Stats: {stats_reais.get('batalhas',0)} batalhas | "
+                             f"{stats_reais.get('vitorias',0)}V/{stats_reais.get('derrotas',0)}D | "
+                             f"{stats_reais.get('gold',0)}g")
                 except Exception: pass
 
-                estado["sessao_bg"]      = sessao
-                estado["batalhas_feitas"] = stats_reais.get("batalhas", sessao.get("batalhas_dia", 0))
-                if stats_reais.get("vitorias") is not None: estado["vitorias"]   = stats_reais["vitorias"]
-                if stats_reais.get("derrotas") is not None: estado["derrotas"]   = stats_reais["derrotas"]
-                if stats_reais.get("gold")     is not None: estado["gold_total"] = stats_reais["gold"]
-                estado["sessao_bg_id"] = sessao.get("inicio", "")
+                eu["sessao_inicio"]    = sessao.get("inicio", f"sess_{datetime.now():%Y%m%d}")
+                estado["sessao_bg_id"] = eu["sessao_inicio"]
                 salvar_estado(estado)
-                eu["sessao_inicio"] = sessao.get("inicio", "")
 
-            except Exception as e:
-                log.warning(f"Erro ao coletar status: {e}")
-
-            # ── 2. Verifica se há sessão ativa ────────────────────
-            sessao_tem_batalhas = sessao.get("batalhas_total") is not None
-            sessao_inicio       = eu.get("sessao_inicio", "")
-
-            if sessao_tem_batalhas or sessao_inicio.startswith("sess_"):
-                # Sessão já ativa — vai direto para as batalhas
-                log.info("Sessão BG ativa detectada — retomando batalhas...")
             else:
-                # ── 3. Loop de entrada no BG ──────────────────────
-                log.info("Sem sessão BG ativa — aguardando condições para entrar...")
+                # ── 4. Sem sessão — tenta entrar (1 request em entrar_bg) ──
+                log.info("Sem sessão BG ativa — tentando entrar...")
                 atualizar_ciclo("status", "aguardando_entrada")
+                _checar_parar()
 
-                while True:
-                    est_e = carregar_estado()
-                    if est_e.get("parar_bot"):
-                        log.info("🛑 Bot parado pelo dashboard")
-                        est_e.pop("parar_bot", None)
-                        salvar_estado(est_e)
-                        raise KeyboardInterrupt
+                status_entrada, wait_extra = entrar_bg(client, MODO_BG, alignment)
 
-                    status_entrada, wait_extra = entrar_bg(client, MODO_BG, alignment)
-
-                    if status_entrada == "ok":
-                        log.info("  Aguardando 5s para sessão ser confirmada...")
-                        time.sleep(5)
-                        try:
-                            s2 = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
-                            if s2.get("batalhas_total") or s2.get("batalhas_feitas") is not None:
-                                eu["sessao_inicio"]    = s2.get("inicio", f"sess_{datetime.now():%Y%m%d}")
-                                estado["sessao_bg"]    = s2
-                                estado["sessao_bg_id"] = eu["sessao_inicio"]
-                                estado["batalhas_feitas"] = s2.get("batalhas_feitas", 0)
-                                salvar_estado(estado)
-                                log.info(f"  Sessão: {s2.get('batalhas_feitas',0)}/{s2.get('batalhas_total','?')} batalhas")
-                            else:
-                                eu.setdefault("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
-                        except Exception as e2:
-                            log.warning(f"  Erro ao confirmar sessão: {e2}")
+                if status_entrada == "ok":
+                    log.info("  Entrada confirmada — aguardando 5s para sessão ser registrada...")
+                    time.sleep(5)
+                    try:
+                        s2 = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
+                        if s2.get("batalhas_total") is not None or s2.get("batalhas_feitas") is not None:
+                            eu["sessao_inicio"]    = s2.get("inicio", f"sess_{datetime.now():%Y%m%d}")
+                            estado["sessao_bg"]    = s2
+                            estado["sessao_bg_id"] = eu["sessao_inicio"]
+                            estado["batalhas_feitas"] = s2.get("batalhas_feitas", 0)
+                            salvar_estado(estado)
+                            log.info(f"  Sessão: {s2.get('batalhas_feitas',0)}/{s2.get('batalhas_total','?')} batalhas")
+                        else:
                             eu.setdefault("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
-                        break  # entrou com sucesso
+                    except Exception as e2:
+                        log.warning(f"  Erro ao confirmar sessão: {e2}")
+                        eu.setdefault("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
+                    # Sincroniza status/stats após entrada bem-sucedida
+                    try:
+                        eu.update(parsear_status_bg(client.get_full("/status/")))
+                        estado["level"] = eu.get("level", 0)
+                        atualizar_ciclo("eu", eu)
+                        salvar_estado(estado)
+                    except Exception: pass
 
-                    elif status_entrada == "cooldown":
-                        dt_alvo = datetime.now() + timedelta(seconds=wait_extra)
-                        log.info(f"  Cooldown BG — próxima entrada às {dt_alvo:%d/%m %H:%M:%S} ({fmt_t(wait_extra)})")
-                        atualizar_ciclo("status", "cooldown_bg")
-                        atualizar_ciclo("proximo_bg", dt_alvo.isoformat())
-                        if not _dormir_fatias(wait_extra):
-                            raise KeyboardInterrupt  # parar_bot detectado
-                        log.info("  Cooldown encerrado — retentando entrada...")
-
-                    elif status_entrada == "nivel_insuficiente":
-                        log.info(f"  Nível {eu.get('level',0)} < 10 — BG requer Lv10. Verificando em 1h...")
-                        atualizar_ciclo("status", "aguardando_nivel")
-                        if not _dormir_fatias(3600):
-                            raise KeyboardInterrupt
-                        # Re-coleta nível
-                        try:
-                            eu.update(parsear_status_bg(client.get_full("/status/")))
-                            atualizar_ciclo("eu", eu)
-                        except Exception: pass
-
-                    elif status_entrada == "sem_equipamento":
-                        log.info(f"  Sem equipamento adequado — aguardando {fmt_t(retry_sem_equip_seg)}...")
-                        atualizar_ciclo("status", "aguardando_equipamento")
-                        if not _dormir_fatias(retry_sem_equip_seg):
-                            raise KeyboardInterrupt
-
-                    else:  # "falha"
-                        log.error("❌ Falha ao entrar no BG — verifique cookies e configuração.")
-                        atualizar_ciclo("status", "erro_entrada")
+                elif status_entrada == "cooldown":
+                    dt_alvo = datetime.now() + timedelta(seconds=wait_extra)
+                    log.info(f"  Cooldown BG — próxima entrada às {dt_alvo:%d/%m %H:%M:%S} ({fmt_t(wait_extra)})")
+                    atualizar_ciclo("status", "cooldown_bg")
+                    atualizar_ciclo("proximo_bg", dt_alvo.isoformat())
+                    if not _dormir_fatias(wait_extra):
                         raise KeyboardInterrupt
+                    log.info("  Cooldown encerrado — retentando...")
+                    continue  # volta ao topo — vai passar pelo check local primeiro
 
-            # ── 4. Executa batalhas da sessão ─────────────────────
+                elif status_entrada == "nivel_insuficiente":
+                    log.info(f"  Nível insuficiente para BG (Lv10 requerido). Aguardando 1h...")
+                    atualizar_ciclo("status", "aguardando_nivel")
+                    # Tenta salvar o nível atual para evitar request na próxima iteração
+                    try:
+                        eu_tmp = parsear_status_bg(client.get_full("/status/"))
+                        estado["level"] = eu_tmp.get("level", 0)
+                        salvar_estado(estado)
+                        eu.update(eu_tmp)
+                        atualizar_ciclo("eu", eu)
+                    except Exception: pass
+                    if not _dormir_fatias(3600):
+                        raise KeyboardInterrupt
+                    continue
+
+                elif status_entrada == "sem_equipamento":
+                    log.info(f"  Sem equipamento adequado — aguardando {fmt_t(retry_sem_equip_seg)}...")
+                    atualizar_ciclo("status", "aguardando_equipamento")
+                    if not _dormir_fatias(retry_sem_equip_seg):
+                        raise KeyboardInterrupt
+                    continue
+
+                else:  # "falha"
+                    log.error("❌ Falha ao entrar no BG — verifique cookies e configuração.")
+                    atualizar_ciclo("status", "erro_entrada")
+                    raise KeyboardInterrupt
+
+            # ── 5. Executa batalhas da sessão ─────────────────────
             log.info(f"\n{'='*50}")
             log.info(f"Iniciando sessão BG — Modo: {MODOS_BG[MODO_BG]['nome']}")
             log.info(f"{'='*50}")
@@ -1841,11 +1909,10 @@ if __name__ == "__main__":
                 log.info("Aguardando 10min antes de reiniciar...")
                 atualizar_ciclo("status", "erro_loop")
                 time.sleep(600)
-                continue  # volta ao topo do while True
+                continue
 
-            # ── 5. Sessão concluída — volta ao topo do loop ───────
-            # entrar_bg() detectará o cooldown de 2 dias na próxima iteração
-            log.info("Sessão BG encerrada — retornando ao ciclo de entrada...")
+            # ── 6. Sessão concluída — volta ao topo ───────────────
+            log.info("Sessão BG encerrada — retornando ao ciclo...")
             time.sleep(5)
 
     except KeyboardInterrupt:
