@@ -1996,6 +1996,7 @@ if __name__ == "__main__":
                     continue
 
             # ── 5. Executa batalhas da sessão ─────────────────────
+            atualizar_ciclo("status", "em_sessao")
             log.info(f"\n{'='*50}")
             log.info(f"Iniciando sessão BG — Modo: {MODOS_BG[MODO_BG]['nome']}")
             log.info(f"{'='*50}")
