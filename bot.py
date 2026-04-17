@@ -3059,6 +3059,61 @@ def inserir_pedra_na_arma(client, alvo):
     return True
 
 
+def vender_pedras_extras(client):
+    """
+    Vende pedras de alma excedentes do inventário.
+    Compara quantidade no inventário com engastes vazios na arma;
+    se sobrar pedras (ex: arma trocada, compra excessiva antiga), vende as extras.
+    Retorna True se vendeu alguma.
+    """
+    if not COMPRAR_EQUIPAMENTO:
+        return False
+
+    info = parsear_ferreiro(client)
+    engastes_vazios = info["engastes_vazios"] if info else 0
+
+    try:
+        soup = client.get("/shop/steine/", fragment=False)
+    except Exception as e:
+        log.warning(f"  Pedra extra: erro ao carregar loja — {e}")
+        return False
+
+    # Localiza seção inventário da loja de pedras
+    inv_boxbg = None
+    for _boxtop in soup.find_all("div", class_="box-top"):
+        if "invent" in _boxtop.get_text().strip().lower():
+            inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
+            break
+    if not inv_boxbg:
+        return False
+
+    # Coleta pedras no inventário com sell_url
+    pedras_inv = []
+    for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
+        _tr_txt = tr.get_text(separator=" ", strip=True)
+        _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+        qty = int(_m_qty.group(1)) if _m_qty else 1
+        sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+        sell_url = sell_a["href"] if sell_a else None
+        _strong = tr.find("strong") or tr.find("b")
+        nome = _strong.get_text(strip=True) if _strong else "Pedra"
+        for _ in range(qty):
+            pedras_inv.append({"nome": nome, "sell_url": sell_url})
+
+    total_inv = len(pedras_inv)
+    n_vender = total_inv - engastes_vazios
+    if n_vender <= 0:
+        return False
+
+    log.info(f"  Pedra: {total_inv} no inventário, {engastes_vazios} engastes vazios — vendendo {n_vender} extra(s)")
+    vendidas = 0
+    for pedra in pedras_inv[:n_vender]:
+        if pedra.get("sell_url"):
+            vender_item_atual(client, pedra["sell_url"])
+            vendidas += 1
+    return vendidas > 0
+
+
 def engastar_pedras_pendentes(client):
     """
     Verifica se há pedras de alma no inventário do ferreiro ainda não engastadas
@@ -5570,6 +5625,10 @@ def loop_acoes(client):
                 engastar_pedras_pendentes(client)
             except Exception as e:
                 log.warning(f"Engaste pedra pendente: erro — {e}")
+            try:
+                vender_pedras_extras(client)
+            except Exception as e:
+                log.warning(f"Venda pedra extra: erro — {e}")
             try:
                 tentar_comprar_anel(client, carregar_estado())
             except Exception as e:
