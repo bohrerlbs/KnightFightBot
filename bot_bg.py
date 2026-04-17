@@ -988,6 +988,54 @@ def entrar_bg(client, modo, alignment="light"):
         log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
         return ("sem_equipamento", 0)
 
+    # ── Verifica requisitos ANTES de checar botão ──────────────────────────
+    # (quando o modo está em cooldown, o jogo não renderiza o botão — mas ainda
+    #  mostra notok.gif na coluna de requisitos; checar primeiro evita retornar "falha")
+    tds = soup.find_all("td", class_="bsseltd")
+    idx_botao = {"bp1": 0, "bp2": 1, "bp3": 2}.get(botao, 0)
+    dias_requeridos = {"bp1": 2, "bp2": 1, "bp3": 0}.get(botao, 0)
+    if idx_botao < len(tds):
+        nok_imgs = [img for img in tds[idx_botao].find_all("img") if "nok.gif" in img.get("src", "")]
+        if nok_imgs:
+            nivel_faltando = False
+            sessao_faltando = False
+            for img in nok_imgs:
+                span = img.find_next_sibling("span")
+                t = span.get_text(strip=True).lower() if span else ""
+                if any(p in t for p in ["nível", "level", "nivel"]):
+                    nivel_faltando = True
+                if any(p in t for p in ["sessão", "session", "sessao", "batalha"]):
+                    sessao_faltando = True
+
+            if nivel_faltando and not sessao_faltando:
+                log.warning("entrar_bg: nível insuficiente — BG requer Lv10")
+                return ("nivel_insuficiente", 3600)
+
+            # Cooldown de sessão — extrai data exata da página
+            wait_seg = dias_requeridos * 86400  # fallback: N dias completos
+            for _pat in [
+                r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                r"\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+            ]:
+                m_data = re.search(_pat, texto, re.IGNORECASE)
+                if m_data:
+                    break
+            if m_data:
+                try:
+                    dt_fim = datetime.strptime(m_data.group(1), "%d.%m.%Y %H:%M:%S")
+                    dt_pode = dt_fim + timedelta(days=dias_requeridos)
+                    wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
+                    log.warning(
+                        f"entrar_bg: cooldown — última sessão {dt_fim:%d/%m %H:%M} | "
+                        f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
+                    )
+                except Exception:
+                    log.warning(f"entrar_bg: cooldown — aguardando {fmt_t(wait_seg)} (fallback)")
+            else:
+                log.warning(f"entrar_bg: requisito não atendido — aguardando {fmt_t(wait_seg)} (fallback)")
+            return ("cooldown", wait_seg)
+
     # Extrai csrf do form
     csrf_input = soup.find("input", {"name": "csrftoken"})
     if not csrf_input:
@@ -1003,54 +1051,6 @@ def entrar_bg(client, modo, alignment="light"):
         if disponiveis:
             log.info(f"  Botões disponíveis: {disponiveis}")
         return ("falha", 0)
-
-    # Verifica requisitos (ok.gif = OK, notok.gif = não atende)
-    tds = soup.find_all("td", class_="bsseltd")
-    idx_botao = {"bp1": 0, "bp2": 1, "bp3": 2}.get(botao, 0)
-    dias_requeridos = {"bp1": 2, "bp2": 1, "bp3": 0}.get(botao, 0)
-    if idx_botao < len(tds):
-        nok_imgs = [img for img in tds[idx_botao].find_all("img") if "nok.gif" in img.get("src", "")]
-        if nok_imgs:
-            # Identifica que requisito falhou (level vs cooldown de sessão)
-            nivel_faltando = False
-            sessao_faltando = False
-            for img in nok_imgs:
-                span = img.find_next_sibling("span")
-                t = span.get_text(strip=True).lower() if span else ""
-                if any(p in t for p in ["nível", "level", "nivel"]):
-                    nivel_faltando = True
-                if any(p in t for p in ["sessão", "session", "sessao", "batalha"]):
-                    sessao_faltando = True
-
-            if nivel_faltando and not sessao_faltando:
-                log.warning("entrar_bg: nível insuficiente — BG requer Lv10")
-                return ("nivel_insuficiente", 3600)
-
-            # Cooldown de sessão — calcula tempo exato de espera
-            wait_seg = dias_requeridos * 86400  # fallback: N dias completos
-            m_data = re.search(
-                r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                texto, re.IGNORECASE,
-            )
-            if not m_data:
-                m_data = re.search(
-                    r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                    texto, re.IGNORECASE,
-                )
-            if m_data:
-                try:
-                    dt_fim = datetime.strptime(m_data.group(1), "%d.%m.%Y %H:%M:%S")
-                    dt_pode = dt_fim + timedelta(days=dias_requeridos)
-                    wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
-                    log.warning(
-                        f"entrar_bg: cooldown — última sessão {dt_fim:%d/%m %H:%M} | "
-                        f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
-                    )
-                except Exception:
-                    log.warning(f"entrar_bg: cooldown — aguardando {fmt_t(wait_seg)} (fallback)")
-            else:
-                log.warning(f"entrar_bg: requisito não atendido — aguardando {fmt_t(wait_seg)} (fallback)")
-            return ("cooldown", wait_seg)
 
     # 2. POST para entrar
     try:
