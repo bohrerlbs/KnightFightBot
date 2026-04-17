@@ -1046,11 +1046,36 @@ def entrar_bg(client, modo, alignment="light"):
     # Verifica se o botão do modo escolhido existe
     botao_tag = soup.find("button", {"name": botao})
     if not botao_tag:
-        log.error(f"entrar_bg: botão {botao} não encontrado — modo {modo} indisponível?")
         disponiveis = [b["name"] for b in soup.find_all("button", class_="startbs") if b.get("name")]
         if disponiveis:
+            # Botão ausente mas outros modos disponíveis → cooldown de sessão para este modo
+            log.warning(f"entrar_bg: botão {botao} não encontrado — modo {modo} em cooldown")
             log.info(f"  Botões disponíveis: {disponiveis}")
-        return ("falha", 0)
+            wait_seg = dias_requeridos * 86400  # fallback N dias
+            for _pat in [
+                r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                r"\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+            ]:
+                _m = re.search(_pat, texto, re.IGNORECASE)
+                if _m:
+                    try:
+                        dt_fim = datetime.strptime(_m.group(1), "%d.%m.%Y %H:%M:%S")
+                        dt_pode = dt_fim + timedelta(days=dias_requeridos)
+                        wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
+                        log.warning(
+                            f"  Última sessão {dt_fim:%d/%m %H:%M} | "
+                            f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
+                        )
+                    except Exception:
+                        pass
+                    break
+            else:
+                log.warning(f"  Data da última sessão não encontrada — aguardando {fmt_t(wait_seg)} (fallback)")
+            return ("cooldown", wait_seg)
+        else:
+            log.error(f"entrar_bg: botão {botao} não encontrado e nenhum modo disponível — verifique equipamento/nível")
+            return ("falha", 0)
 
     # 2. POST para entrar
     try:
@@ -1913,10 +1938,13 @@ if __name__ == "__main__":
                         raise KeyboardInterrupt
                     continue
 
-                else:  # "falha"
+                else:  # "falha" — nenhum modo disponível (sem equipamento / cookie expirado)
                     log.error("❌ Falha ao entrar no BG — verifique cookies e configuração.")
                     atualizar_ciclo("status", "erro_entrada")
-                    raise KeyboardInterrupt
+                    log.info("  Aguardando 30min antes de retentar...")
+                    if not _dormir_fatias(1800):
+                        raise KeyboardInterrupt
+                    continue
 
             # ── 5. Executa batalhas da sessão ─────────────────────
             log.info(f"\n{'='*50}")
