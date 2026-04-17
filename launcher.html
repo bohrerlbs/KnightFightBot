@@ -1097,6 +1097,7 @@ function renderProfiles(profiles){
            || bgSt==='sem_equipamento')       { bgIcon='⚔'; bgTxt='Aguardando itens melhores';  bgColor='#e09050'; }
       else if(bgSt==='aguardando_entrada'
            || bgSt==='entrando_bg')           { bgIcon='→'; bgTxt='Entrando no BG...';           bgColor='var(--gold)'; }
+      else if(bgSt==='em_sessao')             { bgIcon='⚔'; bgTxt=bgF+'/'+bgMx+' — sessão ativa'; bgColor='var(--green2)'; bgTimer=true; }
       else if(bgSt==='raffle')                { bgIcon='★'; bgTxt='Sorteio...';                  bgColor='#f0c060'; }
       else if(bgSt==='concluido')             { bgIcon='✓'; bgTxt='Sessão concluída';            bgColor='var(--green2)'; }
       else if(bgSt==='sem_alvo')              { bgIcon='⚔'; bgTxt=bgF+'/'+bgMx+' — sem alvos';  bgColor='var(--gold3)'; bgTimer=true; }

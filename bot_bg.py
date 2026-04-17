@@ -1917,9 +1917,11 @@ if __name__ == "__main__":
                 if status_entrada == "em_sessao":
                     # BG já estava ativo — re-busca sessão e prossegue normalmente
                     log.info("  BG já em sessão — re-sincronizando...")
+                    atualizar_ciclo("status", "em_sessao")
                     try:
                         s_re = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
                         estado["sessao_bg"] = s_re
+                        atualizar_ciclo("sessao", s_re)
                         eu["sessao_inicio"] = s_re.get("inicio", f"sess_{datetime.now():%Y%m%d}")
                         estado["sessao_bg_id"] = eu["sessao_inicio"]
                         salvar_estado(estado)
