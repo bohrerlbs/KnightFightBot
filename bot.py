@@ -2358,9 +2358,13 @@ def publicar_dashboard_equipamento(estado):
 def vender_item_atual(client, url_venda):
     """
     Vende 1 unidade do item atual na loja.
-    url_venda: path relativo como /shop/sell/?waren=waffen&waffenid=X&wid=Y
+    url_venda: path relativo ou absoluto (/shop/sell/... ou https://...)
     Retorna gold_recebido (int) ou 0 em caso de erro.
     """
+    if url_venda and url_venda.startswith("http"):
+        from urllib.parse import urlparse as _up_venda
+        _pv = _up_venda(url_venda)
+        url_venda = _pv.path + ("?" + _pv.query if _pv.query else "")
     try:
         soup = client.get(url_venda, fragment=False)
     except Exception as e:
