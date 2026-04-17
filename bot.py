@@ -2355,11 +2355,12 @@ def publicar_dashboard_equipamento(estado):
     })
 
 
-def vender_item_atual(client, url_venda):
+def vender_item_atual(client, url_venda, quantidade=1):
     """
-    Vende 1 unidade do item atual na loja.
+    Vende N unidades do item na loja.
     url_venda: path relativo ou absoluto (/shop/sell/... ou https://...)
-    Retorna gold_recebido (int) ou 0 em caso de erro.
+    quantidade: quantas unidades vender de uma vez (default 1).
+    Retorna gold_recebido total (int) ou 0 em caso de erro.
     """
     if url_venda and url_venda.startswith("http"):
         from urllib.parse import urlparse as _up_venda
@@ -2382,15 +2383,16 @@ def vender_item_atual(client, url_venda):
         if n:
             campos[n] = inp.get("value", "")
     campos["sell"] = "1"
-    campos["amount"] = "1"
+    campos["amount"] = str(max(1, quantidade))
 
     costs_el = form.find("input", {"name": "costs"})
-    gold_recebido = 0
+    gold_unit = 0
     if costs_el:
         try:
-            gold_recebido = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
+            gold_unit = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
         except ValueError:
             pass
+    gold_recebido = gold_unit * max(1, quantidade)
 
     action = form.get("action") or "/"
     if action.startswith("http"):
@@ -2401,7 +2403,7 @@ def vender_item_atual(client, url_venda):
 
     try:
         client.post(action, data=campos, fragment=False)
-        log.info(f"  ✓ Item vendido — recebeu {gold_recebido}g")
+        log.info(f"  ✓ Item vendido x{quantidade} — recebeu ~{gold_recebido}g")
         return gold_recebido
     except Exception as e:
         log.warning(f"  Vender item: erro no POST — {e}")
@@ -3091,8 +3093,9 @@ def vender_pedras_extras(client):
     if not inv_boxbg:
         return False
 
-    # Coleta pedras no inventário com sell_url
-    pedras_inv = []
+    # Coleta pedras no inventário com sell_url (agrupadas por tipo/URL)
+    pedras_inv = []   # lista expandida para contar total
+    pedras_grupos: dict = {}  # sell_url -> {"nome": str, "qty": int}
     for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
         _tr_txt = tr.get_text(separator=" ", strip=True)
         _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
@@ -3103,6 +3106,10 @@ def vender_pedras_extras(client):
         nome = _strong.get_text(strip=True) if _strong else "Pedra"
         for _ in range(qty):
             pedras_inv.append({"nome": nome, "sell_url": sell_url})
+        if sell_url:
+            if sell_url not in pedras_grupos:
+                pedras_grupos[sell_url] = {"nome": nome, "qty": 0}
+            pedras_grupos[sell_url]["qty"] += qty
 
     total_inv = len(pedras_inv)
     n_vender = total_inv - engastes_vazios
@@ -3111,10 +3118,13 @@ def vender_pedras_extras(client):
 
     log.info(f"  Pedra: {total_inv} no inventário, {engastes_vazios} engastes vazios — vendendo {n_vender} extra(s)")
     vendidas = 0
-    for pedra in pedras_inv[:n_vender]:
-        if pedra.get("sell_url"):
-            vender_item_atual(client, pedra["sell_url"])
-            vendidas += 1
+    for _url, _info in pedras_grupos.items():
+        if vendidas >= n_vender:
+            break
+        _qt = min(_info["qty"], n_vender - vendidas)
+        log.info(f"    Vendendo {_qt}x '{_info['nome']}'")
+        vender_item_atual(client, _url, quantidade=_qt)
+        vendidas += _qt
     return vendidas > 0
 
 
@@ -3269,22 +3279,27 @@ def verificar_alvo_anel(client, estado):
             _extras = sorted(all_ring_info, key=lambda x: x["level"])
             _n_vender = total_aneis - MAX_ANEIS
             _vendidos = 0
+            # Agrupa por sell_url para vender em lote (mesmo tipo = mesmo URL)
+            _grupos: dict = {}
             for _ring in _extras:
+                if _ring.get("sell_url"):
+                    _grupos.setdefault(_ring["sell_url"], []).append(_ring)
+            for _url, _grupo in _grupos.items():
                 if _vendidos >= _n_vender:
                     break
-                if _ring.get("sell_url"):
-                    log.info(f"  Anel: {total_aneis} aneis (max {MAX_ANEIS}) — vendendo '{_ring['nome']}' lv{_ring['level']}")
-                    vender_item_atual(client, _ring["sell_url"])
-                    _vendidos += 1
+                _qt = min(len(_grupo), _n_vender - _vendidos)
+                _nome_g = _grupo[0]["nome"]
+                _lv_g = _grupo[0]["level"]
+                log.info(f"  Anel: {total_aneis} aneis (max {MAX_ANEIS}) — vendendo {_qt}x '{_nome_g}' lv{_lv_g}")
+                vender_item_atual(client, _url, quantidade=_qt)
+                _vendidos += _qt
             if _vendidos:
                 total_aneis -= _vendidos
-                # Remove os vendidos da lista (piores primeiro)
                 for _ring in _extras[:_vendidos]:
                     try:
                         all_ring_info.remove(_ring)
                     except ValueError:
                         pass
-                # Recalcula levels_equipados sem os vendidos
                 levels_equipados.clear()
                 for _r in all_ring_info:
                     levels_equipados.append(_r["level"])
