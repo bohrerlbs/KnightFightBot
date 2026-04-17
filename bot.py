@@ -3205,6 +3205,62 @@ def engastar_pedras_pendentes(client):
     return inseridas > 0
 
 
+# Limiar numérico usado pelo jogo para alinhamento Luz/Trevas
+_ALIGN_LIMIAR_LUZ    = 500
+_ALIGN_LIMIAR_TREVAS = -500
+
+_ALIGN_LUZ_KW    = ["licht", "light", "luz", "bien", "bom", "bem", "cura", "heal",
+                     "saint", "sacred", "sagrado", "divino", "divine", "bright"]
+_ALIGN_TREVAS_KW = ["dunkel", "dark", "trevas", "mal", "morte", "death", "shadow",
+                     "sombra", "evil", "cursed", "maldito", "obscur"]
+
+def _extrair_req_alignment(tr, tr_txt):
+    """
+    Extrai requisito de alinhamento de uma row de loja.
+    Retorna int: ex. +500 (Luz/Moral positiva) ou -500 (Trevas) ou 0 (sem requisito).
+    Formato real do jogo PT: "Condição - Moral: 500" ou "Condição - Moral: -500"
+    Tenta: (1) número após keyword (moral/alignment/gesinnung), (2) palavra Luz/Trevas,
+    (3) imagem com src indicando alinhamento.
+    """
+    # "Moral: 500", "Alignment: -500", "Gesinnung: 500", etc.
+    _num_pat  = re.compile(r"(?:alignment|alinhamento|gesinnung|moral)\s*[:\-]?\s*(-?\d+)", re.IGNORECASE)
+    _word_pat = re.compile(r"(?:alignment|alinhamento|gesinnung|moral)\s*[:\-]?\s*(\w+)", re.IGNORECASE)
+
+    def _from_text(txt):
+        m = _num_pat.search(txt)
+        if m:
+            return int(m.group(1))
+        m2 = _word_pat.search(txt)
+        if m2:
+            word = m2.group(1).lower()
+            if any(k in word for k in _ALIGN_LUZ_KW):
+                return _ALIGN_LIMIAR_LUZ
+            if any(k in word for k in _ALIGN_TREVAS_KW):
+                return _ALIGN_LIMIAR_TREVAS
+        return None
+
+    # 1. Texto visível da row
+    r = _from_text(tr_txt)
+    if r is not None:
+        return r
+
+    # 2. data-tooltip de qualquer elemento dentro da row
+    for _tt in tr.find_all(attrs={"data-tooltip": True}):
+        r = _from_text(_tt.get("data-tooltip", ""))
+        if r is not None:
+            return r
+
+    # 3. Imagem com src sugerindo alinhamento (licht.gif, dunkel.gif, etc.)
+    for img in tr.find_all("img"):
+        src = (img.get("src") or "").lower()
+        if any(k in src for k in ["licht", "light", "luz", "hell.", "bright"]):
+            return _ALIGN_LIMIAR_LUZ
+        if any(k in src for k in ["dunkel", "dark", "trevas", "shadow"]):
+            return _ALIGN_LIMIAR_TREVAS
+
+    return 0
+
+
 def verificar_alvo_anel(client, estado):
     """
     Determina aneis a comprar. Máximo 2 simultâneos.
@@ -3237,7 +3293,7 @@ def verificar_alvo_anel(client, estado):
         # ── Extrai alinhamento do personagem da página ───────────────────
         for _tag in soup.find_all(attrs={"data-tooltip": True}):
             _tip = _tag.get("data-tooltip", "")
-            if re.search(r"(?:alignment|alinhamento|gesinnung)", _tip, re.IGNORECASE):
+            if re.search(r"(?:alignment|alinhamento|gesinnung|moral)", _tip, re.IGNORECASE):
                 _m_al = re.search(r"\((-?\d+)\)", _tip)
                 if _m_al:
                     player_alignment = int(_m_al.group(1))
@@ -3333,24 +3389,13 @@ def verificar_alvo_anel(client, estado):
             if req_lv > 0 and req_lv > player_level:
                 continue
 
-            # Filtro de alinhamento — busca no texto visível e em data-tooltip da row
-            _align_pat = re.compile(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", re.IGNORECASE)
-            m_align = _align_pat.search(tr_txt)
-            if not m_align:
-                for _tt in tr.find_all(attrs={"data-tooltip": True}):
-                    _tip_txt = _tt.get("data-tooltip", "")
-                    m_align = _align_pat.search(_tip_txt)
-                    if m_align:
-                        break
-            req_alignment = int(m_align.group(1)) if m_align else 0
+            # Filtro de alinhamento
+            req_alignment = _extrair_req_alignment(tr, tr_txt)
             if req_alignment != 0:
                 if (player_alignment is None
                         or (req_alignment > 0 and player_alignment < req_alignment)
                         or (req_alignment < 0 and player_alignment > req_alignment)):
                     continue
-            # Diagnóstico: se alignment desconhecido, loga texto da row para análise
-            if player_alignment is None and req_alignment == 0:
-                log.debug(f"  align-diag player=None req=0: {tr_txt[:150]!r}")
 
             gold = 0
             for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
@@ -3647,7 +3692,7 @@ def verificar_alvo_amuleto(client, estado):
         # ── Extrai alinhamento do personagem da página ───────────────────
         for _tag in soup.find_all(attrs={"data-tooltip": True}):
             _tip = _tag.get("data-tooltip", "")
-            if re.search(r"(?:alignment|alinhamento|gesinnung)", _tip, re.IGNORECASE):
+            if re.search(r"(?:alignment|alinhamento|gesinnung|moral)", _tip, re.IGNORECASE):
                 _m_al = re.search(r"\((-?\d+)\)", _tip)
                 if _m_al:
                     player_alignment = int(_m_al.group(1))
@@ -3718,24 +3763,13 @@ def verificar_alvo_amuleto(client, estado):
             if req_lv > 0 and req_lv > player_level:
                 continue
 
-            # Filtro de alinhamento — busca no texto visível e em data-tooltip da row
-            _align_pat = re.compile(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", re.IGNORECASE)
-            m_align = _align_pat.search(tr_txt)
-            if not m_align:
-                for _tt in tr.find_all(attrs={"data-tooltip": True}):
-                    _tip_txt = _tt.get("data-tooltip", "")
-                    m_align = _align_pat.search(_tip_txt)
-                    if m_align:
-                        break
-            req_alignment = int(m_align.group(1)) if m_align else 0
+            # Filtro de alinhamento
+            req_alignment = _extrair_req_alignment(tr, tr_txt)
             if req_alignment != 0:
                 if (player_alignment is None
                         or (req_alignment > 0 and player_alignment < req_alignment)
                         or (req_alignment < 0 and player_alignment > req_alignment)):
                     continue
-            # Diagnóstico: se alignment desconhecido, loga texto da row para análise
-            if player_alignment is None and req_alignment == 0:
-                log.debug(f"  align-diag player=None req=0: {tr_txt[:150]!r}")
 
             gold = 0
             for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
@@ -4956,13 +4990,13 @@ def parsear_status(soup):
                 alignment = int(m_al.group(1))
                 break
             # Formato "Alignment: -49" ou "Alinhamento: -49"
-            m_al2 = re.search(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", tip, re.IGNORECASE)
+            m_al2 = re.search(r"(?:alignment|alinhamento|gesinnung|moral)\s*[:\-]?\s*(-?\d+)", tip, re.IGNORECASE)
             if m_al2:
                 alignment = int(m_al2.group(1))
                 break
     # Fallback: se ainda null, tenta texto visível da página
     if alignment is None:
-        m_al3 = re.search(r"(?:alignment|alinhamento|gesinnung)[^:\d-]*[:\-]?\s*(-?\d+)", txt, re.IGNORECASE)
+        m_al3 = re.search(r"(?:alignment|alinhamento|gesinnung|moral)[^:\d-]*[:\-]?\s*(-?\d+)", txt, re.IGNORECASE)
         if m_al3:
             alignment = int(m_al3.group(1))
     # Fallback: inferir de "Neutral" → 0 (conservador — evita comprar itens com req alto)
