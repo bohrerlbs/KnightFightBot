@@ -398,6 +398,25 @@ def parsear_sessao_bg(soup):
             m = re.search(pat, texto, re.IGNORECASE)
             if m: sessao["restantes_hoje"] = int(m.group(1)); break
 
+        # Fallback de contagem: se padrões numéricos não bateram mas a página tem
+        # sinais de BG ativo — via HTML ou texto — marca sessão ativa minimamente
+        if "batalhas_total" not in sessao and "batalhas_dia" not in sessao:
+            _sinais_html = (
+                soup.find("form", action=lambda a: a and "battleground" in (a or "").lower())
+                or soup.find("a", href=lambda h: h and ("/battleground/attack" in (h or "") or "wac=fight" in (h or "")))
+                or soup.find("a", href=lambda h: h and "/battleground/currentbattle" in (h or ""))
+            )
+            _sinais_texto = any(p in texto.lower() for p in [
+                "início da sessão", "session start", "sessionsbeginn", "pocz",
+                "fim da sessão", "session end", "sessionsende",
+                "batalhas hoje", "battles today", "kämpfe heute",
+                "restantes", "remaining", "verbleibende",
+            ])
+            if _sinais_html or _sinais_texto:
+                log.debug("parsear_sessao_bg: padrões de contagem não encontrados mas BG ativo detectado — marcando sessão")
+                sessao["batalhas_total"]  = 100
+                sessao["batalhas_feitas"] = 0
+
         # Fallback de início: se a página carregou mas data não foi parseada,
         # usa chave sintética — garante que o bot não abortará por "sem sessão"
         if "inicio" not in sessao:
@@ -976,6 +995,20 @@ def entrar_bg(client, modo, alignment="light"):
         return ("falha", 0)
 
     texto = soup.get_text(" ", strip=True)
+
+    # ── Detecta sessão BG já ativa ────────────────────────────────────────────
+    # Quando BG está aberto, /battleground/enter/ pode redirecionar para a tela
+    # de batalha atual (sem form de entrada), ou mostrar link para currentbattle.
+    _currentbattle_link = soup.find("a", href=lambda h: h and "/battleground/currentbattle" in (h or ""))
+    _sem_form_entrada    = not soup.find("input", {"name": "csrftoken"}) and not soup.find("button", class_="startbs")
+    _texto_em_sessao = any(p in texto.lower() for p in [
+        "current battle", "batalha atual", "aktuelle", "currentbattle",
+        "session active", "sessão ativa", "active session",
+        "em sessão", "ya en sesión",
+    ])
+    if _currentbattle_link or (_sem_form_entrada and _texto_em_sessao):
+        log.info("entrar_bg: BG já está em sessão ativa — pulando entrada")
+        return ("em_sessao", 0)
 
     # Detecta tela de "equipe seu cavaleiro" — personagem sem itens adequados
     # Indicadores: link /landsitz/ (trocar equipamento) junto com aviso em vermelho
@@ -1881,7 +1914,21 @@ if __name__ == "__main__":
 
                 status_entrada, wait_extra = entrar_bg(client, MODO_BG, alignment)
 
-                if status_entrada == "ok":
+                if status_entrada == "em_sessao":
+                    # BG já estava ativo — re-busca sessão e prossegue normalmente
+                    log.info("  BG já em sessão — re-sincronizando...")
+                    try:
+                        s_re = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
+                        estado["sessao_bg"] = s_re
+                        eu["sessao_inicio"] = s_re.get("inicio", f"sess_{datetime.now():%Y%m%d}")
+                        estado["sessao_bg_id"] = eu["sessao_inicio"]
+                        salvar_estado(estado)
+                    except Exception as e_re:
+                        log.warning(f"  Erro ao re-sincronizar sessão: {e_re}")
+                        eu.setdefault("sessao_inicio", f"sess_{datetime.now():%Y%m%d}")
+                    # Deixa cair no bloco de execução de batalhas abaixo
+
+                elif status_entrada == "ok":
                     log.info("  Entrada confirmada — aguardando 5s para sessão ser registrada...")
                     time.sleep(5)
                     try:
