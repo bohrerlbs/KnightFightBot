@@ -1,0 +1,965 @@
+[
+  {
+    "nome": "Pedra do Dragão (+1)",
+    "req_level": 5,
+    "tipo": "Dragão",
+    "valor": 1,
+    "preco_venda": 120,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+2)",
+    "req_level": 9,
+    "tipo": "Dragão",
+    "valor": 2,
+    "preco_venda": 150,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+3)",
+    "req_level": 13,
+    "tipo": "Dragão",
+    "valor": 3,
+    "preco_venda": 300,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+4)",
+    "req_level": 20,
+    "tipo": "Dragão",
+    "valor": 4,
+    "preco_venda": 450,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+5)",
+    "req_level": 32,
+    "tipo": "Dragão",
+    "valor": 5,
+    "preco_venda": 600,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+6)",
+    "req_level": 39,
+    "tipo": "Dragão",
+    "valor": 6,
+    "preco_venda": 750,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+7)",
+    "req_level": 50,
+    "tipo": "Dragão",
+    "valor": 7,
+    "preco_venda": 900,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+8)",
+    "req_level": 68,
+    "tipo": "Dragão",
+    "valor": 8,
+    "preco_venda": 1050,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+9)",
+    "req_level": 80,
+    "tipo": "Dragão",
+    "valor": 9,
+    "preco_venda": 1075,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+10)",
+    "req_level": 98,
+    "tipo": "Dragão",
+    "valor": 10,
+    "preco_venda": 1100,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+11)",
+    "req_level": 114,
+    "tipo": "Dragão",
+    "valor": 11,
+    "preco_venda": 1150,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+12)",
+    "req_level": 134,
+    "tipo": "Dragão",
+    "valor": 12,
+    "preco_venda": 1175,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+13)",
+    "req_level": 154,
+    "tipo": "Dragão",
+    "valor": 13,
+    "preco_venda": 1200,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+14)",
+    "req_level": 173,
+    "tipo": "Dragão",
+    "valor": 14,
+    "preco_venda": 1225,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+15)",
+    "req_level": 191,
+    "tipo": "Dragão",
+    "valor": 15,
+    "preco_venda": 1250,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+16)",
+    "req_level": 209,
+    "tipo": "Dragão",
+    "valor": 16,
+    "preco_venda": 1275,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+17)",
+    "req_level": 227,
+    "tipo": "Dragão",
+    "valor": 17,
+    "preco_venda": 1300,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Dragão (+18)",
+    "req_level": 245,
+    "tipo": "Dragão",
+    "valor": 18,
+    "preco_venda": 1325,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+1)",
+    "req_level": 6,
+    "tipo": "Fogo",
+    "valor": 1,
+    "preco_venda": 350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+2)",
+    "req_level": 10,
+    "tipo": "Fogo",
+    "valor": 2,
+    "preco_venda": 1350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+3)",
+    "req_level": 15,
+    "tipo": "Fogo",
+    "valor": 3,
+    "preco_venda": 2350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+4)",
+    "req_level": 24,
+    "tipo": "Fogo",
+    "valor": 4,
+    "preco_venda": 5350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+5)",
+    "req_level": 36,
+    "tipo": "Fogo",
+    "valor": 5,
+    "preco_venda": 6350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+6)",
+    "req_level": 42,
+    "tipo": "Fogo",
+    "valor": 6,
+    "preco_venda": 7350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+7)",
+    "req_level": 56,
+    "tipo": "Fogo",
+    "valor": 7,
+    "preco_venda": 9350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+8)",
+    "req_level": 72,
+    "tipo": "Fogo",
+    "valor": 8,
+    "preco_venda": 10350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+9)",
+    "req_level": 86,
+    "tipo": "Fogo",
+    "valor": 9,
+    "preco_venda": 10900,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+10)",
+    "req_level": 104,
+    "tipo": "Fogo",
+    "valor": 10,
+    "preco_venda": 12400,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+11)",
+    "req_level": 122,
+    "tipo": "Fogo",
+    "valor": 11,
+    "preco_venda": 13000,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+12)",
+    "req_level": 142,
+    "tipo": "Fogo",
+    "valor": 12,
+    "preco_venda": 14100,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+13)",
+    "req_level": 161,
+    "tipo": "Fogo",
+    "valor": 13,
+    "preco_venda": 15000,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+14)",
+    "req_level": 179,
+    "tipo": "Fogo",
+    "valor": 14,
+    "preco_venda": 16250,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+15)",
+    "req_level": 197,
+    "tipo": "Fogo",
+    "valor": 15,
+    "preco_venda": 17500,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+16)",
+    "req_level": 215,
+    "tipo": "Fogo",
+    "valor": 16,
+    "preco_venda": 18250,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+17)",
+    "req_level": 233,
+    "tipo": "Fogo",
+    "valor": 17,
+    "preco_venda": 19500,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Fogo (+18)",
+    "req_level": 251,
+    "tipo": "Fogo",
+    "valor": 18,
+    "preco_venda": 20750,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+1)",
+    "req_level": 5,
+    "tipo": "Gelo",
+    "valor": 1,
+    "preco_venda": 350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+2)",
+    "req_level": 9,
+    "tipo": "Gelo",
+    "valor": 2,
+    "preco_venda": 1350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+3)",
+    "req_level": 14,
+    "tipo": "Gelo",
+    "valor": 3,
+    "preco_venda": 2350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+4)",
+    "req_level": 22,
+    "tipo": "Gelo",
+    "valor": 4,
+    "preco_venda": 5350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+5)",
+    "req_level": 34,
+    "tipo": "Gelo",
+    "valor": 5,
+    "preco_venda": 6350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+6)",
+    "req_level": 40,
+    "tipo": "Gelo",
+    "valor": 6,
+    "preco_venda": 7350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+7)",
+    "req_level": 53,
+    "tipo": "Gelo",
+    "valor": 7,
+    "preco_venda": 9350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+8)",
+    "req_level": 70,
+    "tipo": "Gelo",
+    "valor": 8,
+    "preco_venda": 10350,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+9)",
+    "req_level": 83,
+    "tipo": "Gelo",
+    "valor": 9,
+    "preco_venda": 10800,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+10)",
+    "req_level": 101,
+    "tipo": "Gelo",
+    "valor": 10,
+    "preco_venda": 12250,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+11)",
+    "req_level": 118,
+    "tipo": "Gelo",
+    "valor": 11,
+    "preco_venda": 13000,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+12)",
+    "req_level": 135,
+    "tipo": "Gelo",
+    "valor": 12,
+    "preco_venda": 13900,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+13)",
+    "req_level": 158,
+    "tipo": "Gelo",
+    "valor": 13,
+    "preco_venda": 14750,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+14)",
+    "req_level": 176,
+    "tipo": "Gelo",
+    "valor": 14,
+    "preco_venda": 16000,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+15)",
+    "req_level": 194,
+    "tipo": "Gelo",
+    "valor": 15,
+    "preco_venda": 17250,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+16)",
+    "req_level": 212,
+    "tipo": "Gelo",
+    "valor": 16,
+    "preco_venda": 18000,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+17)",
+    "req_level": 230,
+    "tipo": "Gelo",
+    "valor": 17,
+    "preco_venda": 19250,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra de Gelo (+18)",
+    "req_level": 248,
+    "tipo": "Gelo",
+    "valor": 18,
+    "preco_venda": 20500,
+    "req_alignment": 0,
+    "bazar": false
+  },
+  {
+    "nome": "Raio de Magia (+13)",
+    "req_level": 170,
+    "tipo": "Magia",
+    "valor": 13,
+    "preco_venda": 15750,
+    "req_alignment": 38000,
+    "bazar": false
+  },
+  {
+    "nome": "Pedra do Raio (+1)",
+    "req_level": 7,
+    "tipo": "Raio",
+    "valor": 1,
+    "preco_venda": 400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+2)",
+    "req_level": 11,
+    "tipo": "Raio",
+    "valor": 2,
+    "preco_venda": 1400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+3)",
+    "req_level": 16,
+    "tipo": "Raio",
+    "valor": 3,
+    "preco_venda": 2400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+4)",
+    "req_level": 26,
+    "tipo": "Raio",
+    "valor": 4,
+    "preco_venda": 5400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+5)",
+    "req_level": 37,
+    "tipo": "Raio",
+    "valor": 5,
+    "preco_venda": 6400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+6)",
+    "req_level": 44,
+    "tipo": "Raio",
+    "valor": 6,
+    "preco_venda": 8400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+7)",
+    "req_level": 59,
+    "tipo": "Raio",
+    "valor": 7,
+    "preco_venda": 9400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+8)",
+    "req_level": 74,
+    "tipo": "Raio",
+    "valor": 8,
+    "preco_venda": 10400,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+9)",
+    "req_level": 89,
+    "tipo": "Raio",
+    "valor": 9,
+    "preco_venda": 10900,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+10)",
+    "req_level": 107,
+    "tipo": "Raio",
+    "valor": 10,
+    "preco_venda": 12650,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+11)",
+    "req_level": 126,
+    "tipo": "Raio",
+    "valor": 11,
+    "preco_venda": 13350,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+13)",
+    "req_level": 164,
+    "tipo": "Raio",
+    "valor": 13,
+    "preco_venda": 15250,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+14)",
+    "req_level": 182,
+    "tipo": "Raio",
+    "valor": 14,
+    "preco_venda": 16500,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+15)",
+    "req_level": 200,
+    "tipo": "Raio",
+    "valor": 15,
+    "preco_venda": 17750,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+16)",
+    "req_level": 218,
+    "tipo": "Raio",
+    "valor": 16,
+    "preco_venda": 18500,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+17)",
+    "req_level": 236,
+    "tipo": "Raio",
+    "valor": 17,
+    "preco_venda": 19750,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Pedra do Raio (+18)",
+    "req_level": 254,
+    "tipo": "Raio",
+    "valor": 18,
+    "preco_venda": 18949,
+    "req_alignment": 0,
+    "bazar": true
+  },
+  {
+    "nome": "Sagrado (+1)",
+    "req_level": 8,
+    "tipo": "Sagrado",
+    "valor": 1,
+    "preco_venda": 450,
+    "req_alignment": 100,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+2)",
+    "req_level": 12,
+    "tipo": "Sagrado",
+    "valor": 2,
+    "preco_venda": 1450,
+    "req_alignment": 500,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+3)",
+    "req_level": 18,
+    "tipo": "Sagrado",
+    "valor": 3,
+    "preco_venda": 2450,
+    "req_alignment": 1500,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+4)",
+    "req_level": 29,
+    "tipo": "Sagrado",
+    "valor": 4,
+    "preco_venda": 5450,
+    "req_alignment": 4000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+5)",
+    "req_level": 38,
+    "tipo": "Sagrado",
+    "valor": 5,
+    "preco_venda": 6450,
+    "req_alignment": 7000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+6)",
+    "req_level": 47,
+    "tipo": "Sagrado",
+    "valor": 6,
+    "preco_venda": 8450,
+    "req_alignment": 10000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+7)",
+    "req_level": 63,
+    "tipo": "Sagrado",
+    "valor": 7,
+    "preco_venda": 9450,
+    "req_alignment": 13000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+8)",
+    "req_level": 77,
+    "tipo": "Sagrado",
+    "valor": 8,
+    "preco_venda": 10450,
+    "req_alignment": 16000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+9)",
+    "req_level": 93,
+    "tipo": "Sagrado",
+    "valor": 9,
+    "preco_venda": 11000,
+    "req_alignment": 20000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+10)",
+    "req_level": 110,
+    "tipo": "Sagrado",
+    "valor": 10,
+    "preco_venda": 12800,
+    "req_alignment": 25000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+11)",
+    "req_level": 130,
+    "tipo": "Sagrado",
+    "valor": 11,
+    "preco_venda": 13700,
+    "req_alignment": 29000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+12)",
+    "req_level": 150,
+    "tipo": "Sagrado",
+    "valor": 12,
+    "preco_venda": 14500,
+    "req_alignment": 33000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+14)",
+    "req_level": 188,
+    "tipo": "Sagrado",
+    "valor": 14,
+    "preco_venda": 17000,
+    "req_alignment": 43000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+15)",
+    "req_level": 206,
+    "tipo": "Sagrado",
+    "valor": 15,
+    "preco_venda": 18250,
+    "req_alignment": 48000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+16)",
+    "req_level": 224,
+    "tipo": "Sagrado",
+    "valor": 16,
+    "preco_venda": 19000,
+    "req_alignment": 53000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+17)",
+    "req_level": 242,
+    "tipo": "Sagrado",
+    "valor": 17,
+    "preco_venda": 20250,
+    "req_alignment": 58000,
+    "bazar": false
+  },
+  {
+    "nome": "Sagrado (+18)",
+    "req_level": 260,
+    "tipo": "Sagrado",
+    "valor": 18,
+    "preco_venda": 21500,
+    "req_alignment": 63000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+1)",
+    "req_level": 8,
+    "tipo": "Sombra",
+    "valor": 1,
+    "preco_venda": 450,
+    "req_alignment": -100,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+2)",
+    "req_level": 12,
+    "tipo": "Sombra",
+    "valor": 2,
+    "preco_venda": 1450,
+    "req_alignment": -500,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+3)",
+    "req_level": 18,
+    "tipo": "Sombra",
+    "valor": 3,
+    "preco_venda": 2450,
+    "req_alignment": -1500,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+4)",
+    "req_level": 29,
+    "tipo": "Sombra",
+    "valor": 4,
+    "preco_venda": 5450,
+    "req_alignment": -4000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+5)",
+    "req_level": 38,
+    "tipo": "Sombra",
+    "valor": 5,
+    "preco_venda": 6450,
+    "req_alignment": -7000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+6)",
+    "req_level": 47,
+    "tipo": "Sombra",
+    "valor": 6,
+    "preco_venda": 8450,
+    "req_alignment": -10000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+7)",
+    "req_level": 63,
+    "tipo": "Sombra",
+    "valor": 7,
+    "preco_venda": 9450,
+    "req_alignment": -13000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+8)",
+    "req_level": 77,
+    "tipo": "Sombra",
+    "valor": 8,
+    "preco_venda": 10450,
+    "req_alignment": -16000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+9)",
+    "req_level": 93,
+    "tipo": "Sombra",
+    "valor": 9,
+    "preco_venda": 11000,
+    "req_alignment": -20000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+10)",
+    "req_level": 110,
+    "tipo": "Sombra",
+    "valor": 10,
+    "preco_venda": 12800,
+    "req_alignment": -25000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+11)",
+    "req_level": 130,
+    "tipo": "Sombra",
+    "valor": 11,
+    "preco_venda": 13700,
+    "req_alignment": -29000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+12)",
+    "req_level": 150,
+    "tipo": "Sombra",
+    "valor": 12,
+    "preco_venda": 14500,
+    "req_alignment": -33000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+13)",
+    "req_level": 167,
+    "tipo": "Sombra",
+    "valor": 13,
+    "preco_venda": 15500,
+    "req_alignment": -38000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+14)",
+    "req_level": 185,
+    "tipo": "Sombra",
+    "valor": 14,
+    "preco_venda": 16750,
+    "req_alignment": -43000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+15)",
+    "req_level": 203,
+    "tipo": "Sombra",
+    "valor": 15,
+    "preco_venda": 18000,
+    "req_alignment": -48000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+16)",
+    "req_level": 221,
+    "tipo": "Sombra",
+    "valor": 16,
+    "preco_venda": 18750,
+    "req_alignment": -53000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+17)",
+    "req_level": 239,
+    "tipo": "Sombra",
+    "valor": 17,
+    "preco_venda": 20000,
+    "req_alignment": -58000,
+    "bazar": false
+  },
+  {
+    "nome": "Poder da Sombra (+18)",
+    "req_level": 257,
+    "tipo": "Sombra",
+    "valor": 18,
+    "preco_venda": 21250,
+    "req_alignment": -63000,
+    "bazar": false
+  }
+]
