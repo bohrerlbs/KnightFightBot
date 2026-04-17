@@ -3151,34 +3151,33 @@ def verificar_alvo_anel(client, estado):
             if "invent" in _boxtop.get_text().strip().lower():
                 inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
                 break
+        all_ring_info = []  # Todos os aneis do inventário (para catálogo)
         if inv_boxbg:
             for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
                 _tr_txt = tr.get_text(separator=" ", strip=True)
                 _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
                 qty = int(_m_qty.group(1)) if _m_qty else 1
                 total_aneis += qty
+                _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                lv = int(_m_lv.group(1)) if _m_lv else 0
+                sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+                sell_url = sell_a["href"] if sell_a else None
+                m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
+                sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
+                _strong = tr.find("strong") or tr.find("b")
+                _nome = _strong.get_text(strip=True) if _strong else "Anel"
+                # TODOS os aneis contribuem para levels (para filtro pior_level correto)
+                levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
+                for _ in range(min(qty, MAX_ANEIS)):
+                    all_ring_info.append({"nome": _nome, "level": lv,
+                                          "sell_url": sell_url, "sell_val": sell_val})
                 if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
-                    _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
-                    lv = int(_m_lv.group(1)) if _m_lv else 0
-                    levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
-                    sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
-                    sell_url = sell_a["href"] if sell_a else None
-                    m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
-                    sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
                     sell_info_equipados.append({"level": lv, "sell_url": sell_url, "sell_val": sell_val})
-                    _strong = tr.find("strong") or tr.find("b")
-                    _nome = _strong.get_text(strip=True) if _strong else "Anel"
                     nomes_equipados.extend([_nome] * min(qty, MAX_ANEIS))
 
-        # Persiste equipados (com sell_url/sell_val) para fallback de catálogo
+        # Persiste todos os aneis (equipados e não) para fallback de catálogo
         slots = estado.setdefault("slots_equipados", {})
-        slots["rings"] = [
-            {"nome":     nomes_equipados[i] if i < len(nomes_equipados) else "Anel",
-             "level":    levels_equipados[i],
-             "sell_url": sell_info_equipados[i]["sell_url"] if i < len(sell_info_equipados) else None,
-             "sell_val": sell_info_equipados[i]["sell_val"] if i < len(sell_info_equipados) else 0}
-            for i in range(len(levels_equipados))
-        ]
+        slots["rings"] = all_ring_info[:MAX_ANEIS]
 
         # Varre shop listing
         inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
@@ -3345,14 +3344,21 @@ def verificar_alvo_anel(client, estado):
     melhor = max(lista, key=lambda x: (x.get("req_level", 0), x.get("gold_necessario", 0)))
     gold_bruto = melhor["gold_necessario"]
 
-    # Se slots cheios, vender pior anel para abrir espaço
+    # Se slots cheios, vender pior anel para abrir espaço (só se tiver anel equipado vendível)
     vender_pior = None
     if a_comprar == 0:
         if sell_info_equipados:
             pior = min(sell_info_equipados, key=lambda x: x["level"])
             if pior.get("sell_url"):
                 vender_pior = pior
-        a_comprar = 1
+        if vender_pior is not None:
+            a_comprar = 1
+        else:
+            # Slots cheios mas nenhum anel equipado — aguarda equipagem antes de comprar
+            if estado.get("anel_alvo"):
+                del estado["anel_alvo"]
+                salvar_estado(estado)
+            return
 
     gold_venda_pior = vender_pior["sell_val"] if vender_pior else 0
     gold_necessario = max(0, gold_bruto - gold_venda_pior) * a_comprar
