@@ -3333,8 +3333,14 @@ def verificar_alvo_anel(client, estado):
             if req_lv > 0 and req_lv > player_level:
                 continue
 
-            # Filtro de alinhamento
-            m_align = re.search(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", tr_txt, re.IGNORECASE)
+            # Filtro de alinhamento — busca no texto visível e em data-tooltip da row
+            _align_pat = re.compile(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", re.IGNORECASE)
+            m_align = _align_pat.search(tr_txt)
+            if not m_align:
+                for _tt in tr.find_all(attrs={"data-tooltip": True}):
+                    m_align = _align_pat.search(_tt.get("data-tooltip", ""))
+                    if m_align:
+                        break
             req_alignment = int(m_align.group(1)) if m_align else 0
             if req_alignment != 0:
                 if (player_alignment is None
@@ -3708,8 +3714,14 @@ def verificar_alvo_amuleto(client, estado):
             if req_lv > 0 and req_lv > player_level:
                 continue
 
-            # Filtro de alinhamento
-            m_align = re.search(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", tr_txt, re.IGNORECASE)
+            # Filtro de alinhamento — busca no texto visível e em data-tooltip da row
+            _align_pat = re.compile(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", re.IGNORECASE)
+            m_align = _align_pat.search(tr_txt)
+            if not m_align:
+                for _tt in tr.find_all(attrs={"data-tooltip": True}):
+                    m_align = _align_pat.search(_tt.get("data-tooltip", ""))
+                    if m_align:
+                        break
             req_alignment = int(m_align.group(1)) if m_align else 0
             if req_alignment != 0:
                 if (player_alignment is None
