@@ -3650,19 +3650,24 @@ def verificar_alvo_amuleto(client, estado):
             if "invent" in _boxtop.get_text().strip().lower():
                 inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
                 break
+        total_amuletos = 0
         if inv_boxbg:
             for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
                 _tr_txt = tr.get_text(separator=" ", strip=True)
-                if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
-                    _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
-                    level_amuleto_eq = int(_m_lv.group(1)) if _m_lv else 0
+                _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
+                _qty = int(_m_qty.group(1)) if _m_qty else 1
+                total_amuletos += _qty
+                _m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", _tr_txt, re.IGNORECASE)
+                _lv = int(_m_lv.group(1)) if _m_lv else 0
+                # Usa o maior level encontrado no inventário como referência
+                if _lv > level_amuleto_eq or level_amuleto_eq == -1:
+                    level_amuleto_eq = _lv
                     sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
                     sell_url_amuleto_eq = sell_a["href"] if sell_a else None
                     m_sv = re.search(r"(?:item\s+value|itemwert|warenwert|valor\s+(?:do\s+)?item)[:\s]+(\d[\d.,]*)", _tr_txt, re.IGNORECASE)
                     sell_val_amuleto_eq = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
                     _strong = tr.find("strong") or tr.find("b")
                     nome_amuleto_eq = _strong.get_text(strip=True) if _strong else None
-                    break
 
         # Persiste equipado (com sell_url/sell_val) para fallback de catálogo
         slots = estado.setdefault("slots_equipados", {})
@@ -3673,7 +3678,7 @@ def verificar_alvo_amuleto(client, estado):
             "sell_val": sell_val_amuleto_eq,
         } if level_amuleto_eq >= 0 else None
 
-        log.debug(f"  Amuleto: level_eq={level_amuleto_eq}, sell_url={sell_url_amuleto_eq}, sell_val={sell_val_amuleto_eq}, player_lv={player_level}")
+        log.debug(f"  Amuleto: total={total_amuletos}, level_eq={level_amuleto_eq}, sell_url={sell_url_amuleto_eq}, player_lv={player_level}")
 
         # Varre shop listing (pula TRs da seção inventário)
         inv_tr_ids = set(id(tr) for tr in (inv_boxbg.find_all("tr") if inv_boxbg else []))
@@ -3693,7 +3698,12 @@ def verificar_alvo_amuleto(client, estado):
             m_lv = re.search(r"(?:level|n[íi]vel|stufe)\s*[:\-]?\s*(\d+)", tr_txt, re.IGNORECASE)
             req_lv = int(m_lv.group(1)) if m_lv else 0
 
-            if req_lv <= level_amuleto_eq:
+            # Já tem amuleto: só compra se for upgrade claro (req_lv > level em inventário)
+            _eff_lv = max(level_amuleto_eq, 0)
+            if total_amuletos >= 1 and req_lv <= _eff_lv:
+                continue
+            # Sem amuleto: usa filtro normal pelo level equipado
+            if total_amuletos == 0 and req_lv <= level_amuleto_eq:
                 continue
             if req_lv > 0 and req_lv > player_level:
                 continue
@@ -3768,10 +3778,13 @@ def verificar_alvo_amuleto(client, estado):
         sell_url_amuleto_eq = amu_eq.get("sell_url")
         sell_val_amuleto_eq = amu_eq.get("sell_val", 0)
         nome_amuleto_eq     = amu_eq.get("nome")
+        # Se há amuleto registrado, usa level efetivo >= 0 para evitar compra por comparação errada
+        _tem_amuleto_cat = slots.get("amulet") is not None
+        _eff_lv_cat = max(level_amuleto_eq, 0) if _tem_amuleto_cat else level_amuleto_eq
 
         for i in itens_cat:
             req_lv = i.get("req_level", 0)
-            if req_lv <= level_amuleto_eq:
+            if req_lv <= _eff_lv_cat:
                 continue
             if req_lv > 0 and req_lv > player_level:
                 continue
