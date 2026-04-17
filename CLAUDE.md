@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.2.38
+## Versao atual: 2.2.39
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais

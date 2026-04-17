@@ -2616,18 +2616,39 @@ def parsear_ferreiro(client):
     )
     vazios = engastes_total - preenchidos
 
+    # Conta pedras de alma já no inventário aguardando engaste
+    pedras_inventario = 0
+    _inv_bg = None
+    for _boxtop in soup_f.find_all("div", class_="box-top"):
+        if "invent" in _boxtop.get_text().lower():
+            _inv_bg = _boxtop.find_next_sibling("div", class_="box-bg")
+            break
+    if _inv_bg:
+        _txt_inv = _inv_bg.get_text(strip=True)
+        if not any(k in _txt_inv.lower() for k in ["nenhum", "keine", "no item", "kein"]):
+            _stone_rows = _inv_bg.find_all("tr", class_="mobile-cols-2")
+            if _stone_rows:
+                for _row in _stone_rows:
+                    _m_qty = re.search(r"(\d+)\s+item", _row.get_text(separator=" ", strip=True), re.IGNORECASE)
+                    pedras_inventario += int(_m_qty.group(1)) if _m_qty else 1
+            else:
+                _insert_kw = ["einsetzen", "setstone", "insert", "wac=set"]
+                _ins_links = _inv_bg.find_all("a", href=lambda h: h and any(k in h.lower() for k in _insert_kw))
+                pedras_inventario = len(_ins_links) if _ins_links else (1 if _inv_bg.find("img") else 0)
+
     from urllib.parse import parse_qs, urlparse
     params = parse_qs(urlparse(upgrade_href).query)
     wid      = int(params.get("wid",      [0])[0])
     waffenid = int(params.get("waffenid", [0])[0])
 
     return {
-        "url_ferreiro":       upgrade_href,
-        "wid":                wid,
-        "waffenid":           waffenid,
-        "engastes_total":     engastes_total,
+        "url_ferreiro":         upgrade_href,
+        "wid":                  wid,
+        "waffenid":             waffenid,
+        "engastes_total":       engastes_total,
         "engastes_preenchidos": preenchidos,
-        "engastes_vazios":    vazios,
+        "engastes_vazios":      vazios,
+        "pedras_inventario":    pedras_inventario,
     }
 
 
@@ -2741,7 +2762,16 @@ def verificar_alvo_pedra(client, estado):
         return
 
     engastes_vazios = info["engastes_vazios"]
-    a_comprar = engastes_vazios
+    pedras_inv = info.get("pedras_inventario", 0)
+    a_comprar = max(0, engastes_vazios - pedras_inv)
+    if pedras_inv > 0:
+        log.debug(f"  Pedra: {pedras_inv} pedras no inventário — engastes_vazios={engastes_vazios}, a_comprar={a_comprar}")
+    if a_comprar == 0:
+        log.debug("  Pedra: inventário já cobre todos os engastes vazios — sem compra")
+        if estado.get("pedra_alvo"):
+            del estado["pedra_alvo"]
+            salvar_estado(estado)
+        return
 
     # ── Tenta scan ao vivo; fallback: catálogo global ──────────────
     soup_shop = None
@@ -3151,7 +3181,7 @@ def verificar_alvo_anel(client, estado):
             if "invent" in _boxtop.get_text().strip().lower():
                 inv_boxbg = _boxtop.find_next_sibling("div", class_="box-bg")
                 break
-        all_ring_info = []  # Todos os aneis do inventário (para catálogo)
+        all_ring_info = []  # Todos os aneis do inventário (sem cap — para venda de excesso)
         if inv_boxbg:
             for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
                 _tr_txt = tr.get_text(separator=" ", strip=True)
@@ -3166,14 +3196,39 @@ def verificar_alvo_anel(client, estado):
                 sell_val = int(m_sv.group(1).replace(".", "").replace(",", "")) if m_sv else 0
                 _strong = tr.find("strong") or tr.find("b")
                 _nome = _strong.get_text(strip=True) if _strong else "Anel"
-                # TODOS os aneis contribuem para levels (para filtro pior_level correto)
-                levels_equipados.extend([lv] * min(qty, MAX_ANEIS))
-                for _ in range(min(qty, MAX_ANEIS)):
+                # TODOS os aneis, sem cap (necessário para detectar e vender excesso)
+                for _ in range(qty):
                     all_ring_info.append({"nome": _nome, "level": lv,
                                           "sell_url": sell_url, "sell_val": sell_val})
+                    levels_equipados.append(lv)
                 if re.search(r"equipped|equipado|ausger[üu]stet", _tr_txt, re.IGNORECASE):
                     sell_info_equipados.append({"level": lv, "sell_url": sell_url, "sell_val": sell_val})
-                    nomes_equipados.extend([_nome] * min(qty, MAX_ANEIS))
+                    nomes_equipados.extend([_nome] * qty)
+
+        # Vende aneis extras se acumulou mais do que MAX_ANEIS (ex: bug anterior)
+        if total_aneis > MAX_ANEIS:
+            _extras = sorted(all_ring_info, key=lambda x: x["level"])
+            _n_vender = total_aneis - MAX_ANEIS
+            _vendidos = 0
+            for _ring in _extras:
+                if _vendidos >= _n_vender:
+                    break
+                if _ring.get("sell_url"):
+                    log.info(f"  Anel: {total_aneis} aneis (max {MAX_ANEIS}) — vendendo '{_ring['nome']}' lv{_ring['level']}")
+                    vender_item_atual(client, _ring["sell_url"])
+                    _vendidos += 1
+            if _vendidos:
+                total_aneis -= _vendidos
+                # Remove os vendidos da lista (piores primeiro)
+                for _ring in _extras[:_vendidos]:
+                    try:
+                        all_ring_info.remove(_ring)
+                    except ValueError:
+                        pass
+                # Recalcula levels_equipados sem os vendidos
+                levels_equipados.clear()
+                for _r in all_ring_info:
+                    levels_equipados.append(_r["level"])
 
         # Persiste todos os aneis (equipados e não) para fallback de catálogo
         slots = estado.setdefault("slots_equipados", {})
