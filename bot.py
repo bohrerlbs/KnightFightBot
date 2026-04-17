@@ -3338,7 +3338,8 @@ def verificar_alvo_anel(client, estado):
             m_align = _align_pat.search(tr_txt)
             if not m_align:
                 for _tt in tr.find_all(attrs={"data-tooltip": True}):
-                    m_align = _align_pat.search(_tt.get("data-tooltip", ""))
+                    _tip_txt = _tt.get("data-tooltip", "")
+                    m_align = _align_pat.search(_tip_txt)
                     if m_align:
                         break
             req_alignment = int(m_align.group(1)) if m_align else 0
@@ -3347,6 +3348,9 @@ def verificar_alvo_anel(client, estado):
                         or (req_alignment > 0 and player_alignment < req_alignment)
                         or (req_alignment < 0 and player_alignment > req_alignment)):
                     continue
+            # Diagnóstico: se alignment desconhecido, loga texto da row para análise
+            if player_alignment is None and req_alignment == 0:
+                log.debug(f"  align-diag player=None req=0: {tr_txt[:150]!r}")
 
             gold = 0
             for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
@@ -3719,7 +3723,8 @@ def verificar_alvo_amuleto(client, estado):
             m_align = _align_pat.search(tr_txt)
             if not m_align:
                 for _tt in tr.find_all(attrs={"data-tooltip": True}):
-                    m_align = _align_pat.search(_tt.get("data-tooltip", ""))
+                    _tip_txt = _tt.get("data-tooltip", "")
+                    m_align = _align_pat.search(_tip_txt)
                     if m_align:
                         break
             req_alignment = int(m_align.group(1)) if m_align else 0
@@ -3728,6 +3733,9 @@ def verificar_alvo_amuleto(client, estado):
                         or (req_alignment > 0 and player_alignment < req_alignment)
                         or (req_alignment < 0 and player_alignment > req_alignment)):
                     continue
+            # Diagnóstico: se alignment desconhecido, loga texto da row para análise
+            if player_alignment is None and req_alignment == 0:
+                log.debug(f"  align-diag player=None req=0: {tr_txt[:150]!r}")
 
             gold = 0
             for img_gold in tr.find_all("img", src=lambda s: s and "goldstueck.gif" in s):
@@ -4928,18 +4936,40 @@ def parsear_status(soup):
     for tag in soup.find_all(attrs={"data-tooltip": True}):
         tip = tag.get("data-tooltip", "")
         if "Moral:" in tip:
-            m = re.search(r"Moral:\s*(.+?)\s*\(", tip)
+            m = re.search(r"Moral:\s*(.+?)\s*[\(\n]", tip)
             if m: moral = m.group(1).strip()
+        if not moral:
+            # fallback: texto visível da página
+            for kw in ["Moral:", "Moral :", "Moralidade:"]:
+                if kw in tip:
+                    m = re.search(r"Moral[^:]*:\s*(.+)", tip, re.IGNORECASE)
+                    if m: moral = m.group(1).strip()
 
-    # Extrai alinhamento
+    # Extrai alinhamento — tenta múltiplos formatos e fallback via texto da página
     alignment = None
     for tag in soup.find_all(attrs={"data-tooltip": True}):
         tip = tag.get("data-tooltip", "")
-        if re.search(r"(?:alignment|alinhamento|gesinnung)", tip, re.IGNORECASE):
+        if re.search(r"(?:alignment|alinhamento|gesinnung|moral)", tip, re.IGNORECASE):
+            # Formato "Neutral (-49)" ou "Neutro (-49)"
             m_al = re.search(r"\((-?\d+)\)", tip)
             if m_al:
                 alignment = int(m_al.group(1))
                 break
+            # Formato "Alignment: -49" ou "Alinhamento: -49"
+            m_al2 = re.search(r"(?:alignment|alinhamento|gesinnung)\s*[:\-]?\s*(-?\d+)", tip, re.IGNORECASE)
+            if m_al2:
+                alignment = int(m_al2.group(1))
+                break
+    # Fallback: se ainda null, tenta texto visível da página
+    if alignment is None:
+        m_al3 = re.search(r"(?:alignment|alinhamento|gesinnung)[^:\d-]*[:\-]?\s*(-?\d+)", txt, re.IGNORECASE)
+        if m_al3:
+            alignment = int(m_al3.group(1))
+    # Fallback: inferir de "Neutral" → 0 (conservador — evita comprar itens com req alto)
+    if alignment is None and moral:
+        _moral_lower = moral.lower()
+        if any(w in _moral_lower for w in ["neutral", "neutro", "neutral"]):
+            alignment = 0
 
     # Extrai gold atual da página (valor da mercadoria ou similar)
     # O gold atual fica na seção de estatísticas
