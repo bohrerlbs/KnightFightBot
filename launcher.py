@@ -395,7 +395,8 @@ def save_profile(data):
                        "missao_alinhamento", "taverna_ativa", "atacar_continuo", "treinar_atributos",
                        "distribuir_skills", "build_tipo", "comprar_equipamento",
                        "game_user", "game_pass",
-                       "horario_ativo", "horario_inicio", "horario_parada"]:
+                       "horario_ativo", "horario_inicio", "horario_parada",
+                       "horario_gastar_gold"]:
             if field in data:
                 cfg[field] = data[field]
         cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -443,6 +444,7 @@ def save_profile(data):
         "horario_ativo":        data.get("horario_ativo", False),
         "horario_inicio":       data.get("horario_inicio", "08:00"),
         "horario_parada":       data.get("horario_parada", "22:00"),
+        "horario_gastar_gold":  data.get("horario_gastar_gold", True),
     }
     cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     bat = f'@echo off\ncd /d "{BASE_DIR}"\npython bot.py --profile {name}\npause\n'
