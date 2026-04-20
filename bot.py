@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.0 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.3 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -159,7 +159,10 @@ BUILD_1MAO           = False  # derivado de BUILD_TIPO automaticamente (não alt
 DISTRIBUIR_SKILLS    = False  # distribui pontos de skill ao subir de level
 BUILD_TIPO           = "2h"   # "1h" ou "2h" — define como distribuir skills e se treina Agilidade
 COMPRAR_EQUIPAMENTO  = False  # compra próximo equip quando acumula gold suficiente
-ATACAR_CONTINUO      = False  # ataca continuamente sem parar (mutuamente exclusivo com TAVERNA_ATIVA)
+ATACAR_CONTINUO           = False  # ataca continuamente sem parar (mutuamente exclusivo com TAVERNA_ATIVA)
+ATACAR_CONTINUO_SCORE_MIN = 50    # score mínimo para ataque contínuo
+ATACAR_CONTINUO_LV_MIN    = 1     # level mínimo do alvo para ataque contínuo
+ATACAR_CONTINUO_LV_MAX    = 999   # level máximo do alvo para ataque contínuo
 HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (entra taverna)
@@ -174,8 +177,8 @@ GOLD_CONTA_BROKE     = 100   # gold na conta considerado "sem gold"
 INTERVALO_RAPIDO_SEG = 120
 INTERVALO_LENTO_SEG  = 3600
 HORA_CACHE_PERFIS    = 3      # 3h da manhã
-PAUSA_CACHE_SEG      = 0.5   # pausa entre perfis
-RANKING_MAX_PLAYERS  = 500   # quantos jogadores do ranking varrer (100-10000)
+PAUSA_CACHE_SEG      = 0     # pausa entre perfis
+RANKING_MAX_PLAYERS  = 10000 # quantos jogadores do ranking varrer
 
 RANKING_FILE   = "ranking_snapshots.json"
 PIG_LIST_FILE  = "pig_list.json"
@@ -5534,26 +5537,46 @@ def _taverna_1h(client):
 
 
 def _tentar_ataque_continuo(client, estado):
-    """Executa um ataque contínuo usando o pool de candidatos de imunização (score_min=0)."""
+    """Ataque contínuo: usa cache, sem restrição de XP, filtra por level e score configuráveis."""
     cache_ok = len(carregar_perfis_cache().get("perfis", {})) > 3
     if not cache_ok:
         log.info("Ataque contínuo: cache ainda sendo populado — aguardando")
         return False
-    log.info("Ataque contínuo — buscando alvo do cache...")
-    alvos_tentados = set()
-    for _ in range(5):
-        alvo = buscar_alvo_imunizacao(client, estado, 0, excluir=alvos_tentados)
-        if not alvo:
-            log.warning("Ataque contínuo: nenhum alvo disponível no cache!")
-            return False
-        alvos_tentados.add(alvo["user_id"])
-        meu_clan = estado.get("meu_clan_id")
-        ok, _sc, motivo = verificar_alvo_antes_de_atacar(client, alvo["user_id"], 0, meu_clan)
-        if not ok:
-            log.warning(f"  Ataque contínuo: {alvo['nome']} indisponível ({motivo}) — próximo...")
+
+    candidatos = candidatos_imunizacao_do_cache(estado)
+
+    # Filtro de level min/max
+    candidatos = [c for c in candidatos
+                  if ATACAR_CONTINUO_LV_MIN <= c["level"] <= ATACAR_CONTINUO_LV_MAX]
+
+    # Filtro de score mínimo
+    candidatos = [c for c in candidatos if c["score"] >= ATACAR_CONTINUO_SCORE_MIN]
+
+    if not candidatos:
+        log.warning(f"Ataque contínuo: nenhum candidato (score>={ATACAR_CONTINUO_SCORE_MIN}, lv {ATACAR_CONTINUO_LV_MIN}-{ATACAR_CONTINUO_LV_MAX})")
+        return False
+
+    log.info(f"Ataque contínuo — {len(candidatos)} candidatos (score>={ATACAR_CONTINUO_SCORE_MIN}, lv {ATACAR_CONTINUO_LV_MIN}-{ATACAR_CONTINUO_LV_MAX})")
+
+    meu_clan = estado.get("meu_clan_id")
+    tentativas = 0
+    for c in candidatos:
+        if tentativas >= 10:
+            break
+        tentativas += 1
+        uid = c["user_id"]
+        try:
+            soup = client.get_url(f"{BASE_URL}/player/{uid}/")
+            perfil = parsear_perfil(soup, uid)
+        except Exception as e:
+            log.warning(f"  Ataque contínuo: erro ao verificar {c['nome']}: {e}")
             continue
-        log.info(f"Ataque contínuo: atacando {alvo['nome']} Lv{alvo['level']}")
-        res = executar_ataque(client, alvo["user_id"])
+        if not perfil["disponivel"]:
+            log.info(f"  {c['nome']} Lv{c['level']} — indisponível")
+            time.sleep(0.5)
+            continue
+        log.info(f"Ataque contínuo: atacando {c['nome']} Lv{c['level']} score={c['score']}")
+        res = executar_ataque(client, uid)
         if res.get("status") == "executado":
             log.info("  Ataque contínuo: OK — aguardando CD")
             return True
@@ -6162,12 +6185,6 @@ if __name__ == "__main__":
         globals()["DASHBOARD_PORT"] = int(args.port or cfg["port"])
 
     # Novas configs opcionais
-    if cfg.get("ranking_max") is not None:
-        globals()["RANKING_MAX_PLAYERS"] = int(cfg["ranking_max"])
-    if cfg.get("pausa_cache") is not None:
-        globals()["PAUSA_CACHE_SEG"] = float(cfg["pausa_cache"])
-    if cfg.get("hora_cache") is not None:
-        globals()["HORA_CACHE_PERFIS"] = int(cfg["hora_cache"])
     if cfg.get("score_min_imunizacao") is not None:
         globals()["SCORE_MIN_IMUNIZACAO"] = int(cfg["score_min_imunizacao"])
     if "missao_alinhamento" in cfg:
@@ -6178,6 +6195,12 @@ if __name__ == "__main__":
         globals()["ATACAR_CONTINUO"] = bool(cfg["atacar_continuo"])
         if globals()["ATACAR_CONTINUO"]:
             globals()["TAVERNA_ATIVA"] = False  # mutuamente exclusivo
+    if cfg.get("atacar_continuo_score_min") is not None:
+        globals()["ATACAR_CONTINUO_SCORE_MIN"] = int(cfg["atacar_continuo_score_min"])
+    if cfg.get("atacar_continuo_lv_min") is not None:
+        globals()["ATACAR_CONTINUO_LV_MIN"] = int(cfg["atacar_continuo_lv_min"])
+    if cfg.get("atacar_continuo_lv_max") is not None:
+        globals()["ATACAR_CONTINUO_LV_MAX"] = int(cfg["atacar_continuo_lv_max"])
     if "treinar_atributos" in cfg:
         globals()["TREINAR_ATRIBUTOS"] = bool(cfg["treinar_atributos"])
     if "distribuir_skills" in cfg:

@@ -570,10 +570,25 @@ header {
         </label>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="cfg-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-taverna-ativa').checked=false">
+        <input type="checkbox" id="cfg-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-taverna-ativa').checked=false;document.getElementById('cfg-atacar-continuo-opts').style.display=this.checked?'flex':'none'">
         <label for="cfg-atacar-continuo" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Ataques contínuos quando sem pig e sem missão (exclusivo com taverna)
         </label>
+      </div>
+      <div id="cfg-atacar-continuo-opts" style="display:none;flex-direction:column;gap:6px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:6px;border-left:2px solid var(--gold)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <label style="color:var(--text-muted);font-size:11px;min-width:70px">Score mín. %</label>
+          <input type="number" id="cfg-ac-score-min" min="0" max="100" step="1" value="50"
+            style="width:60px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <label style="color:var(--text-muted);font-size:11px;min-width:70px">Level alvo</label>
+          <input type="number" id="cfg-ac-lv-min" min="1" max="999" step="1" value="1"
+            style="width:60px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px">
+          <label style="color:var(--text-muted);font-size:11px">até</label>
+          <input type="number" id="cfg-ac-lv-max" min="1" max="999" step="1" value="999"
+            style="width:60px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px">
+        </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="cfg-treinar-atributos" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
@@ -779,6 +794,10 @@ function openCfgModal(name){
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
       document.getElementById('cfg-atacar-continuo').checked = !!cfg.atacar_continuo;
+      document.getElementById('cfg-atacar-continuo-opts').style.display = cfg.atacar_continuo ? 'flex' : 'none';
+      document.getElementById('cfg-ac-score-min').value = cfg.atacar_continuo_score_min != null ? cfg.atacar_continuo_score_min : 50;
+      document.getElementById('cfg-ac-lv-min').value    = cfg.atacar_continuo_lv_min    != null ? cfg.atacar_continuo_lv_min    : 1;
+      document.getElementById('cfg-ac-lv-max').value    = cfg.atacar_continuo_lv_max    != null ? cfg.atacar_continuo_lv_max    : 999;
       document.getElementById('cfg-treinar-atributos').checked = !!cfg.treinar_atributos;
       document.getElementById('cfg-distribuir-skills').checked = !!cfg.distribuir_skills;
       document.getElementById('cfg-build-tipo').value = cfg.build_tipo || '2h';
@@ -808,7 +827,10 @@ function saveCfg(){
     hora_cache:          parseInt(document.getElementById('cfg-hora-cache').value||3),
     missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
-    atacar_continuo:     document.getElementById('cfg-atacar-continuo').checked,
+    atacar_continuo:            document.getElementById('cfg-atacar-continuo').checked,
+    atacar_continuo_score_min:  parseInt(document.getElementById('cfg-ac-score-min').value || 50),
+    atacar_continuo_lv_min:     parseInt(document.getElementById('cfg-ac-lv-min').value    || 1),
+    atacar_continuo_lv_max:     parseInt(document.getElementById('cfg-ac-lv-max').value    || 999),
     treinar_atributos:   document.getElementById('cfg-treinar-atributos').checked,
     distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
     build_tipo:          document.getElementById('cfg-build-tipo').value,
