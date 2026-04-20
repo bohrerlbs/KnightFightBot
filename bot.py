@@ -1352,7 +1352,7 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
     # Busca progressiva: score >= 80, aumentando XP aceito de 0 até PERDA_XP_MAX
     # Checa todos os candidatos em cada nível de XP antes de relaxar
     validos = []
-    xp_limite_max = max(PERDA_XP_MAX, 0)
+    xp_limite_max = abs(PERDA_XP_MAX)
 
     for xp_aceito in range(0, xp_limite_max + 1):
         candidatos_round = [c for c in candidatos
@@ -6231,7 +6231,7 @@ if __name__ == "__main__":
     if cfg.get("gold_min_pig") is not None:
         globals()["GOLD_MIN_PIG"]    = int(cfg["gold_min_pig"])
     if cfg.get("perda_xp_max") is not None:
-        globals()["PERDA_XP_MAX"]    = int(cfg["perda_xp_max"])
+        globals()["PERDA_XP_MAX"]    = abs(int(cfg["perda_xp_max"]))
     if cfg.get("gold_ignorar_xp") is not None:
         globals()["GOLD_IGNORAR_XP"] = int(cfg["gold_ignorar_xp"])
 
