@@ -539,21 +539,7 @@ header {
       </div>
     </div>
 
-    <div style="margin-top:12px;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px">Varredura do Ranking</div>
-    <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-      <div>
-        <label class="form-label" style="font-size:11px">Max jogadores</label>
-        <input class="form-input" id="cfg-ranking-max" type="number" placeholder="500" min="100" max="10000" step="100">
-      </div>
-      <div>
-        <label class="form-label" style="font-size:11px">Delay entre perfis (s)</label>
-        <input class="form-input" id="cfg-pausa" type="number" placeholder="0.5" step="0.1" min="0">
-      </div>
-      <div>
-        <label class="form-label" style="font-size:11px">Hora da varredura (0-23)</label>
-        <input class="form-input" id="cfg-hora-cache" type="number" placeholder="3" min="0" max="23">
-      </div>
-      <div style="margin-top:8px">
+    <div style="margin-top:8px">
         <label class="form-label" style="font-size:11px">Alinhamento de Missoes</label>
         <select class="form-select" id="cfg-missao-alin">
           <option value="bem">✓ Sempre Bem (cavaleiro da luz)</option>
@@ -788,9 +774,6 @@ function openCfgModal(name){
       document.getElementById('cfg-gold-min').value    = cfg.gold_min_pig    != null ? cfg.gold_min_pig    : 50;
       document.getElementById('cfg-xp-max').value      = cfg.perda_xp_max   != null ? cfg.perda_xp_max    : 0;
       document.getElementById('cfg-gold-xp').value     = cfg.gold_ignorar_xp != null ? cfg.gold_ignorar_xp : 500;
-      document.getElementById('cfg-ranking-max').value = cfg.ranking_max     != null ? cfg.ranking_max     : 500;
-      document.getElementById('cfg-pausa').value       = cfg.pausa_cache     != null ? cfg.pausa_cache     : 0.5;
-      document.getElementById('cfg-hora-cache').value  = cfg.hora_cache      != null ? cfg.hora_cache      : 3;
       document.getElementById('cfg-missao-alin').value = cfg.missao_alinhamento || 'alternado';
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
       document.getElementById('cfg-atacar-continuo').checked = !!cfg.atacar_continuo;
@@ -822,9 +805,6 @@ function saveCfg(){
     gold_min_pig:    parseInt(document.getElementById('cfg-gold-min').value||50),
     perda_xp_max:    parseInt(document.getElementById('cfg-xp-max').value||0),
     gold_ignorar_xp: parseInt(document.getElementById('cfg-gold-xp').value||500),
-    ranking_max:     parseInt(document.getElementById('cfg-ranking-max').value||500),
-    pausa_cache:     parseFloat(document.getElementById('cfg-pausa').value||0.5),
-    hora_cache:          parseInt(document.getElementById('cfg-hora-cache').value||3),
     missao_alinhamento:  document.getElementById('cfg-missao-alin').value || 'alternado',
     taverna_ativa:       document.getElementById('cfg-taverna-ativa').checked,
     atacar_continuo:            document.getElementById('cfg-atacar-continuo').checked,
