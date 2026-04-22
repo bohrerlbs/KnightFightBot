@@ -5887,8 +5887,11 @@ def loop_acoes(client):
                 log.info(f"    Score confirmado: {score_conf} — atacando!")
                 pig_list[uid]["score_cache"] = score_conf  # salva score para dashboard
                 salvar_pig_list(pig_list)
-                executar_ataque(client, uid)
+                res_pig = executar_ataque(client, uid)
                 # não remove: executar_ataque já marca como "atacado" com gold/xp/resultado
+                if res_pig.get("status") == "indisponivel":
+                    log.warning(f"    Ataque bloqueado ({res_pig.get('motivo')}) — tentando próximo pig...")
+                    continue
                 ataque_feito = True
                 try:
                     treinados = verificar_treinamento(client)
