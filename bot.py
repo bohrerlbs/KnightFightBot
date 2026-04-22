@@ -1252,6 +1252,7 @@ def executar_ataque(client, user_id, dry_run=False):
             motivo = "página não encontrada"
         log.warning(f"displayFightReport ausente para {user_id} — motivo: {motivo}")
         # Salva HTML completo para debug
+        bloqueio_12h = False
         try:
             from pathlib import Path as _P
             path_debug = _P(os.getcwd()) / "debug_ataque.html"
@@ -1262,13 +1263,21 @@ def executar_ataque(client, user_id, dry_run=False):
             for cls in ["kf-error", "error", "box-bg", "content"]:
                 msg_err = soup_err.find("div", class_=cls)
                 if msg_err:
-                    txt = msg_err.get_text(strip=True)[:200]
-                    if txt:
-                        log.warning(f"  Servidor retornou: {txt}")
+                    txt_err = msg_err.get_text(strip=True)[:200]
+                    if txt_err:
+                        log.warning(f"  Servidor retornou: {txt_err}")
+                        if "12" in txt_err and ("horas" in txt_err or "hora" in txt_err):
+                            bloqueio_12h = True
                         break
             log.warning(f"  HTML completo salvo em debug_ataque.html ({len(r.text)} bytes)")
         except Exception as e_dbg:
             log.debug(f"Erro ao salvar debug: {e_dbg}")
+        # Registra no histórico para não tentar novamente nas próximas 12h
+        if bloqueio_12h:
+            estado = carregar_estado()
+            registrar_ataque(estado, user_id, "bloqueio_12h")
+            salvar_estado(estado)
+            log.info(f"  Bloqueio 12h registrado para {user_id} — não tentará novamente até amanhã")
         return {"status": "indisponivel", "motivo": motivo, "user_id": user_id}
 
     resultado, gold_ganho, xp_ganho, turnos_stats = parsear_resultado_combate(soup_result, eu_fui_atacante=True)
