@@ -522,8 +522,12 @@ header {
         <label for="f-taverna-ativa" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">Taverna automática quando sem pig e sem missão</label>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="f-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('f-taverna-ativa').checked=false;document.getElementById('f-atacar-continuo-opts').style.display=this.checked?'flex':'none'">
+        <input type="checkbox" id="f-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked){document.getElementById('f-taverna-ativa').checked=false;document.getElementById('f-modo-pig').checked=false;}document.getElementById('f-atacar-continuo-opts').style.display=this.checked?'flex':'none'">
         <label for="f-atacar-continuo" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">Ataques contínuos quando sem pig e sem missão (exclusivo com taverna)</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="f-modo-pig" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('f-atacar-continuo').checked=false;document.getElementById('f-atacar-continuo-opts').style.display='none'">
+        <label for="f-modo-pig" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">Modo Pig — só missão + taverna, sem ataques nem compras</label>
       </div>
       <div id="f-atacar-continuo-opts" style="display:none;flex-direction:column;gap:6px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:6px;border-left:2px solid var(--gold)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -622,9 +626,15 @@ header {
         </label>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="cfg-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-taverna-ativa').checked=false;document.getElementById('cfg-atacar-continuo-opts').style.display=this.checked?'flex':'none'">
+        <input type="checkbox" id="cfg-atacar-continuo" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked){document.getElementById('cfg-taverna-ativa').checked=false;document.getElementById('cfg-modo-pig').checked=false;}document.getElementById('cfg-atacar-continuo-opts').style.display=this.checked?'flex':'none'">
         <label for="cfg-atacar-continuo" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Ataques contínuos quando sem pig e sem missão (exclusivo com taverna)
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="cfg-modo-pig" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-atacar-continuo').checked=false;document.getElementById('cfg-atacar-continuo-opts').style.display='none'">
+        <label for="cfg-modo-pig" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Modo Pig — só missão + taverna, sem ataques nem compras
         </label>
       </div>
       <div id="cfg-atacar-continuo-opts" style="display:none;flex-direction:column;gap:6px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:6px;border-left:2px solid var(--gold)">
@@ -844,6 +854,7 @@ function openCfgModal(name){
       document.getElementById('cfg-taverna-ativa').checked = cfg.taverna_ativa !== false;
       document.getElementById('cfg-atacar-continuo').checked = !!cfg.atacar_continuo;
       document.getElementById('cfg-atacar-continuo-opts').style.display = cfg.atacar_continuo ? 'flex' : 'none';
+      document.getElementById('cfg-modo-pig').checked = !!cfg.modo_pig;
       document.getElementById('cfg-ac-score-min').value = cfg.atacar_continuo_score_min != null ? cfg.atacar_continuo_score_min : 50;
       document.getElementById('cfg-ac-lv-min').value    = cfg.atacar_continuo_lv_min    != null ? cfg.atacar_continuo_lv_min    : 1;
       document.getElementById('cfg-ac-lv-max').value    = cfg.atacar_continuo_lv_max    != null ? cfg.atacar_continuo_lv_max    : 999;
@@ -877,6 +888,7 @@ function saveCfg(){
     atacar_continuo_score_min:  parseInt(document.getElementById('cfg-ac-score-min').value || 50),
     atacar_continuo_lv_min:     parseInt(document.getElementById('cfg-ac-lv-min').value    || 1),
     atacar_continuo_lv_max:     parseInt(document.getElementById('cfg-ac-lv-max').value    || 999),
+    modo_pig:            document.getElementById('cfg-modo-pig').checked,
     treinar_atributos:   document.getElementById('cfg-treinar-atributos').checked,
     distribuir_skills:   document.getElementById('cfg-distribuir-skills').checked,
     build_tipo:          document.getElementById('cfg-build-tipo').value,
@@ -1683,6 +1695,7 @@ function saveProfile(){
     atacar_continuo_score_min: parseInt(document.getElementById('f-ac-score-min').value||50),
     atacar_continuo_lv_min:    parseInt(document.getElementById('f-ac-lv-min').value||1),
     atacar_continuo_lv_max:    parseInt(document.getElementById('f-ac-lv-max').value||999),
+    modo_pig:                  document.getElementById('f-modo-pig').checked,
     treinar_atributos:         document.getElementById('f-treinar-atributos').checked,
     distribuir_skills:         document.getElementById('f-distribuir-skills').checked,
     build_tipo:                document.getElementById('f-build-tipo').value,

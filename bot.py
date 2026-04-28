@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.10 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.11 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -163,6 +163,7 @@ ATACAR_CONTINUO           = False  # ataca continuamente sem parar (mutuamente e
 ATACAR_CONTINUO_SCORE_MIN = 50    # score mínimo para ataque contínuo
 ATACAR_CONTINUO_LV_MIN    = 1     # level mínimo do alvo para ataque contínuo
 ATACAR_CONTINUO_LV_MAX    = 999   # level máximo do alvo para ataque contínuo
+MODO_PIG                  = False  # só missão + taverna: sem ataques, imunização ou compras
 HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (entra taverna)
@@ -5646,6 +5647,21 @@ def loop_acoes(client):
             except Exception:
                 pass
 
+            # MODO_PIG: pula tudo exceto missão e taverna
+            if MODO_PIG:
+                log.info("  [MODO_PIG] Pulando lojas/compras/ataques — apenas missão e taverna")
+                res_pig_mode = gerenciar_missao(client)
+                log.info(f"Missão: {res_pig_mode['status']}")
+                if res_pig_mode.get("status") in ("cota_diaria",) or (
+                    res_pig_mode.get("status") == "em_cd" and res_pig_mode.get("segundos", 0) > 1800
+                ):
+                    if TAVERNA_ATIVA:
+                        _taverna_1h(client)
+                    else:
+                        log.info("  [MODO_PIG] Sem missão e taverna desativada — aguardando")
+                        time.sleep(INTERVALO_RAPIDO_SEG)
+                continue
+
             # Scan de lojas (sempre que o personagem está livre)
             if COMPRAR_EQUIPAMENTO:
                 try:
@@ -6204,10 +6220,15 @@ if __name__ == "__main__":
         globals()["MISSAO_ALINHAMENTO"] = cfg["missao_alinhamento"]
     if "taverna_ativa" in cfg:
         globals()["TAVERNA_ATIVA"] = bool(cfg["taverna_ativa"])
+    if "modo_pig" in cfg:
+        globals()["MODO_PIG"] = bool(cfg["modo_pig"])
+        if globals()["MODO_PIG"]:
+            globals()["ATACAR_CONTINUO"] = False  # mutuamente exclusivo
     if "atacar_continuo" in cfg:
         globals()["ATACAR_CONTINUO"] = bool(cfg["atacar_continuo"])
         if globals()["ATACAR_CONTINUO"]:
             globals()["TAVERNA_ATIVA"] = False  # mutuamente exclusivo
+            globals()["MODO_PIG"] = False       # mutuamente exclusivo
     if cfg.get("atacar_continuo_score_min") is not None:
         globals()["ATACAR_CONTINUO_SCORE_MIN"] = int(cfg["atacar_continuo_score_min"])
     if cfg.get("atacar_continuo_lv_min") is not None:
