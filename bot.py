@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.7 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.8 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5092,7 +5092,7 @@ def recarregar_config():
         changed = []
         for field, key, cast in [
             ("gold_min_pig",    "GOLD_MIN_PIG",    int),
-            ("perda_xp_max",    "PERDA_XP_MAX",    int),
+            ("perda_xp_max",    "PERDA_XP_MAX",    lambda x: abs(int(x))),
             ("gold_ignorar_xp", "GOLD_IGNORAR_XP", int),
         ]:
             if field in cfg:
