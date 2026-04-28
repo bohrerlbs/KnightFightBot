@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.8 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.9 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2603,7 +2603,8 @@ def parsear_ferreiro(client):
         log.warning(f"  Ferreiro: erro ao ler /status/ — {e}")
         return None
 
-    # Busca link /upgrade/ na seção de inventário
+    # Busca link /upgrade/ — primeiro na seção inventário, depois em toda a página
+    # (arma equipada pode ter o link fora da seção inventário)
     upgrade_href = None
     for boxtop in soup_s.find_all("div", class_="box-top"):
         if "inventory" in boxtop.get_text().lower() or "inventar" in boxtop.get_text().lower():
@@ -2614,6 +2615,11 @@ def parsear_ferreiro(client):
                         upgrade_href = a["href"]
                         break
             break
+    if not upgrade_href:
+        for a in soup_s.find_all("a", href=True):
+            if "/upgrade/" in a["href"] and "waffenid=" in a["href"]:
+                upgrade_href = a["href"]
+                break
 
     if not upgrade_href:
         return None
