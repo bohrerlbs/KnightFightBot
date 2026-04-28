@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.9 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.10 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2642,13 +2642,14 @@ def parsear_ferreiro(client):
     todos_slots = sockel_td.find_all("a", class_="tooltip")
     engastes_total = len(todos_slots)
 
-    # Imagens de pedras conhecidas
-    _pedras_imgs = {"eis_s", "feuer_s", "drachen_s", "schatten_s", "heilig_s"}
-    preenchidos = sum(
+    # Slot vazio tem link com ação de inserir pedra (setstone/einsetzen).
+    # Slot preenchido não tem esse link — independente do nome da imagem da pedra.
+    _insert_kw = ["setstone", "einsetzen", "wac=set"]
+    vazios = sum(
         1 for a in todos_slots
-        if a.find("img") and any(p in a.find("img").get("src", "") for p in _pedras_imgs)
+        if any(k in (a.get("href") or "").lower() for k in _insert_kw)
     )
-    vazios = engastes_total - preenchidos
+    preenchidos = engastes_total - vazios
 
     # Conta pedras de alma já no inventário aguardando engaste
     pedras_inventario = 0
@@ -3122,24 +3123,27 @@ def vender_pedras_extras(client):
         return False
 
     # Coleta pedras no inventário com sell_url (agrupadas por tipo/URL)
-    pedras_inv = []   # lista expandida para contar total
     pedras_grupos: dict = {}  # sell_url -> {"nome": str, "qty": int}
-    for tr in inv_boxbg.find_all("tr", class_="mobile-cols-2"):
+    _stone_rows = inv_boxbg.find_all("tr", class_="mobile-cols-2")
+    if not _stone_rows:
+        # Fallback: qualquer row com sell link (estrutura HTML alternativa)
+        _stone_rows = [tr for tr in inv_boxbg.find_all("tr")
+                       if tr.find("a", href=lambda h: h and "/shop/sell/" in h)]
+    for tr in _stone_rows:
         _tr_txt = tr.get_text(separator=" ", strip=True)
         _m_qty = re.search(r"(\d+)\s+item", _tr_txt, re.IGNORECASE)
         qty = int(_m_qty.group(1)) if _m_qty else 1
         sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
         sell_url = sell_a["href"] if sell_a else None
+        if not sell_url:
+            continue
         _strong = tr.find("strong") or tr.find("b")
         nome = _strong.get_text(strip=True) if _strong else "Pedra"
-        for _ in range(qty):
-            pedras_inv.append({"nome": nome, "sell_url": sell_url})
-        if sell_url:
-            if sell_url not in pedras_grupos:
-                pedras_grupos[sell_url] = {"nome": nome, "qty": 0}
-            pedras_grupos[sell_url]["qty"] += qty
+        if sell_url not in pedras_grupos:
+            pedras_grupos[sell_url] = {"nome": nome, "qty": 0}
+        pedras_grupos[sell_url]["qty"] += qty
 
-    total_inv = len(pedras_inv)
+    total_inv = sum(g["qty"] for g in pedras_grupos.values())
     n_vender = total_inv - engastes_vazios
     if n_vender <= 0:
         return False
@@ -5895,6 +5899,10 @@ def loop_acoes(client):
                     except Exception as e:
                         log.warning(f"  Pós-ataque scan equip: erro — {e}")
                     try:
+                        verificar_alvo_pedra(client, carregar_estado())
+                    except Exception as e:
+                        log.warning(f"  Pós-ataque scan pedra: erro — {e}")
+                    try:
                         verificar_alvo_anel(client, carregar_estado())
                     except Exception as e:
                         log.warning(f"  Pós-ataque scan anel: erro — {e}")
@@ -5958,6 +5966,10 @@ def loop_acoes(client):
                                 verificar_alvo_equipamento(client, carregar_estado())
                             except Exception as e:
                                 log.warning(f"  Pós-imun scan equip: erro — {e}")
+                            try:
+                                verificar_alvo_pedra(client, carregar_estado())
+                            except Exception as e:
+                                log.warning(f"  Pós-imun scan pedra: erro — {e}")
                             try:
                                 verificar_alvo_anel(client, carregar_estado())
                             except Exception as e:
