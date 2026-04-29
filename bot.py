@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.11 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.12 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2593,9 +2593,9 @@ def tentar_comprar_item_alvo(client, estado):
 
 def parsear_ferreiro(client):
     """
-    Lê a página do ferreiro (/upgrade/) para a arma no inventário.
-    Conta engastes: <a class="tooltip"> em .weapon-sockel — com imagem de pedra = preenchido.
-    Retorna dict ou None.
+    Lê /status/ para detectar engastes na arma equipada.
+    Método primário: parse do inventário — Encaixe: N menos linhas de dano elemental (Fogo-Danos: +N).
+    Fallback: visita /upgrade/ e busca .weapon-sockel (método antigo).
     """
     try:
         r = client.session.get(BASE_URL + "/status/", timeout=15)
@@ -2605,7 +2605,6 @@ def parsear_ferreiro(client):
         return None
 
     # Busca link /upgrade/ — primeiro na seção inventário, depois em toda a página
-    # (arma equipada pode ter o link fora da seção inventário)
     upgrade_href = None
     for boxtop in soup_s.find_all("div", class_="box-top"):
         if "inventory" in boxtop.get_text().lower() or "inventar" in boxtop.get_text().lower():
@@ -2626,63 +2625,99 @@ def parsear_ferreiro(client):
         return None
 
     if upgrade_href.startswith("http"):
-        from urllib.parse import urlparse, parse_qs as _pqs
-        _p = urlparse(upgrade_href)
+        from urllib.parse import urlparse as _ul
+        _p = _ul(upgrade_href)
         upgrade_href = _p.path + ("?" + _p.query if _p.query else "")
 
-    try:
-        soup_f = client.get(upgrade_href, fragment=False)
-    except Exception as e:
-        log.warning(f"  Ferreiro: erro ao carregar página — {e}")
-        return None
-
-    sockel_td = soup_f.find("td", class_="weapon-sockel")
-    if not sockel_td:
-        return None
-
-    todos_slots = sockel_td.find_all("a", class_="tooltip")
-    engastes_total = len(todos_slots)
-
-    # Slot vazio tem link com ação de inserir pedra (setstone/einsetzen).
-    # Slot preenchido não tem esse link — independente do nome da imagem da pedra.
-    _insert_kw = ["setstone", "einsetzen", "wac=set"]
-    vazios = sum(
-        1 for a in todos_slots
-        if any(k in (a.get("href") or "").lower() for k in _insert_kw)
-    )
-    preenchidos = engastes_total - vazios
-
-    # Conta pedras de alma já no inventário aguardando engaste
-    pedras_inventario = 0
-    _inv_bg = None
-    for _boxtop in soup_f.find_all("div", class_="box-top"):
-        if "invent" in _boxtop.get_text().lower():
-            _inv_bg = _boxtop.find_next_sibling("div", class_="box-bg")
-            break
-    if _inv_bg:
-        _txt_inv = _inv_bg.get_text(strip=True)
-        if not any(k in _txt_inv.lower() for k in ["nenhum", "keine", "no item", "kein"]):
-            _stone_rows = _inv_bg.find_all("tr", class_="mobile-cols-2")
-            if _stone_rows:
-                for _row in _stone_rows:
-                    _m_qty = re.search(r"(\d+)\s+item", _row.get_text(separator=" ", strip=True), re.IGNORECASE)
-                    pedras_inventario += int(_m_qty.group(1)) if _m_qty else 1
-            else:
-                _insert_kw = ["einsetzen", "setstone", "insert", "wac=set"]
-                _ins_links = _inv_bg.find_all("a", href=lambda h: h and any(k in h.lower() for k in _insert_kw))
-                pedras_inventario = len(_ins_links) if _ins_links else (1 if _inv_bg.find("img") else 0)
-
     from urllib.parse import parse_qs, urlparse
-    params = parse_qs(urlparse(upgrade_href).query)
+    params   = parse_qs(urlparse(upgrade_href).query)
     wid      = int(params.get("wid",      [0])[0])
     waffenid = int(params.get("waffenid", [0])[0])
+
+    # ── Método primário: detecta slots pela descrição da arma no inventário ──
+    engastes_total       = 0
+    engastes_preenchidos = 0
+    inv_detectado        = False
+
+    inv_bg = None
+    for boxtop in soup_s.find_all("div", class_="box-top"):
+        if "invent" in boxtop.get_text().lower():
+            inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
+            break
+
+    if inv_bg:
+        for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
+            # Linha da arma: tem imagem stwpimg ou link de upgrade
+            if not (tr.find("img", class_="stwpimg") or
+                    tr.find("a", href=lambda h: h and "/upgrade/" in (h or ""))):
+                continue
+            desc = tr.find("span", style=lambda s: s and "font-size" in (s or ""))
+            if not desc:
+                break
+            desc_text = desc.get_text("\n", strip=True)
+            m = re.search(r'Encaixe:\s*(\d+)', desc_text)
+            if m:
+                engastes_total = int(m.group(1))
+                # Pedras inseridas aparecem como "<Elemento>-Danos: +N"
+                gem_lines = re.findall(r'\w+-Danos:\s*\+\d+', desc_text)
+                engastes_preenchidos = len(gem_lines)
+                inv_detectado = True
+                log.debug(f"  Ferreiro (inv): encaixe={engastes_total} preenchidos={engastes_preenchidos} gems={gem_lines}")
+            break
+
+    # ── Fallback: visita página do ferreiro se inventário não encontrou Encaixe ──
+    if not inv_detectado:
+        try:
+            soup_f = client.get(upgrade_href, fragment=False)
+        except Exception as e:
+            log.warning(f"  Ferreiro: erro ao carregar página — {e}")
+            return None
+
+        sockel_td = soup_f.find("td", class_="weapon-sockel")
+        if not sockel_td:
+            return None
+
+        todos_slots    = sockel_td.find_all("a", class_="tooltip")
+        engastes_total = len(todos_slots)
+        _insert_kw     = ["setstone", "einsetzen", "wac=set"]
+        vazios_fb      = sum(1 for a in todos_slots
+                             if any(k in (a.get("href") or "").lower() for k in _insert_kw))
+        engastes_preenchidos = engastes_total - vazios_fb
+        log.debug(f"  Ferreiro (fb): encaixe={engastes_total} preenchidos={engastes_preenchidos}")
+
+    vazios = engastes_total - engastes_preenchidos
+
+    # ── Conta pedras de alma já no inventário do ferreiro aguardando engaste ──
+    pedras_inventario = 0
+    if vazios > 0:
+        try:
+            soup_f2 = client.get(upgrade_href, fragment=False) if inv_detectado else soup_f  # type: ignore[name-defined]
+            _inv_bg = None
+            for _boxtop in soup_f2.find_all("div", class_="box-top"):
+                if "invent" in _boxtop.get_text().lower():
+                    _inv_bg = _boxtop.find_next_sibling("div", class_="box-bg")
+                    break
+            if _inv_bg:
+                _txt_inv = _inv_bg.get_text(strip=True)
+                if not any(k in _txt_inv.lower() for k in ["nenhum", "keine", "no item", "kein"]):
+                    _stone_rows = _inv_bg.find_all("tr", class_="mobile-cols-2")
+                    if _stone_rows:
+                        for _row in _stone_rows:
+                            _m_qty = re.search(r"(\d+)\s+item", _row.get_text(separator=" ", strip=True), re.IGNORECASE)
+                            pedras_inventario += int(_m_qty.group(1)) if _m_qty else 1
+                    else:
+                        _ins_kw  = ["einsetzen", "setstone", "insert", "wac=set"]
+                        _ins_lnk = _inv_bg.find_all("a", href=lambda h: h and any(k in h.lower() for k in _ins_kw))
+                        pedras_inventario = len(_ins_lnk) if _ins_lnk else (1 if _inv_bg.find("img") else 0)
+        except Exception as e:
+            log.warning(f"  Ferreiro: erro ao verificar pedras no inventário — {e}")
 
     return {
         "url_ferreiro":         upgrade_href,
         "wid":                  wid,
         "waffenid":             waffenid,
         "engastes_total":       engastes_total,
-        "engastes_preenchidos": preenchidos,
+        "engastes_preenchidos": engastes_preenchidos,
         "engastes_vazios":      vazios,
         "pedras_inventario":    pedras_inventario,
     }
