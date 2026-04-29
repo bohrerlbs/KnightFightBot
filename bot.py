@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.12 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.13 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2655,11 +2655,11 @@ def parsear_ferreiro(client):
             if not desc:
                 break
             desc_text = desc.get_text("\n", strip=True)
-            m = re.search(r'Encaixe:\s*(\d+)', desc_text)
+            m = re.search(r'(?:Encaixe|Socket|Fassung|Slots?):\s*(\d+)', desc_text, re.IGNORECASE)
             if m:
                 engastes_total = int(m.group(1))
-                # Pedras inseridas aparecem como "<Elemento>-Danos: +N"
-                gem_lines = re.findall(r'\w+-Danos:\s*\+\d+', desc_text)
+                # Pedras inseridas: "Elemento-Danos/Damage/Schaden: +N" (PT/EN/DE)
+                gem_lines = re.findall(r'\w+-(?:Danos|Damage|Schaden):\s*\+\d+', desc_text, re.IGNORECASE)
                 engastes_preenchidos = len(gem_lines)
                 inv_detectado = True
                 log.debug(f"  Ferreiro (inv): encaixe={engastes_total} preenchidos={engastes_preenchidos} gems={gem_lines}")
