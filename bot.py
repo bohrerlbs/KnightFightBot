@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.14 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.15 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -3944,7 +3944,7 @@ def tentar_comprar_amuleto(client, estado):
     return True
 
 
-def equipar_melhor_item(client):
+def equipar_melhor_item(client, _ring_retry=True):
     """
     Visita /landsitz/ e equipa itens do inventário que sejam melhores que os
     atualmente equipados (comparação por requisito máximo de skill/level).
@@ -4044,6 +4044,7 @@ def equipar_melhor_item(client):
             tiers_equipados.setdefault(slot, []).append(tier_map.get(nome_eq, 0))
 
     # Percorre itens não equipados com botão Equip
+    aneis_equipados_nesta_passagem = 0
     for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
         tr_txt = tr.get_text()
         if re.search(r"equipped|equipado|ausger[üu]stet", tr_txt, re.IGNORECASE):
@@ -4092,8 +4093,15 @@ def equipar_melhor_item(client):
             tiers_equipados.setdefault(slot, []).append(tier_novo)
             if slot != "ring":
                 tiers_equipados[slot] = [tier_novo]
+            if slot == "ring":
+                aneis_equipados_nesta_passagem += 1
         except Exception as e:
             log.warning(f"  Equipar '{nome}': erro — {e}")
+
+    # Aneis empilhados: KF pode mostrar 2 aneis como 1 linha — 1 clique de equip por passagem.
+    # Se equipou algum anel nesta passagem mas ainda há slot livre (< 2), relê /landsitz/ e tenta mais 1x.
+    if _ring_retry and aneis_equipados_nesta_passagem > 0 and len(tiers_equipados.get("ring", [])) < 2:
+        equipar_melhor_item(client, _ring_retry=False)
 
 
 def sincronizar_slots(client, estado):
