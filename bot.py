@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.13 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.14 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2913,8 +2913,13 @@ def tentar_comprar_pedra(client, estado):
     if not alvo:
         return False
 
-    gold_atual = estado.get("gold_atual", 0)
-    if gold_atual < alvo["gold_necessario"]:
+    gold_atual    = estado.get("gold_atual", 0)
+    gold_unitario = alvo.get("gold_unitario", alvo["gold_necessario"])
+    if gold_atual < gold_unitario:
+        return False
+
+    n_possivel = min(alvo["quantidade"], gold_atual // gold_unitario)
+    if n_possivel == 0:
         return False
 
     # Se url_compra ainda não disponível (estava bloqueada), re-busca na loja
@@ -2936,10 +2941,10 @@ def tentar_comprar_pedra(client, estado):
             log.warning(f"  Pedra: erro ao buscar buy link — {e}")
             return False
 
-    log.info(f"  💰 Gold ({gold_atual}g) >= pedras {alvo['quantidade']}x '{alvo['nome']}' ({alvo['gold_necessario']}g) — comprando!")
+    log.info(f"  💰 Gold ({gold_atual}g) — comprando {n_possivel}x '{alvo['nome']}' @ {gold_unitario}g cada ({alvo['quantidade']} engastes vazios)")
 
     compradas = 0
-    for i in range(alvo["quantidade"]):
+    for i in range(n_possivel):
         # Passo 1: GET página de confirmação (tem quantidade + preço + botão Continue)
         try:
             soup = client.get(url_compra, fragment=False)
@@ -4466,7 +4471,7 @@ def verificar_treinamento(client):
                     gold_reservado = gn if gn > 0 else gb
                     motivo_reserva = item_alvo["nome"]
         elif pedra_alvo:
-            gold_reservado = pedra_alvo["gold_necessario"]
+            gold_reservado = pedra_alvo.get("gold_unitario", pedra_alvo["gold_necessario"])
             motivo_reserva = pedra_alvo["nome"]
         elif anel_alvo:
             gold_reservado = anel_alvo["gold_necessario"]
@@ -5407,7 +5412,7 @@ def imunizar_agora(client, estado=None):
     """
     Tenta imunizar com o melhor alvo disponível no cache.
     Esgota TODOS os candidatos disponíveis sem delay entre tentativas.
-    Ordem: score >= 80 → 70 → 50. Retorna True se conseguiu.
+    Ordem: score >= SCORE_MIN_IMUNIZACAO → 70 → SCORE_MIN_PIG_BROKE. Retorna True se conseguiu.
     """
     if estado is None:
         estado = carregar_estado()
@@ -5418,7 +5423,7 @@ def imunizar_agora(client, estado=None):
     meu_clan = estado.get("meu_clan_id")
     alvos_tentados = set()  # acumulado entre todos os níveis de score
 
-    for score_min in [SCORE_MIN_IMUNIZACAO, 70, 50]:
+    for score_min in [SCORE_MIN_IMUNIZACAO, 70, SCORE_MIN_PIG_BROKE]:
         while True:
             alvo = buscar_alvo_imunizacao(client, carregar_estado(), score_min,
                                           excluir=alvos_tentados)
