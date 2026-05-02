@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.15 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.16 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -4043,13 +4043,11 @@ def equipar_melhor_item(client, _ring_retry=True):
 
             tiers_equipados.setdefault(slot, []).append(tier_map.get(nome_eq, 0))
 
-    # Percorre itens não equipados com botão Equip
+    # Percorre itens com botão Equip presente — presença do botão é o sinal autoritativo
+    # (não usar texto "equipado": anéis empilhados mostram "equipado" para o 1º anel mas
+    # ainda têm o botão visível para o 2º — sumir o botão significa que o slot está cheio)
     aneis_equipados_nesta_passagem = 0
     for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
-        tr_txt = tr.get_text()
-        if re.search(r"equipped|equipado|ausger[üu]stet", tr_txt, re.IGNORECASE):
-            continue
-
         equip_a = tr.find("a", href=lambda h: h and "/landsitz/?" in h
                            and "uwid" not in h and "usid" not in h and "wac" not in h)
         if not equip_a:
