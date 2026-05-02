@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.2
+# KnightFight — BattleGround Bot v1.0.3
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading
@@ -1010,16 +1010,28 @@ def entrar_bg(client, modo, alignment="light"):
         log.info("entrar_bg: BG já está em sessão ativa — pulando entrada")
         return ("em_sessao", 0)
 
+    # Sem form de entrada e sem nok.gif de requisitos → sessão ativa (falso negativo do check acima)
+    # /landsitz/ aparece no menu de navegação em todas as páginas, não é sinal exclusivo de equipamento
+    if _sem_form_entrada:
+        _tds_nok = soup.find_all("td", class_="bsseltd")
+        _tem_nok_geral = any(
+            img for td in _tds_nok for img in td.find_all("img")
+            if "nok.gif" in img.get("src", "")
+        )
+        if not _tem_nok_geral:
+            log.info("entrar_bg: sem form de entrada e sem requisitos pendentes — sessão ativa inferida")
+            return ("em_sessao", 0)
+
     # Detecta tela de "equipe seu cavaleiro" — personagem sem itens adequados
-    # Indicadores: link /landsitz/ (trocar equipamento) junto com aviso em vermelho
-    tem_landsitz = soup.find("a", href=lambda h: h and "/landsitz/" in h)
-    tem_aviso_equip = any(p in texto for p in [
-        "Equip your knight", "otimamente", "equipe", "amuleto", "arma",
-        "skill disponíveis", "optimally",
-    ])
-    if tem_landsitz and tem_aviso_equip:
-        log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
-        return ("sem_equipamento", 0)
+    # Só avalia quando há form de entrada (palavras como "equipe"/"arma" são genéricas em PT)
+    if not _sem_form_entrada:
+        tem_aviso_equip = any(p in texto for p in [
+            "Equip your knight", "optimally",
+            "ausrüsten", "équiper",  # DE/FR específicos
+        ])
+        if tem_aviso_equip:
+            log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
+            return ("sem_equipamento", 0)
 
     # ── Verifica requisitos ANTES de checar botão ──────────────────────────
     # (quando o modo está em cooldown, o jogo não renderiza o botão — mas ainda
@@ -1123,8 +1135,15 @@ def entrar_bg(client, modo, alignment="light"):
 
     texto_r = soup_result.get_text(" ", strip=True)
 
-    # Detecta tela de equipamento na resposta também
-    if soup_result.find("a", href=lambda h: h and "/landsitz/" in h):
+    # Detecta tela de equipamento na resposta (POST) — /landsitz/ no menu não conta
+    _resp_sem_form = not soup_result.find("input", {"name": "csrftoken"}) and not soup_result.find("button", class_="startbs")
+    if _resp_sem_form:
+        _resp_cb = soup_result.find("a", href=lambda h: h and "/battleground/currentbattle" in (h or ""))
+        if _resp_cb:
+            log.info("entrar_bg: resposta redireciona para sessão ativa")
+            return ("em_sessao", 0)
+    _resp_aviso_equip = any(p in texto_r for p in ["Equip your knight", "optimally", "ausrüsten", "équiper"])
+    if _resp_aviso_equip:
         log.warning("entrar_bg: resposta é tela de aviso de equipamento")
         return ("sem_equipamento", 0)
 
@@ -1369,6 +1388,8 @@ def loop_bg(client, eu, modo):
     estado["eu"] = eu
     salvar_estado(estado)
 
+    _falhas_sessao_consec = 0  # contador de vezes que /currentbattle/ retornou vazio
+
     while True:
         estado = carregar_estado()
 
@@ -1418,6 +1439,7 @@ def loop_bg(client, eu, modo):
             soup_sess = client.get_full("/battleground/currentbattle/")
             sessao_atual = parsear_sessao_bg(soup_sess)
             if sessao_atual:
+                _falhas_sessao_consec = 0
                 estado["sessao_bg"] = sessao_atual
                 salvar_estado(estado)
                 restantes_hoje = sessao_atual.get("restantes_hoje", 100)
@@ -1427,6 +1449,14 @@ def loop_bg(client, eu, modo):
                     time.sleep(3600)
                     continue
                 log.info(f"  Sessão: hoje={sessao_atual.get('batalhas_dia',0)}/100 | restantes={restantes_hoje}")
+            else:
+                _falhas_sessao_consec += 1
+                log.warning(f"  /currentbattle/ sem dados de sessão ({_falhas_sessao_consec}/2) — sessão pode ter encerrado")
+                if _falhas_sessao_consec >= 2:
+                    log.warning("loop_bg: sessão BG encerrada — saindo do loop de batalhas")
+                    resetar_dados_sessao_bg()
+                    atualizar_ciclo("status", "concluido")
+                    break
         except Exception as e:
             log.debug(f"  Não foi possível reler sessão: {e}")
 
