@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.4
+# KnightFight — BattleGround Bot v1.0.5
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading
@@ -1319,27 +1319,38 @@ def _extrair_ticket_bg(soup):
     return ticket or "?"
 
 
-def fazer_raffle_e_sair(client):
+def fazer_raffle_e_sair(client, soup_raffle=None):
     """
     Executa o raffle (tômbola) e encerra a sessão BG.
-    Chamado quando as batalhas foram concluídas.
+    soup_raffle: soup já fetched com o form de raffle (evita request extra).
     Retorna True se encerrou normalmente.
     """
     log.info("🎰 Iniciando raffle e encerramento de sessão BG...")
 
-    # Pega csrf da página atual do battleserver
-    try:
-        soup = client.get_full("/")
-    except Exception as e:
-        log.error(f"fazer_raffle_e_sair: erro ao carregar página: {e}")
-        return False
+    # Encontra a página com o form de raffle — tenta múltiplos URLs do battleserver
+    # pois a página pode estar em /battleground/currentbattle/ e não no root /
+    if soup_raffle is None or not soup_raffle.find("input", {"name": "start_raffle"}):
+        soup_raffle = None
+        for _path in ["/", "/battleground/currentbattle/", "/battleground/"]:
+            try:
+                _s = client.get_full(_path)
+                if _s.find("input", {"name": "start_raffle"}):
+                    soup_raffle = _s
+                    log.info(f"  Página de raffle encontrada em /battleserver{_path}")
+                    break
+            except Exception:
+                pass
+
+    if soup_raffle is None:
+        log.warning("  Página de raffle não encontrada — sessão pode já ter sido encerrada")
+        return True
 
     # Passo 1: Start Raffle
-    raffle_input = soup.find("input", {"name": "start_raffle"})
+    raffle_input = soup_raffle.find("input", {"name": "start_raffle"})
     if raffle_input:
-        csrf_tag = soup.find("input", {"name": "csrftoken"})
+        csrf_tag = soup_raffle.find("input", {"name": "csrftoken"})
         csrf = csrf_tag["value"] if csrf_tag else ""
-        ticket = _extrair_ticket_bg(soup)
+        ticket = _extrair_ticket_bg(soup_raffle)
         log.info(f"  Bilhete de loteria: {ticket}")
         try:
             soup2 = client.post(
@@ -1350,16 +1361,14 @@ def fazer_raffle_e_sair(client):
             log.info("  ✓ Raffle iniciado")
         except Exception as e:
             log.error(f"  Erro ao iniciar raffle: {e}")
-            soup2 = soup
+            soup2 = soup_raffle
     else:
         log.info("  Raffle não encontrado na página — talvez já concluído")
-        soup2 = soup
+        soup2 = soup_raffle
 
-    # Passo 2: End battle session (botão "end")
-    # A página do raffle pode ser a mesma ou uma nova resposta
+    # Passo 2: End battle session (botão "end") — opcional em alguns servidores
     end_input = soup2.find("input", {"name": "end"})
     if not end_input:
-        # Aguarda um pouco e recarrega (o raffle pode ter sido POST que retornou nova página)
         time.sleep(3)
         try:
             soup2 = client.get_full("/")
@@ -1378,12 +1387,10 @@ def fazer_raffle_e_sair(client):
                 fragment=False,
             )
             log.info("  ✓ Sessão BG encerrada")
-            # Loga resumo final da sessão
             texto3 = soup3.get_text(" ", strip=True)
             for linha in ["Batalhas ofensivas", "Vencidos", "Derrotas", "Ouro ganho", "Pontos de batalha"]:
                 for p in [linha, linha.lower()]:
                     if p in texto3:
-                        # Tenta extrair valor após o label
                         m = re.search(rf"{re.escape(p)}[^:]*:\s*([\d.,]+)", texto3, re.IGNORECASE)
                         if m:
                             log.info(f"  {linha}: {m.group(1)}")
@@ -1393,7 +1400,7 @@ def fazer_raffle_e_sair(client):
             log.error(f"  Erro ao encerrar sessão: {e}")
             return False
     else:
-        log.warning("  Botão 'End battle session' não encontrado — sessão pode já ter sido encerrada")
+        log.warning("  Botão 'End battle session' não encontrado — sessão encerrada pelo raffle")
         return True
 
 
@@ -1502,7 +1509,9 @@ def loop_bg(client, eu, modo):
                 _falhas_sessao_consec += 1
                 log.warning(f"  /currentbattle/ sem dados de sessão ({_falhas_sessao_consec}/2) — sessão pode ter encerrado")
                 if _falhas_sessao_consec >= 2:
-                    log.warning("loop_bg: sessão BG encerrada — saindo do loop de batalhas")
+                    log.warning("loop_bg: sessão BG encerrada — completando raffle antes de sair")
+                    atualizar_ciclo("status", "raffle")
+                    fazer_raffle_e_sair(client, soup_sess)
                     resetar_dados_sessao_bg()
                     atualizar_ciclo("status", "concluido")
                     break
@@ -1939,8 +1948,10 @@ if __name__ == "__main__":
             log.info("Verificando sessão BG ativa...")
             sessao = {}
             estado = carregar_estado()
+            _soup_sessao = None
             try:
-                sessao = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
+                _soup_sessao = client.get_full("/battleground/currentbattle/")
+                sessao = parsear_sessao_bg(_soup_sessao)
                 atualizar_ciclo("sessao", sessao)
                 estado["sessao_bg"] = sessao
                 salvar_estado(estado)
@@ -1980,6 +1991,15 @@ if __name__ == "__main__":
 
             else:
                 # ── 4. Sem sessão — verifica nível antes de tentar entrar ──
+                # Verifica raffle pendente antes de tentar entrar
+                # (sessão encerrada pelo servidor mas start_raffle ainda não clicado)
+                if _soup_sessao is not None and _soup_sessao.find("input", {"name": "start_raffle"}):
+                    log.info("Raffle pendente detectado — completando raffle antes de re-entrar no BG")
+                    atualizar_ciclo("status", "raffle")
+                    fazer_raffle_e_sair(client, _soup_sessao)
+                    time.sleep(5)
+                    continue
+
                 log.info("Sem sessão BG ativa — tentando entrar...")
                 atualizar_ciclo("status", "aguardando_entrada")
                 _checar_parar()
