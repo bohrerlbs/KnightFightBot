@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.3
+# KnightFight — BattleGround Bot v1.0.4
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading
@@ -1084,6 +1084,30 @@ def entrar_bg(client, modo, alignment="light"):
     # Extrai csrf do form
     csrf_input = soup.find("input", {"name": "csrftoken"})
     if not csrf_input:
+        # Sem form — verifica se há nok.gif (cooldown) antes de retornar falha
+        _nok_sem_csrf = soup.find_all("img", src=lambda s: s and "nok.gif" in s)
+        if _nok_sem_csrf:
+            wait_seg = dias_requeridos * 86400
+            for _pat in [
+                r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                r"\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+            ]:
+                _m = re.search(_pat, texto, re.IGNORECASE)
+                if _m:
+                    try:
+                        dt_fim = datetime.strptime(_m.group(1), "%d.%m.%Y %H:%M:%S")
+                        dt_pode = dt_fim + timedelta(days=dias_requeridos)
+                        wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
+                        log.warning(
+                            f"entrar_bg: cooldown (sem form) — última sessão {dt_fim:%d/%m %H:%M} | "
+                            f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
+                        )
+                    except Exception:
+                        log.warning(f"entrar_bg: cooldown (sem form, nok.gif) — aguardando {fmt_t(wait_seg)} (fallback)")
+                    return ("cooldown", wait_seg)
+            log.warning(f"entrar_bg: cooldown (sem form, nok.gif, sem data) — aguardando {fmt_t(wait_seg)} (fallback)")
+            return ("cooldown", wait_seg)
         log.error("entrar_bg: csrftoken não encontrado na página de entrada")
         return ("falha", 0)
     csrf = csrf_input.get("value", "")
@@ -1119,6 +1143,31 @@ def entrar_bg(client, modo, alignment="light"):
                 log.warning(f"  Data da última sessão não encontrada — aguardando {fmt_t(wait_seg)} (fallback)")
             return ("cooldown", wait_seg)
         else:
+            # Nenhum botão disponível — verifica se é cooldown global (todos os modos em CD)
+            # antes de retornar falha (página pode não renderizar botões quando em cooldown)
+            _nok_global = soup.find_all("img", src=lambda s: s and "nok.gif" in s)
+            wait_seg = dias_requeridos * 86400
+            if _nok_global:
+                for _pat in [
+                    r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                    r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                    r"\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
+                ]:
+                    _m = re.search(_pat, texto, re.IGNORECASE)
+                    if _m:
+                        try:
+                            dt_fim = datetime.strptime(_m.group(1), "%d.%m.%Y %H:%M:%S")
+                            dt_pode = dt_fim + timedelta(days=dias_requeridos)
+                            wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
+                            log.warning(
+                                f"entrar_bg: todos modos em cooldown — última sessão {dt_fim:%d/%m %H:%M} | "
+                                f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
+                            )
+                        except Exception:
+                            log.warning(f"entrar_bg: todos modos em cooldown — aguardando {fmt_t(wait_seg)} (fallback)")
+                        return ("cooldown", wait_seg)
+                log.warning(f"entrar_bg: todos modos em cooldown (nok.gif detectado, sem data) — aguardando {fmt_t(wait_seg)} (fallback)")
+                return ("cooldown", wait_seg)
             log.error(f"entrar_bg: botão {botao} não encontrado e nenhum modo disponível — verifique equipamento/nível")
             return ("falha", 0)
 
