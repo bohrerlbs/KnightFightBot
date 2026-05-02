@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.0
+# KnightFight — BattleGround Bot v1.0.2
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading
@@ -1821,7 +1821,20 @@ if __name__ == "__main__":
             # ── 1. Nível local (sem request) ──────────────────────
             nivel = _nivel_local()
             if nivel and nivel < 10:
-                log.info(f"  Nível local {nivel} < 10 — BG requer Lv10. Aguardando 1h sem requests...")
+                # Cache pode estar stale — confirma ao vivo antes de bloquear
+                try:
+                    eu_chk = parsear_status_bg(client.get_full("/status/"))
+                    nivel_fresh = eu_chk.get("level", nivel)
+                    if nivel_fresh != nivel:
+                        est_chk = carregar_estado()
+                        est_chk["level"] = nivel_fresh
+                        salvar_estado(est_chk)
+                        log.info(f"  Nível atualizado: {nivel} → {nivel_fresh}")
+                        nivel = nivel_fresh
+                except Exception as _e:
+                    log.warning(f"  Erro ao verificar nível ao vivo: {_e}")
+            if nivel and nivel < 10:
+                log.info(f"  Nível {nivel} < 10 — BG requer Lv10. Aguardando 1h...")
                 atualizar_ciclo("status", "aguardando_nivel")
                 if not _dormir_fatias(3600):
                     raise KeyboardInterrupt
