@@ -71,9 +71,6 @@ running_bots  = {}
 _bg_start_lock = threading.Lock()
 
 
-    except Exception as e:
-        print(f"[NGROK] Erro ao iniciar: {e}")
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_profiles():
     profiles = []
@@ -368,7 +365,7 @@ def save_profile(data):
                        "cookies",
                        "missao_alinhamento", "taverna_ativa", "atacar_continuo",
                        "atacar_continuo_score_min", "atacar_continuo_lv_min", "atacar_continuo_lv_max",
-                       "treinar_atributos",
+                       "modo_pig", "treinar_atributos",
                        "distribuir_skills", "build_tipo", "comprar_equipamento",
                        "game_user", "game_pass",
                        "horario_ativo", "horario_inicio", "horario_parada",
@@ -415,6 +412,7 @@ def save_profile(data):
         "atacar_continuo_score_min":  data.get("atacar_continuo_score_min", 50),
         "atacar_continuo_lv_min":     data.get("atacar_continuo_lv_min", 1),
         "atacar_continuo_lv_max":     data.get("atacar_continuo_lv_max", 999),
+        "modo_pig":             data.get("modo_pig", False),
         "treinar_atributos":    data.get("treinar_atributos", False),
         "distribuir_skills":    data.get("distribuir_skills", False),
         "build_tipo":           data.get("build_tipo", "2h"),
