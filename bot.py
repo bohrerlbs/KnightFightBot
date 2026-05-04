@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.16 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.17 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5777,6 +5777,7 @@ def loop_acoes(client):
             # LIVRE — decide ação
 
             # ── Altar: verifica HP atual direto do jogo e reza se < 70% ─────
+            _hp_baixo = False
             try:
                 status_fresco = parsear_status(client.get("/status/"))
                 hp_atual = status_fresco.get("hp_atual", 0)
@@ -5799,14 +5800,25 @@ def loop_acoes(client):
                     if pct_hp < 0.70:
                         log.info(f"HP baixo ({hp_atual}/{hp_total} = {pct_hp*100:.0f}%) — rezando no altar...")
                         if rezar_altar(client):
-                            # Atualiza HP após rezar
                             status_pos = parsear_status(client.get("/status/"))
                             estado_hp.update(status_pos)
                             salvar_estado(estado_hp)
                             atualizar_ciclo_file("status", status_pos)
-                            log.info(f"HP após altar: {status_pos.get('hp_atual',0)}/{status_pos.get('hp_total',0)}")
+                            hp_pos = status_pos.get("hp_atual", 0)
+                            hp_tot_pos = status_pos.get("hp_total", 1)
+                            log.info(f"HP após altar: {hp_pos}/{hp_tot_pos}")
+                            if hp_tot_pos > 0 and hp_pos / hp_tot_pos < 0.70:
+                                log.warning(f"Altar não curou suficiente ({hp_pos/hp_tot_pos*100:.0f}%) — aguardando próximo ciclo")
+                                _hp_baixo = True
+                        else:
+                            log.warning("Altar falhou com HP baixo — aguardando próximo ciclo sem atacar")
+                            _hp_baixo = True
             except Exception as e:
                 log.warning(f"Altar: erro ao verificar HP — {e}", exc_info=True)
+
+            if _hp_baixo:
+                time.sleep(INTERVALO_RAPIDO_SEG)
+                continue
 
             # ── Treinamento: gasta gold em atributos disponíveis ──────────────
             try:
