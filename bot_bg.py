@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.5
+# KnightFight — BattleGround Bot v1.0.6
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading
@@ -1880,9 +1880,11 @@ if __name__ == "__main__":
             raise KeyboardInterrupt
 
     def _nivel_local():
-        """Lê o nível do personagem do bg_estado.json sem fazer request."""
-        est = carregar_estado()
-        return est.get("level", est.get("lv", 0))
+        """Lê o nível do personagem sem fazer request.
+        Prefere estado.json (bot principal, sempre atualizado) sobre bg_estado.json."""
+        nivel_bg = carregar_estado().get("level", 0)
+        nivel_bot = carregar_json(WORKDIR / "estado.json", {}).get("level", 0)
+        return max(nivel_bg, nivel_bot)
 
     def _cooldown_restante_local():
         """
