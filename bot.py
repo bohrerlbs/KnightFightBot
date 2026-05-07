@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.17 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.19 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5471,7 +5471,9 @@ def _taverna_1h(client):
     estado = carregar_estado()
     imun = imunidade_restante(estado)
     DURACAO_TAVERNA = 3600  # 1h em segundos
-    if imun >= DURACAO_TAVERNA:
+    if MODO_PIG:
+        log.info("  [MODO_PIG] Pulando imunização antes da taverna — bot deve ficar atacável")
+    elif imun >= DURACAO_TAVERNA:
         log.info(f"  Imunidade suficiente ({fmt_t(imun)}) — não precisa renovar antes da taverna")
     else:
         log.info(f"  Imunidade insuficiente ({fmt_t(imun)}) — tentando imunizar antes de entrar na taverna...")
@@ -5580,9 +5582,12 @@ def _taverna_1h(client):
             else:
                 log.warning("  Sem job de 1h após 2h — retomando bot")
 
-    # Passo 4: imunizar ao sair (sempre tenta, independente do timer)
-    log.info("  Imunizando ao sair da taverna...")
-    imunizar_agora(client)
+    # Passo 4: imunizar ao sair (sempre tenta, exceto modo pig)
+    if MODO_PIG:
+        log.info("  [MODO_PIG] Pulando imunização ao sair da taverna — bot deve ficar atacável")
+    else:
+        log.info("  Imunizando ao sair da taverna...")
+        imunizar_agora(client)
 
 
 def _tentar_ataque_continuo(client, estado):
@@ -6442,8 +6447,11 @@ if __name__ == "__main__":
                 time.sleep(seg_rest + 10)  # aguarda terminar + 10s folga
                 sair_taverna(client)
                 atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
-                log.info("✓ Taverna concluída — imunizando e iniciando bot")
-                imunizar_agora(client)
+                if MODO_PIG:
+                    log.info("✓ Taverna concluída — iniciando bot (MODO_PIG: sem imunização)")
+                else:
+                    log.info("✓ Taverna concluída — imunizando e iniciando bot")
+                    imunizar_agora(client)
             elif em_taverna:
                 log.warning("Personagem em taverna mas sem timer — aguardando 60min por precaução")
                 time.sleep(3600)
