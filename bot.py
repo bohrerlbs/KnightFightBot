@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.20 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.21 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1155,6 +1155,14 @@ def verificar_alvo_antes_de_atacar(client, user_id, score_min, meu_clan_id=None)
         if not perfil.get("disponivel"):
             return False, 0, "indisponivel"
 
+        # Se stats críticos ainda zerados após visitar o perfil → não atacar
+        frc = perfil.get("forca", 0)
+        res = perfil.get("resistencia", 0)
+        sk  = max(perfil.get("sk_1mao", 0), perfil.get("sk_2maos", 0))
+        if frc == 0 and res == 0 and sk == 0:
+            log.warning(f"Alvo {user_id}: stats frc/res/sk=0 após visitar perfil — ataque cancelado")
+            return False, 0, "stats_desconhecidos"
+
         # Recalcula score com stats frescos
         av = avaliar_alvo(perfil)
         score_atual = av["score"]
@@ -1171,8 +1179,8 @@ def verificar_alvo_antes_de_atacar(client, user_id, score_min, meu_clan_id=None)
 
         return True, score_atual, "ok"
     except Exception as e:
-        log.debug(f"verificar_alvo {user_id}: {e}")
-        return True, score_min, "erro_verificacao"  # em caso de erro, tenta atacar mesmo assim
+        log.warning(f"verificar_alvo {user_id}: {e} — ataque cancelado")
+        return False, 0, "erro_verificacao"
 
 
 def executar_ataque(client, user_id, dry_run=False):

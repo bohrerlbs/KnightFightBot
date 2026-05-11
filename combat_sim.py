@@ -362,16 +362,6 @@ def simular_combate(eu, adv):
     adv_sk2  = adv.get("sk_2maos", 0)
     adv_arm  = adv.get("sk_armadura", 0)
 
-    # ── Estimativas quando stats não foram parseados ──────────────────────────
-    # res/frc/sk=0 com ac>0 indica dados ausentes (perfil não expõe todos os campos).
-    # Usa estimativa por level para evitar subestimar a durabilidade do adversário.
-    if adv_ac > 0 and adv_lv > 0:
-        if adv_res == 0:
-            adv_res = max(10, int(adv_lv * 1.8))
-        if adv_frc == 0:
-            adv_frc = max(5,  int(adv_lv * 1.5))
-        if adv_sk1 == 0 and adv_sk2 == 0:
-            adv_sk1 = max(5,  int(adv_lv * 1.2))
 
     # ── Anéis e Amuleto (bônus por level) ────────────────────────────────────
     # Adversário — usa 2 anéis do melhor disponível
@@ -437,13 +427,13 @@ def simular_combate(eu, adv):
     eu_blq += eu_esc_def[2] if len(eu_esc_def) > 2 else 0
 
     # ── Taxa de acerto ────────────────────────────────────────────────────────
-    # Fórmula calibrada com 11009 combates reais (grid search Brier score):
-    # EU atacando:  exp=2.2, cap=100% quando ratio AC/Blq >= 3.5
-    # ADV atacando: exp=3.3
+    # Fórmula calibrada com 66k+ combates reais (grid search RMSE):
+    # EU atacando:  exp=1.8, cap=100% quando ratio AC/Blq >= 3.0
+    # ADV atacando: exp=2.2
     # Fórmula: AC^exp / (AC^exp + Blq^exp)
-    EXP_EU  = 2.2
-    EXP_ADV = 3.3
-    CAP_EU  = 3.5   # ratio AC/Blq acima deste → 100% acerto
+    EXP_EU  = 1.8
+    EXP_ADV = 2.2
+    CAP_EU  = 3.0   # ratio AC/Blq acima deste → 100% acerto
 
     if (eu_ac + adv_blq) > 0:
         ratio_eu = eu_ac / adv_blq if adv_blq > 0 else 99
@@ -475,15 +465,10 @@ def simular_combate(eu, adv):
     total_adv = dano_liq_adv * rounds_adv
 
     # ── Score de vitória (0-100) ──────────────────────────────────────────────
-    hit_score = taxa_eu / (taxa_eu + taxa_adv) * 100 if (taxa_eu + taxa_adv) > 0 else 50
     if total_eu + total_adv > 0:
         raw_score = total_eu / (total_eu + total_adv) * 100
-        if total_adv == 0:
-            # Armadura absorve 100% do dano do ADV — simulação superestima vitória.
-            # Usa hit rate (70%) para corrigir: ADV com AC alto ainda é perigoso.
-            raw_score = raw_score * 0.3 + hit_score * 0.7
     else:
-        raw_score = hit_score
+        raw_score = taxa_eu / (taxa_eu + taxa_adv) * 100 if (taxa_eu + taxa_adv) > 0 else 50
 
     score = max(0, min(100, round(raw_score)))
 
