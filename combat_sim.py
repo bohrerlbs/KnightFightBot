@@ -362,6 +362,17 @@ def simular_combate(eu, adv):
     adv_sk2  = adv.get("sk_2maos", 0)
     adv_arm  = adv.get("sk_armadura", 0)
 
+    # ── Estimativas quando stats não foram parseados ──────────────────────────
+    # res/frc/sk=0 com ac>0 indica dados ausentes (perfil não expõe todos os campos).
+    # Usa estimativa por level para evitar subestimar a durabilidade do adversário.
+    if adv_ac > 0 and adv_lv > 0:
+        if adv_res == 0:
+            adv_res = max(10, int(adv_lv * 1.8))
+        if adv_frc == 0:
+            adv_frc = max(5,  int(adv_lv * 1.5))
+        if adv_sk1 == 0 and adv_sk2 == 0:
+            adv_sk1 = max(5,  int(adv_lv * 1.2))
+
     # ── Anéis e Amuleto (bônus por level) ────────────────────────────────────
     # Adversário — usa 2 anéis do melhor disponível
     adv_anel = melhor_anel(adv_lv)
@@ -464,10 +475,15 @@ def simular_combate(eu, adv):
     total_adv = dano_liq_adv * rounds_adv
 
     # ── Score de vitória (0-100) ──────────────────────────────────────────────
+    hit_score = taxa_eu / (taxa_eu + taxa_adv) * 100 if (taxa_eu + taxa_adv) > 0 else 50
     if total_eu + total_adv > 0:
         raw_score = total_eu / (total_eu + total_adv) * 100
+        if total_adv == 0:
+            # Armadura absorve 100% do dano do ADV — simulação superestima vitória.
+            # Usa hit rate (70%) para corrigir: ADV com AC alto ainda é perigoso.
+            raw_score = raw_score * 0.3 + hit_score * 0.7
     else:
-        raw_score = 50
+        raw_score = hit_score
 
     score = max(0, min(100, round(raw_score)))
 
