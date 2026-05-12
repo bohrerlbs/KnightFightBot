@@ -1042,28 +1042,16 @@ def entrar_bg(client, modo, alignment="light"):
         log.info("entrar_bg: BG já está em sessão ativa — pulando entrada")
         return ("em_sessao", 0)
 
-    # Sem form de entrada e sem nok.gif de requisitos → sessão ativa (falso negativo do check acima)
-    # /landsitz/ aparece no menu de navegação em todas as páginas, não é sinal exclusivo de equipamento
-    if _sem_form_entrada:
-        _tds_nok = soup.find_all("td", class_="bsseltd")
-        _tem_nok_geral = any(
-            img for td in _tds_nok for img in td.find_all("img")
-            if "nok.gif" in img.get("src", "")
-        )
-        if not _tem_nok_geral:
-            log.info("entrar_bg: sem form de entrada e sem requisitos pendentes — sessão ativa inferida")
-            return ("em_sessao", 0)
-
     # Detecta tela de "equipe seu cavaleiro" — personagem sem itens adequados
-    # Só avalia quando há form de entrada (palavras como "equipe"/"arma" são genéricas em PT)
-    if not _sem_form_entrada:
-        tem_aviso_equip = any(p in texto for p in [
-            "Equip your knight", "optimally",
-            "ausrüsten", "équiper",  # DE/FR específicos
-        ])
-        if tem_aviso_equip:
-            log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
-            return ("sem_equipamento", 0)
+    # Indicadores: link /landsitz/ (trocar equipamento) junto com aviso em vermelho
+    tem_landsitz = soup.find("a", href=lambda h: h and "/landsitz/" in h)
+    tem_aviso_equip = any(p in texto for p in [
+        "Equip your knight", "otimamente", "equipe", "amuleto", "arma",
+        "skill disponíveis", "optimally",
+    ])
+    if tem_landsitz and tem_aviso_equip:
+        log.warning("entrar_bg: personagem sem equipamento adequado — tela de aviso detectada")
+        return ("sem_equipamento", 0)
 
     # ── Verifica requisitos ANTES de checar botão ──────────────────────────
     # (quando o modo está em cooldown, o jogo não renderiza o botão — mas ainda
@@ -1116,30 +1104,6 @@ def entrar_bg(client, modo, alignment="light"):
     # Extrai csrf do form
     csrf_input = soup.find("input", {"name": "csrftoken"})
     if not csrf_input:
-        # Sem form — verifica se há nok.gif (cooldown) antes de retornar falha
-        _nok_sem_csrf = soup.find_all("img", src=lambda s: s and "nok.gif" in s)
-        if _nok_sem_csrf:
-            wait_seg = dias_requeridos * 86400
-            for _pat in [
-                r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                r"\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-            ]:
-                _m = re.search(_pat, texto, re.IGNORECASE)
-                if _m:
-                    try:
-                        dt_fim = datetime.strptime(_m.group(1), "%d.%m.%Y %H:%M:%S")
-                        dt_pode = dt_fim + timedelta(days=dias_requeridos)
-                        wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
-                        log.warning(
-                            f"entrar_bg: cooldown (sem form) — última sessão {dt_fim:%d/%m %H:%M} | "
-                            f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
-                        )
-                    except Exception:
-                        log.warning(f"entrar_bg: cooldown (sem form, nok.gif) — aguardando {fmt_t(wait_seg)} (fallback)")
-                    return ("cooldown", wait_seg)
-            log.warning(f"entrar_bg: cooldown (sem form, nok.gif, sem data) — aguardando {fmt_t(wait_seg)} (fallback)")
-            return ("cooldown", wait_seg)
         log.error("entrar_bg: csrftoken não encontrado na página de entrada")
         return ("falha", 0)
     csrf = csrf_input.get("value", "")
@@ -1175,31 +1139,6 @@ def entrar_bg(client, modo, alignment="light"):
                 log.warning(f"  Data da última sessão não encontrada — aguardando {fmt_t(wait_seg)} (fallback)")
             return ("cooldown", wait_seg)
         else:
-            # Nenhum botão disponível — verifica se é cooldown global (todos os modos em CD)
-            # antes de retornar falha (página pode não renderizar botões quando em cooldown)
-            _nok_global = soup.find_all("img", src=lambda s: s and "nok.gif" in s)
-            wait_seg = dias_requeridos * 86400
-            if _nok_global:
-                for _pat in [
-                    r"terminou[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                    r"ended[^(]*\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                    r"\((\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})\)",
-                ]:
-                    _m = re.search(_pat, texto, re.IGNORECASE)
-                    if _m:
-                        try:
-                            dt_fim = datetime.strptime(_m.group(1), "%d.%m.%Y %H:%M:%S")
-                            dt_pode = dt_fim + timedelta(days=dias_requeridos)
-                            wait_seg = max(60, int((dt_pode - datetime.now()).total_seconds()) + 60)
-                            log.warning(
-                                f"entrar_bg: todos modos em cooldown — última sessão {dt_fim:%d/%m %H:%M} | "
-                                f"pode entrar em {dt_pode:%d/%m %H:%M} ({fmt_t(wait_seg)} restantes)"
-                            )
-                        except Exception:
-                            log.warning(f"entrar_bg: todos modos em cooldown — aguardando {fmt_t(wait_seg)} (fallback)")
-                        return ("cooldown", wait_seg)
-                log.warning(f"entrar_bg: todos modos em cooldown (nok.gif detectado, sem data) — aguardando {fmt_t(wait_seg)} (fallback)")
-                return ("cooldown", wait_seg)
             log.error(f"entrar_bg: botão {botao} não encontrado e nenhum modo disponível — verifique equipamento/nível")
             return ("falha", 0)
 
@@ -1216,15 +1155,8 @@ def entrar_bg(client, modo, alignment="light"):
 
     texto_r = soup_result.get_text(" ", strip=True)
 
-    # Detecta tela de equipamento na resposta (POST) — /landsitz/ no menu não conta
-    _resp_sem_form = not soup_result.find("input", {"name": "csrftoken"}) and not soup_result.find("button", class_="startbs")
-    if _resp_sem_form:
-        _resp_cb = soup_result.find("a", href=lambda h: h and "/battleground/currentbattle" in (h or ""))
-        if _resp_cb:
-            log.info("entrar_bg: resposta redireciona para sessão ativa")
-            return ("em_sessao", 0)
-    _resp_aviso_equip = any(p in texto_r for p in ["Equip your knight", "optimally", "ausrüsten", "équiper"])
-    if _resp_aviso_equip:
+    # Detecta tela de equipamento na resposta também
+    if soup_result.find("a", href=lambda h: h and "/landsitz/" in h):
         log.warning("entrar_bg: resposta é tela de aviso de equipamento")
         return ("sem_equipamento", 0)
 
@@ -1351,38 +1283,27 @@ def _extrair_ticket_bg(soup):
     return ticket or "?"
 
 
-def fazer_raffle_e_sair(client, soup_raffle=None):
+def fazer_raffle_e_sair(client):
     """
     Executa o raffle (tômbola) e encerra a sessão BG.
-    soup_raffle: soup já fetched com o form de raffle (evita request extra).
+    Chamado quando as batalhas foram concluídas.
     Retorna True se encerrou normalmente.
     """
     log.info("🎰 Iniciando raffle e encerramento de sessão BG...")
 
-    # Encontra a página com o form de raffle — tenta múltiplos URLs do battleserver
-    # pois a página pode estar em /battleground/currentbattle/ e não no root /
-    if soup_raffle is None or not soup_raffle.find("input", {"name": "start_raffle"}):
-        soup_raffle = None
-        for _path in ["/", "/battleground/currentbattle/", "/battleground/"]:
-            try:
-                _s = client.get_full(_path)
-                if _s.find("input", {"name": "start_raffle"}):
-                    soup_raffle = _s
-                    log.info(f"  Página de raffle encontrada em /battleserver{_path}")
-                    break
-            except Exception:
-                pass
-
-    if soup_raffle is None:
-        log.warning("  Página de raffle não encontrada — sessão pode já ter sido encerrada")
-        return True
+    # Pega csrf da página atual do battleserver
+    try:
+        soup = client.get_full("/")
+    except Exception as e:
+        log.error(f"fazer_raffle_e_sair: erro ao carregar página: {e}")
+        return False
 
     # Passo 1: Start Raffle
-    raffle_input = soup_raffle.find("input", {"name": "start_raffle"})
+    raffle_input = soup.find("input", {"name": "start_raffle"})
     if raffle_input:
-        csrf_tag = soup_raffle.find("input", {"name": "csrftoken"})
+        csrf_tag = soup.find("input", {"name": "csrftoken"})
         csrf = csrf_tag["value"] if csrf_tag else ""
-        ticket = _extrair_ticket_bg(soup_raffle)
+        ticket = _extrair_ticket_bg(soup)
         log.info(f"  Bilhete de loteria: {ticket}")
         try:
             soup2 = client.post(
@@ -1393,14 +1314,16 @@ def fazer_raffle_e_sair(client, soup_raffle=None):
             log.info("  ✓ Raffle iniciado")
         except Exception as e:
             log.error(f"  Erro ao iniciar raffle: {e}")
-            soup2 = soup_raffle
+            soup2 = soup
     else:
         log.info("  Raffle não encontrado na página — talvez já concluído")
-        soup2 = soup_raffle
+        soup2 = soup
 
-    # Passo 2: End battle session (botão "end") — opcional em alguns servidores
+    # Passo 2: End battle session (botão "end")
+    # A página do raffle pode ser a mesma ou uma nova resposta
     end_input = soup2.find("input", {"name": "end"})
     if not end_input:
+        # Aguarda um pouco e recarrega (o raffle pode ter sido POST que retornou nova página)
         time.sleep(3)
         try:
             soup2 = client.get_full("/")
@@ -1419,10 +1342,12 @@ def fazer_raffle_e_sair(client, soup_raffle=None):
                 fragment=False,
             )
             log.info("  ✓ Sessão BG encerrada")
+            # Loga resumo final da sessão
             texto3 = soup3.get_text(" ", strip=True)
             for linha in ["Batalhas ofensivas", "Vencidos", "Derrotas", "Ouro ganho", "Pontos de batalha"]:
                 for p in [linha, linha.lower()]:
                     if p in texto3:
+                        # Tenta extrair valor após o label
                         m = re.search(rf"{re.escape(p)}[^:]*:\s*([\d.,]+)", texto3, re.IGNORECASE)
                         if m:
                             log.info(f"  {linha}: {m.group(1)}")
@@ -1432,7 +1357,7 @@ def fazer_raffle_e_sair(client, soup_raffle=None):
             log.error(f"  Erro ao encerrar sessão: {e}")
             return False
     else:
-        log.warning("  Botão 'End battle session' não encontrado — sessão encerrada pelo raffle")
+        log.warning("  Botão 'End battle session' não encontrado — sessão pode já ter sido encerrada")
         return True
 
 
@@ -1475,8 +1400,6 @@ def loop_bg(client, eu, modo):
     estado["modo"] = modo
     estado["eu"] = eu
     salvar_estado(estado)
-
-    _falhas_sessao_consec = 0  # contador de vezes que /currentbattle/ retornou vazio
 
     while True:
         estado = carregar_estado()
@@ -1527,7 +1450,6 @@ def loop_bg(client, eu, modo):
             soup_sess = client.get_full("/battleground/currentbattle/")
             sessao_atual = parsear_sessao_bg(soup_sess)
             if sessao_atual:
-                _falhas_sessao_consec = 0
                 estado["sessao_bg"] = sessao_atual
                 salvar_estado(estado)
                 restantes_hoje = sessao_atual.get("restantes_hoje", 100)
@@ -1537,16 +1459,6 @@ def loop_bg(client, eu, modo):
                     time.sleep(3600)
                     continue
                 log.info(f"  Sessão: hoje={sessao_atual.get('batalhas_dia',0)}/100 | restantes={restantes_hoje}")
-            else:
-                _falhas_sessao_consec += 1
-                log.warning(f"  /currentbattle/ sem dados de sessão ({_falhas_sessao_consec}/2) — sessão pode ter encerrado")
-                if _falhas_sessao_consec >= 2:
-                    log.warning("loop_bg: sessão BG encerrada — completando raffle antes de sair")
-                    atualizar_ciclo("status", "raffle")
-                    fazer_raffle_e_sair(client, soup_sess)
-                    resetar_dados_sessao_bg()
-                    atualizar_ciclo("status", "concluido")
-                    break
         except Exception as e:
             log.debug(f"  Não foi possível reler sessão: {e}")
 
@@ -1912,11 +1824,9 @@ if __name__ == "__main__":
             raise KeyboardInterrupt
 
     def _nivel_local():
-        """Lê o nível do personagem sem fazer request.
-        Prefere estado.json (bot principal, sempre atualizado) sobre bg_estado.json."""
-        nivel_bg = carregar_estado().get("level", 0)
-        nivel_bot = carregar_json(WORKDIR / "estado.json", {}).get("level", 0)
-        return max(nivel_bg, nivel_bot)
+        """Lê o nível do personagem do bg_estado.json sem fazer request."""
+        est = carregar_estado()
+        return est.get("level", est.get("lv", 0))
 
     def _cooldown_restante_local():
         """
@@ -1943,20 +1853,7 @@ if __name__ == "__main__":
             # ── 1. Nível local (sem request) ──────────────────────
             nivel = _nivel_local()
             if nivel and nivel < 10:
-                # Cache pode estar stale — confirma ao vivo antes de bloquear
-                try:
-                    eu_chk = parsear_status_bg(client.get_full("/status/"))
-                    nivel_fresh = eu_chk.get("level", nivel)
-                    if nivel_fresh != nivel:
-                        est_chk = carregar_estado()
-                        est_chk["level"] = nivel_fresh
-                        salvar_estado(est_chk)
-                        log.info(f"  Nível atualizado: {nivel} → {nivel_fresh}")
-                        nivel = nivel_fresh
-                except Exception as _e:
-                    log.warning(f"  Erro ao verificar nível ao vivo: {_e}")
-            if nivel and nivel < 10:
-                log.info(f"  Nível {nivel} < 10 — BG requer Lv10. Aguardando 1h...")
+                log.info(f"  Nível local {nivel} < 10 — BG requer Lv10. Aguardando 1h sem requests...")
                 atualizar_ciclo("status", "aguardando_nivel")
                 if not _dormir_fatias(3600):
                     raise KeyboardInterrupt
@@ -1982,10 +1879,8 @@ if __name__ == "__main__":
             log.info("Verificando sessão BG ativa...")
             sessao = {}
             estado = carregar_estado()
-            _soup_sessao = None
             try:
-                _soup_sessao = client.get_full("/battleground/currentbattle/")
-                sessao = parsear_sessao_bg(_soup_sessao)
+                sessao = parsear_sessao_bg(client.get_full("/battleground/currentbattle/"))
                 atualizar_ciclo("sessao", sessao)
                 estado["sessao_bg"] = sessao
                 salvar_estado(estado)
@@ -2025,15 +1920,6 @@ if __name__ == "__main__":
 
             else:
                 # ── 4. Sem sessão — verifica nível antes de tentar entrar ──
-                # Verifica raffle pendente antes de tentar entrar
-                # (sessão encerrada pelo servidor mas start_raffle ainda não clicado)
-                if _soup_sessao is not None and _soup_sessao.find("input", {"name": "start_raffle"}):
-                    log.info("Raffle pendente detectado — completando raffle antes de re-entrar no BG")
-                    atualizar_ciclo("status", "raffle")
-                    fazer_raffle_e_sair(client, _soup_sessao)
-                    time.sleep(5)
-                    continue
-
                 log.info("Sem sessão BG ativa — tentando entrar...")
                 atualizar_ciclo("status", "aguardando_entrada")
                 _checar_parar()
