@@ -336,7 +336,14 @@ def parsear_sessao_bg(soup):
 
         # ── Contagem via div.cb-progress-info (language-agnostic, mais confiável) ──
         # Ordem na página: dias-gastos (decimal) → batalhas-24h → batalhas-total
-        _CB_PAT = re.compile(r"~?\s*([\d,\.]+)\s+out\s+of\s+a\s+maximum\s+([\d,\.]+)", re.IGNORECASE)
+        # EN: "51 out of a maximum 100" | PT: "51 de um máximo de 100"
+        # DE: "51 von maximal 100"      | PL: "51 z maksymalnie 100"
+        _CB_PAT = re.compile(
+            r"~?\s*([\d,\.]+)\s+"
+            r"(?:out\s+of\s+a\s+maximum|de\s+um\s+m[aá]ximo\s+de|von\s+maximal|z\s+maksymalnie)\s+"
+            r"([\d,\.]+)",
+            re.IGNORECASE
+        )
         for div_info in soup.find_all("div", class_="cb-progress-info"):
             info_txt = div_info.get_text(strip=True)
             m = _CB_PAT.search(info_txt)
