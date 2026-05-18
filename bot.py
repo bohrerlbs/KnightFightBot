@@ -251,6 +251,18 @@ def parse_num(txt):
     c = re.sub(r"[^\d]", "", str(txt))
     return int(c) if c else 0
 
+def parse_hp(txt):
+    """Parse HP value handling PT-BR decimal comma: '251,21' → 251, '3.780' → 3780."""
+    s = re.sub(r"\s+", "", str(txt))
+    if re.search(r",\d{1,2}$", s):  # comma with 1-2 trailing digits = decimal separator
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        s = re.sub(r"[,.]", "", s)
+    try:
+        return int(float(s))
+    except:
+        return 0
+
 def agora():
     return datetime.now()
 
@@ -4936,10 +4948,10 @@ def parsear_status(soup):
         if m:
             xp_atual = parse_num(m.group(1))
             xp_total = parse_num(m.group(2))
-        m = re.search(r"(?:Health points|Pontos de vida|Lebenspunkte|Punkty życia):\s*([\d,. ]+)\s*(?:of|de|von|z)\s*([\d,.]+)", tip, re.IGNORECASE)
+        m = re.search(r"(?:Health points|Pontos de vida|Lebenspunkte|Punkty życia):\s*([\d,.]+)\s*(?:of|de|von|z)\s*([\d,.]+)", tip, re.IGNORECASE)
         if m:
-            hp_atual = parse_num(m.group(1))
-            hp_total = parse_num(m.group(2))
+            hp_atual = parse_hp(m.group(1))
+            hp_total = parse_hp(m.group(2))
 
     level = 0
     for tag in soup.find_all(attrs={"data-tooltip": True}):
