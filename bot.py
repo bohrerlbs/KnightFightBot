@@ -1644,8 +1644,7 @@ def atualizar_pig_list(pig_list, jogadores_ant, jogadores_atu, estado):
 def rezar_altar(client):
     """
     Reza no altar para recuperar HP.
-    O jogo mostra o máximo de gold que pode ser doado (recupera HP ao máximo).
-    Faz uma única requisição com o máximo disponível na página.
+    Retorna True=curou, None=HP já cheio (select ausente), False=erro.
     """
     try:
         soup = client.get("/landsitz/altar/", fragment=False)
@@ -1653,8 +1652,8 @@ def rezar_altar(client):
         # Extrai o máximo de gold disponível no select
         select = soup.find("select", {"name": "goldspende"})
         if not select:
-            log.warning("Altar: select não encontrado")
-            return False
+            log.info("Altar: select não encontrado — HP provavelmente cheio")
+            return None  # HP cheio, não é erro
 
         opcoes = [int(o["value"]) for o in select.find_all("option") if o.get("value","").isdigit()]
         if not opcoes:
@@ -5804,11 +5803,30 @@ def loop_acoes(client):
                 salvar_estado(estado_hp)
                 atualizar_ciclo_file("status", status_fresco)
 
-                if hp_total > 0 and hp_atual >= 0:
-                    pct_hp = hp_atual / hp_total if hp_total > 0 else 1.0
+                hp_ok = True
+                if hp_total == 0:
+                    # Parsing falhou — tenta altar preventivo para não atacar com HP desconhecido
+                    log.warning("HP não parseado (hp_total=0) — tentando altar preventivo")
+                    res_altar = rezar_altar(client)
+                    if res_altar is True:
+                        status_pos = parsear_status(client.get("/status/"))
+                        estado_hp.update(status_pos)
+                        salvar_estado(estado_hp)
+                        hp_pos = status_pos.get("hp_atual", 0)
+                        hp_tot_pos = status_pos.get("hp_total", 0)
+                        if hp_tot_pos > 0 and hp_pos / hp_tot_pos < 0.70:
+                            log.warning(f"Altar preventivo: ainda baixo ({hp_pos}/{hp_tot_pos}) — bloqueando ataques")
+                            hp_ok = False
+                    elif res_altar is False:
+                        log.warning("Altar preventivo falhou — bloqueando ataques por segurança")
+                        hp_ok = False
+                    # res_altar is None → HP cheio, ok
+                elif hp_total > 0:
+                    pct_hp = hp_atual / hp_total
                     if pct_hp < 0.70:
                         log.info(f"HP baixo ({hp_atual}/{hp_total} = {pct_hp*100:.0f}%) — rezando no altar...")
-                        if rezar_altar(client):
+                        res_altar = rezar_altar(client)
+                        if res_altar is True:
                             status_pos = parsear_status(client.get("/status/"))
                             estado_hp.update(status_pos)
                             salvar_estado(estado_hp)
@@ -5817,11 +5835,13 @@ def loop_acoes(client):
                             hp_tot_pos = status_pos.get("hp_total", 1)
                             log.info(f"HP após altar: {hp_pos}/{hp_tot_pos}")
                             if hp_tot_pos > 0 and hp_pos / hp_tot_pos < 0.70:
-                                log.warning(f"Altar não curou suficiente ({hp_pos/hp_tot_pos*100:.0f}%) — aguardando próximo ciclo")
-                                _hp_baixo = True
+                                log.warning(f"Altar não curou suficiente ({hp_pos/hp_tot_pos*100:.0f}%) — bloqueando ataques")
+                                hp_ok = False
                         else:
-                            log.warning("Altar falhou com HP baixo — aguardando próximo ciclo sem atacar")
-                            _hp_baixo = True
+                            log.warning("Altar falhou com HP baixo — bloqueando ataques")
+                            hp_ok = False
+                if not hp_ok:
+                    _hp_baixo = True
             except Exception as e:
                 log.warning(f"Altar: erro ao verificar HP — {e}", exc_info=True)
 
