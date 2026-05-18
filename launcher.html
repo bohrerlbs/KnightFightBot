@@ -1162,7 +1162,7 @@ function renderProfiles(profiles){
       html += '<button class="btn btn-stop" data-action="bgstop" data-name="'+name+'">[ Parar BG</button>';
     } else {
       var _efOpts = '';
-      for(var _v=0; _v<=20; _v++) _efOpts += '<option value="'+(_v/2)+'"'+((_v===10)?' selected':'')+'>'+(_v/2)+'</option>';
+      for(var _v=0; _v<=20; _v++) _efOpts += '<option value="'+(_v/2)+'"'+((_v===0)?' selected':'')+'>'+(_v/2)+'</option>';
       html += '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" title="Offset máximo de EF para busca de adversários (0=só EF igual, 5=até EF+5)">'
             + 'EF+<select id="bg-ef-offset-'+name+'"'
             + ' style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;text-align:center">'
