@@ -1681,12 +1681,10 @@ def rezar_altar(client):
             "goldspende": str(max_gold),
         })
 
-        if "altar" in r2.url or r2.status_code == 200:
-            log.info(f"Altar: rezou com {max_gold} gold — HP recuperado!")
-            return True
-        else:
-            log.warning(f"Altar: resposta inesperada {r2.status_code}")
-            return False
+        # client.post() retorna BeautifulSoup e já chama raise_for_status()
+        # se chegou aqui sem exceção, o POST foi bem-sucedido
+        log.info(f"Altar: rezou com {max_gold} gold — HP recuperado!")
+        return True
 
     except Exception as e:
         log.error(f"Altar: erro — {e}")
