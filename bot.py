@@ -252,12 +252,28 @@ def parse_num(txt):
     return int(c) if c else 0
 
 def parse_hp(txt):
-    """Parse HP value handling PT-BR decimal comma: '251,21' → 251, '3.780' → 3780."""
+    """Parse HP value handling EN and PT-BR mixed separators.
+    EN:   '1,190.00' (comma=thousands, dot=decimal) → 1190
+    PT-BR:'251,21'   (comma=decimal)                → 251
+    PT-BR:'3.780'    (dot=thousands)                → 3780
+    """
     s = re.sub(r"\s+", "", str(txt))
-    if re.search(r",\d{1,2}$", s):  # comma with 1-2 trailing digits = decimal separator
-        s = s.replace(".", "").replace(",", ".")
-    else:
-        s = re.sub(r"[,.]", "", s)
+    has_comma = "," in s
+    has_dot   = "." in s
+    if has_comma and has_dot:
+        if s.rfind(".") > s.rfind(","):  # dot after comma → EN: 1,190.00
+            s = s.replace(",", "")
+        else:                            # comma after dot → PT-BR: 1.234,56
+            s = s.replace(".", "").replace(",", ".")
+    elif has_comma:
+        if len(s.split(",")[-1]) <= 2:  # ≤2 digits after comma → PT-BR decimal: 251,21
+            s = s.replace(",", ".")
+        else:                           # 3 digits → EN thousands: 1,190
+            s = s.replace(",", "")
+    elif has_dot:
+        if len(s.split(".")[-1]) >= 3:  # ≥3 digits after dot → PT-BR thousands: 3.780
+            s = s.replace(".", "")
+        # else: EN decimal (1.5) — leave as-is
     try:
         return int(float(s))
     except:
