@@ -741,9 +741,9 @@ def parsear_perfil(soup, user_id):
     hp = 0
     for tag in soup.find_all(attrs={"data-tooltip": True}):
         tip = tag["data-tooltip"]
-        if "Health points:" in tip:
-            m = re.search(r"of\s*([\d.]+)", tip)
-            if m: hp = parse_num(m.group(1))
+        m = re.search(r"(?:Health points|Pontos de vida|Lebenspunkte|Punkty życia):[^:]*?(?:of|de|von|z)\s*([\d,.]+)", tip, re.IGNORECASE)
+        if m:
+            hp = parse_num(m.group(1))
 
     disponivel = bool(soup.find("a", href=lambda h: h and "raubzug/gegner" in h))
 
@@ -4933,16 +4933,14 @@ def parsear_status(soup):
     xp_atual = xp_total = hp_atual = hp_total = 0
     for tag in soup.find_all(attrs={"data-tooltip": True}):
         tip = tag["data-tooltip"]
-        if "Experience:" in tip:
-            m = re.search(r"Experience:\s*([\d,]+)\s*of\s*([\d,]+)", tip)
-            if m:
-                xp_atual = parse_num(m.group(1))
-                xp_total = parse_num(m.group(2))
-        if "Health points:" in tip:
-            m = re.search(r"Health points:\s*([\d,. ]+)\s*of\s*([\d,.]+)", tip)
-            if m:
-                hp_atual = parse_num(m.group(1))
-                hp_total = parse_num(m.group(2))
+        m = re.search(r"(?:Experience|Experiência|Erfahrung|Doświadczenie):\s*([\d,.]+)\s*(?:of|de|von|z)\s*([\d,.]+)", tip, re.IGNORECASE)
+        if m:
+            xp_atual = parse_num(m.group(1))
+            xp_total = parse_num(m.group(2))
+        m = re.search(r"(?:Health points|Pontos de vida|Lebenspunkte|Punkty życia):\s*([\d,. ]+)\s*(?:of|de|von|z)\s*([\d,.]+)", tip, re.IGNORECASE)
+        if m:
+            hp_atual = parse_num(m.group(1))
+            hp_total = parse_num(m.group(2))
 
     level = 0
     for tag in soup.find_all(attrs={"data-tooltip": True}):
