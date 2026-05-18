@@ -4941,7 +4941,7 @@ def parsear_status(soup):
         if "Health points:" in tip:
             m = re.search(r"Health points:\s*([\d,. ]+)\s*of\s*([\d,.]+)", tip)
             if m:
-                hp_atual = int(float(m.group(1).replace(".", "").replace(",", ".").strip()))
+                hp_atual = parse_num(m.group(1))
                 hp_total = parse_num(m.group(2))
 
     level = 0
