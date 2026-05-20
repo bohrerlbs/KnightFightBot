@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.21 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.32 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -4449,6 +4449,14 @@ def rotina_encerramento_noturno(client):
             sair_taverna(client)
             gold_pos, _ = parsear_gold_gems(client)
             log.info(f"  Gold após taverna noturna: {gold_pos}g")
+            # Gasta gold coletado da taverna antes de entrar na próxima (se ainda fora do horário)
+            if HORARIO_GASTAR_GOLD and esta_fora_horario():
+                try:
+                    qtd, preco, nome = comprar_armadura_barata(client)
+                    if qtd > 0:
+                        log.info(f"  Gold pós-taverna gasto em armadura: {qtd}x {nome} @ {preco}g")
+                except Exception as e:
+                    log.warning(f"  Compra armadura pós-taverna: erro — {e}")
         except Exception as e:
             log.warning(f"  Erro na taverna noturna: {e} — tentando novamente em 5min")
             time.sleep(300)
