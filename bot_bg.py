@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.7
+# KnightFight — BattleGround Bot v1.0.8
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading
@@ -1979,6 +1979,21 @@ if __name__ == "__main__":
                     log.info(f"  Cooldown BG (cache) — próxima entrada às {dt_alvo:%d/%m %H:%M:%S} ({fmt_t(cd_seg)})")
                 except Exception:
                     log.info(f"  Cooldown BG (cache) — {fmt_t(cd_seg)} restantes")
+                # Verifica se usuário entrou manualmente num BG Premium durante o CD
+                # (BG Premium tem requisitos diferentes e pode ser iniciado antes do CD expirar)
+                try:
+                    _soup_cd_chk = client.get_full("/battleground/currentbattle/")
+                    _sessao_cd_chk = parsear_sessao_bg(_soup_cd_chk)
+                    if _sessao_cd_chk.get("batalhas_total") is not None or \
+                       _sessao_cd_chk.get("batalhas_feitas") is not None:
+                        log.info("  ✓ Sessão BG ativa detectada durante cooldown — CD ignorado")
+                        ciclo_limpo = carregar_json(CICLO_FILE, {})
+                        ciclo_limpo.pop("status", None)
+                        ciclo_limpo.pop("proximo_bg", None)
+                        salvar_json(CICLO_FILE, ciclo_limpo)
+                        continue
+                except Exception as _e_cd:
+                    log.debug(f"  Erro ao verificar sessão durante CD: {_e_cd}")
                 atualizar_ciclo("status", "cooldown_bg")
                 if not _dormir_fatias(cd_seg):
                     raise KeyboardInterrupt
