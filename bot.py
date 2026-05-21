@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.32 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.33 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -4907,7 +4907,7 @@ def parsear_gold_gems(client):
         gems_el = soup.find(id="edelsteine-header")
 
         gold = parse_num(gold_el.get_text()) if gold_el else 0
-        gems = int(gems_el.get_text().strip()) if gems_el else 0
+        gems = parse_num(gems_el.get_text()) if gems_el else 0
 
         log.info(f"Gold na conta: {gold}g | Pedras: {gems}")
         return gold, gems
