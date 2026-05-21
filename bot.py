@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.37 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.38 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -4391,8 +4391,7 @@ def limpar_duplicatas_inventario(client):
                 log.debug(f"  Limpar: item equipado marcado para vender — ignorado")
                 continue
             log.info(f"  Limpeza inventário {url_loja}: vendendo {to_sell}x tier={item['tier']}")
-            for _ in range(to_sell):
-                vender_item_atual(client, item["sell_url"])
+            vender_item_atual(client, item["sell_url"], to_sell)
 
 
 def rotina_encerramento_noturno(client):
