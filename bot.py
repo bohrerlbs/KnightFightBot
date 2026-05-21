@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.35 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.36 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2551,6 +2551,20 @@ def tentar_comprar_item_alvo(client, estado):
 
     log.info(f"  💰 Gold ({gold_atual}g) >= alvo {alvo['nome']} (liquido {alvo['gold_necessario']}g, bruto {gold_bruto}g) — comprando!")
 
+    # Pré-verifica página de compra ANTES de vender o item atual — evita vender sem conseguir comprar
+    if url_venda_atual:
+        try:
+            soup_pre = client.get(url_compra, fragment=False)
+            if _esta_bloqueado_por_missao(soup_pre):
+                log.debug(f"  Comprar {alvo['nome']}: bloqueado por missão — abortando sem vender item atual")
+                return False
+            if not soup_pre.find("form"):
+                log.warning(f"  Comprar {alvo['nome']}: formulário ausente no pré-check — abortando sem vender item atual")
+                return False
+        except Exception as e:
+            log.warning(f"  Comprar {alvo['nome']}: erro no pré-check ({e}) — abortando sem vender item atual")
+            return False
+
     # Vende item atual APÓS confirmar que buy link existe
     if url_venda_atual:
         log.info(f"  Vendendo item atual antes da troca ({gold_bruto}g necessário, gold atual {gold_atual}g)...")
@@ -4109,6 +4123,10 @@ def equipar_melhor_item(client, _ring_retry=True):
         href = equip_a["href"]
         slot = slot_de_href(href, tr)
         if not slot:
+            continue
+
+        if slot == "shield" and BUILD_TIPO == "2h":
+            log.debug(f"  Equipar: build 2h — ignorando escudo '{nome}' no inventário")
             continue
 
         tier_novo = parse_tier(tr)
