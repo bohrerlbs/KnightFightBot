@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.34 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.35 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2920,6 +2920,16 @@ def verificar_alvo_pedra(client, estado):
     if not melhor:
         log.debug("  Pedra: nenhuma pedra de alma com preço gold encontrada")
         return
+
+    player_alignment = MY_STATS.get("alignment", estado.get("alignment", None))
+    if player_alignment is not None:
+        req_align = next(
+            (p.get("req_alignment", 0) for p in _carregar_catalogo("pedras") if p["nome"] == melhor["nome"]),
+            0
+        )
+        if not _alinhamento_ok(req_align, player_alignment):
+            log.info(f"  Pedra: '{melhor['nome']}' requer alinhamento {req_align} (personagem={player_alignment}) — ignorando")
+            return
 
     gold_total = melhor["gold_necessario"] * a_comprar
     anterior   = estado.get("pedra_alvo", {})
