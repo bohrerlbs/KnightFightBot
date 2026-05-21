@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.38 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.39 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2523,7 +2523,12 @@ def tentar_comprar_item_alvo(client, estado):
                 salvar_estado(estado)
                 log.info(f"  Buy link obtido: {url_compra}")
             else:
-                log.info(f"  {alvo['nome']}: ainda sem buy link — acumulando até gold_bruto={gold_alvo}g")
+                if gold_atual >= gold_alvo:
+                    log.warning(f"  {alvo['nome']}: gold suficiente ({gold_atual}g >= {gold_alvo}g) mas sem buy link — provável bloqueio de alinhamento; descartando alvo")
+                    estado["item_alvo"] = None
+                    salvar_estado(estado)
+                else:
+                    log.info(f"  {alvo['nome']}: ainda sem buy link — acumulando até gold_bruto={gold_alvo}g")
                 return False
         except Exception as e:
             log.warning(f"  Re-scan /{categoria}/ para '{alvo['nome']}': erro — {e}")
