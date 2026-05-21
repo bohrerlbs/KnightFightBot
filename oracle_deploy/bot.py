@@ -3245,7 +3245,7 @@ def _extrair_req_alignment(tr, tr_txt):
     (3) imagem com src indicando alinhamento.
     """
     # "Moral: 500", "Alignment: -500", "Gesinnung: 500", etc.
-    _num_pat  = re.compile(r"(?:alignment|alinhamento|gesinnung|moral)\s*[:\-]?\s*(-?\d+)", re.IGNORECASE)
+    _num_pat  = re.compile(r"(?:alignment|alinhamento|gesinnung|moral)\s*[:\-]?\s*([+-]?\d+)", re.IGNORECASE)
     _word_pat = re.compile(r"(?:alignment|alinhamento|gesinnung|moral)\s*[:\-]?\s*(\w+)", re.IGNORECASE)
 
     def _from_text(txt):
