@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.36 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.37 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1755,8 +1755,8 @@ def calcular_horas_ate_inicio():
 def comprar_armadura_barata(client):
     """
     Compra o máximo possível da armadura disponível em /shop/ruestungen/.
-    A página já é o formulário de compra direto (não há listagem separada).
-    Extrai preço de <input id="costs_gold">, nome do texto da confirmação.
+    Usa _parsear_shop_todos_itens para encontrar a mais barata com buy link.
+    Segue o buy link para a página de confirmação e faz POST do formulário.
     Retorna (qtd_comprada, preco_unitario, nome).
     """
     gold_atual, _ = parsear_gold_gems(client)
@@ -1774,36 +1774,16 @@ def comprar_armadura_barata(client):
         log.debug("  Comprar armadura: bloqueado por missão ativa")
         return 0, 0, ""
 
-    # Encontra o buy link mais barato disponível
-    buy_a = None
-    melhor_preco = 999999
-    for tr in soup_list.find_all("tr", class_="mobile-cols-2"):
-        a = tr.find("a", href=lambda h: h and "wac=buy" in h)
-        if not a:
-            continue
-        # Extrai preço da listagem para escolher o mais barato
-        span_gold = None
-        for span in tr.find_all("span"):
-            if span.find("img", src=lambda s: s and "goldstueck.gif" in s):
-                span_gold = span; break
-        preco_list = 0
-        if span_gold:
-            m = re.search(r"[\d.,]+", span_gold.get_text())
-            if m:
-                preco_list = int(m.group().replace(".", "").replace(",", ""))
-        if preco_list < melhor_preco:
-            melhor_preco = preco_list
-            buy_a = a
-
-    if not buy_a:
+    # Usa o mesmo parser da loja que funciona em todos os servers
+    itens, _ = _parsear_shop_todos_itens(soup_list, "ruestungen")
+    compraveis = [i for i in itens if i["pode_comprar"] and i["url_compra"] and i["gold"] >= 50]
+    if not compraveis:
         log.info("  Comprar armadura: nenhuma armadura disponível na loja")
         return 0, 0, ""
+    barata = min(compraveis, key=lambda i: i["gold"])
+    buy_url = barata["url_compra"]
 
     # Segue buy link para página de confirmação
-    buy_url = buy_a["href"]
-    if buy_url.startswith("http"):
-        from urllib.parse import urlparse as _up
-        buy_url = _up(buy_url).path + ("?" + _up(buy_a["href"]).query if _up(buy_a["href"]).query else "")
     try:
         soup = client.get(buy_url, fragment=False)
     except Exception as e:
@@ -4458,18 +4438,16 @@ def rotina_encerramento_noturno(client):
         else:
             filter_id, horas_max = 1, 3
 
-        jobs = parsear_taverna(client, horas_max=horas_max, filter_id=filter_id)
-        if not jobs:
-            # Tenta filter menor como fallback
-            for fb_filter, fb_max in [(3, 9), (2, 6), (1, 3)]:
-                if fb_filter < filter_id:
-                    jobs = parsear_taverna(client, horas_max=fb_max, filter_id=fb_filter)
-                    if jobs:
-                        break
+        # Tenta até 20 vezes sem espera (job sempre aparece em alguma tentativa)
+        jobs = []
+        for _t in range(20):
+            jobs = parsear_taverna(client, horas_max=horas_max, filter_id=filter_id)
+            if jobs:
+                break
 
         if not jobs:
-            log.warning(f"  Sem jobs na taverna — dormindo 30min e tentando novamente")
-            time.sleep(1800)
+            log.warning(f"  Sem jobs filter={filter_id} após 20 tentativas — aguardando 5min")
+            time.sleep(300)
             continue
 
         # Pega o job de maior duração disponível (para dormir o máximo)
