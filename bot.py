@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.33 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.34 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2058,6 +2058,7 @@ def _parsear_shop_todos_itens(soup, tipo):
         req_skill_tipo = None
         req_skill_valor = 0
         req_level = 0
+        req_alignment = _extrair_req_alignment(tr, tr_text)
 
         # Level requirement
         m_lv = re.search(r"(?:level|nível|stufe)\s*[:\-]?\s*(\d+)", tr_text, re.IGNORECASE)
@@ -2122,6 +2123,7 @@ def _parsear_shop_todos_itens(soup, tipo):
             "req_skill_tipo": req_skill_tipo,
             "req_skill_valor": req_skill_valor,
             "req_level": req_level,
+            "req_alignment": req_alignment,
             "pode_comprar": pode_comprar,
             "url_compra": url_compra,
             "url_venda": url_venda,
@@ -2204,9 +2206,10 @@ def verificar_alvo_equipamento(client, estado):
     if BUILD_TIPO == "1h":
         paginas.insert(1, ("/shop/schilde/", "schilde"))
 
-    sk_2maos    = MY_STATS.get("sk_2maos", 0)
-    sk_1mao     = MY_STATS.get("sk_1mao", 0)
-    sk_armadura = MY_STATS.get("sk_armadura", 0)
+    sk_2maos         = MY_STATS.get("sk_2maos", 0)
+    sk_1mao          = MY_STATS.get("sk_1mao", 0)
+    sk_armadura      = MY_STATS.get("sk_armadura", 0)
+    player_alignment = MY_STATS.get("alignment", estado.get("alignment", None))
 
     candidatos  = []
     algum_shop_acessivel  = False
@@ -2267,6 +2270,7 @@ def verificar_alvo_equipamento(client, estado):
                  "req_skill_valor": i.get("req_skill", 0),
                  "req_skill_tipo": i.get("tipo", req_tipo_tmp),
                  "req_level": i.get("req_level", 0),
+                 "req_alignment": i.get("req_alignment", 0),
                  "url_compra": None,  # catálogo não tem URL
                  "pode_comprar": False,
                  "equipado": False, "gold_venda": 0, "url_venda": None}
@@ -2325,6 +2329,7 @@ def verificar_alvo_equipamento(client, estado):
             if not i.get("equipado")
             and i.get("req_skill_valor", 0) <= sk_atual
             and (urgente or i.get("req_skill_valor", 0) > req_eq)
+            and _alinhamento_ok(i.get("req_alignment", 0), player_alignment)
         ]
         compraveis_agora = [i for i in _filtro_base if i.get("pode_comprar")]
         acumular         = [i for i in _filtro_base if not i.get("pode_comprar")]
