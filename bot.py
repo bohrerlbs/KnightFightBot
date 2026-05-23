@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.41 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.42 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1349,14 +1349,14 @@ def executar_ataque(client, user_id, dry_run=False):
 # ═══════════════════════════════════════════
 # BUSCA DE ALVO PARA IMUNIZAÇÃO
 # ═══════════════════════════════════════════
-def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
+def buscar_alvo_imunizacao(client, estado, score_min, excluir=None, xp_max=None):
     """
     Usa o cache de perfis para encontrar candidatos sem HTTP.
     Só verifica disponibilidade (botão Attack) em tempo real.
 
     Ordem de preferência:
-    1. Score mais alto (mais chance de ganhar)
-    2. Level mais próximo do meu (menos variável)
+    1. Menor XP perdida (xp_max estende o limite normal de PERDA_XP_MAX)
+    2. Score mais alto dentro do mesmo tier de XP
     """
     candidatos = candidatos_imunizacao_do_cache(estado)
 
@@ -1370,7 +1370,7 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
         if not candidatos:
             return None
 
-    negativando = score_min <= 0
+    negativando = xp_max is not None and xp_max > abs(PERDA_XP_MAX)
     log.info(f"Candidatos imunização no cache: {len(candidatos)} (score_min={score_min})")
 
     meu_lv = MY_STATS.get("level", 22)
@@ -1380,10 +1380,12 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
         delta = meu_lv - c.get("level", meu_lv)
         return max(0, delta - 5)
 
-    # Busca progressiva: score >= score_min, aumentando XP aceito de 0 até PERDA_XP_MAX
-    # Checa todos os candidatos em cada nível de XP antes de relaxar
+    # Busca progressiva: score >= score_min, aumentando XP aceito de 0 até xp_limite_max
+    # Negativando usa xp_max maior que PERDA_XP_MAX para aceitar mais XP loss
     validos = []
-    xp_limite_max = abs(PERDA_XP_MAX)
+    xp_limite_max = xp_max if xp_max is not None else abs(PERDA_XP_MAX)
+    # Ordena por (menor xp_perda, maior score) para minimizar XP perdida em qualquer modo
+    candidatos = sorted(candidatos, key=lambda c: (xp_perda(c), -c["score"]))
 
     for xp_aceito in range(0, xp_limite_max + 1):
         candidatos_round = [c for c in candidatos
@@ -1391,8 +1393,11 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
                             and xp_perda(c) <= xp_aceito]
         if candidatos_round:
             validos = candidatos_round
+            melhor = validos[0]
             if negativando:
-                log.warning(f"  Negativando para imunizar: {len(validos)} candidatos (melhor score: {validos[0]['score']}%)")
+                log.warning(f"  Negativando para imunizar: {len(validos)} candidatos score>={score_min}% "
+                            f"xp<={xp_aceito} (melhor: {melhor['nome']} Lv{melhor['level']} "
+                            f"score={melhor['score']}% xp_perda={xp_perda(melhor)})")
             elif xp_aceito == 0:
                 log.info(f"  Score >= {score_min} sem perder XP: {len(validos)} candidatos")
             else:
@@ -5478,7 +5483,8 @@ def imunizar_agora(client, estado=None):
     """
     Tenta imunizar com o melhor alvo disponível no cache.
     Esgota TODOS os candidatos disponíveis sem delay entre tentativas.
-    Ordem: score >= SCORE_MIN_IMUNIZACAO → 70 → SCORE_MIN_PIG_BROKE → 0 (se IMUNIZAR_NEGATIVANDO).
+    Ordem: score >= SCORE_MIN_IMUNIZACAO → 70 → SCORE_MIN_PIG_BROKE.
+    Se IMUNIZAR_NEGATIVANDO: fase extra com score>=70% e xp_max=20 (aceita XP loss progressiva).
     Retorna True se conseguiu.
     """
     if estado is None:
@@ -5491,8 +5497,6 @@ def imunizar_agora(client, estado=None):
     alvos_tentados = set()  # acumulado entre todos os níveis de score
 
     score_tiers = [SCORE_MIN_IMUNIZACAO, 70, SCORE_MIN_PIG_BROKE]
-    if IMUNIZAR_NEGATIVANDO:
-        score_tiers.append(0)
     for score_min in score_tiers:
         while True:
             alvo = buscar_alvo_imunizacao(client, carregar_estado(), score_min,
@@ -5511,6 +5515,28 @@ def imunizar_agora(client, estado=None):
             res_i = executar_ataque(client, alvo["user_id"])
             if res_i.get("status") == "executado":
                 log.info(f"  ✓ Imunizado com {alvo['nome']} Lv{alvo['level']} (score_min={score_min})")
+                return True
+            else:
+                log.warning(f"  Ataque em {alvo['nome']} falhou ({res_i.get('status')}) — próximo")
+
+    # Fase negativando: score>=70% com XP loss progressiva (xp_perda=1,2,3...)
+    # Só entra se os tiers normais (com PERDA_XP_MAX) já esgotaram todos os alvos xp=0
+    if IMUNIZAR_NEGATIVANDO:
+        log.warning("  Negativando: buscando score>=70% aceitando XP loss progressiva...")
+        while True:
+            alvo = buscar_alvo_imunizacao(client, carregar_estado(), 70,
+                                          excluir=alvos_tentados, xp_max=20)
+            if not alvo:
+                break
+            alvos_tentados.add(alvo["user_id"])
+            ok_i, _, motivo_i = verificar_alvo_antes_de_atacar(
+                client, alvo["user_id"], 50, meu_clan)
+            if not ok_i:
+                log.debug(f"  Alvo {alvo['nome']} indisponível ({motivo_i}) — próximo")
+                continue
+            res_i = executar_ataque(client, alvo["user_id"])
+            if res_i.get("status") == "executado":
+                log.info(f"  ✓ Imunizado (negativando) com {alvo['nome']} Lv{alvo['level']}")
                 return True
             else:
                 log.warning(f"  Ataque em {alvo['nome']} falhou ({res_i.get('status')}) — próximo")
@@ -6098,8 +6124,8 @@ def loop_acoes(client):
                                                        excluir=alvos_tentados) if cache_ok else None
                     if not alvo:
                         if IMUNIZAR_NEGATIVANDO:
-                            log.warning("  Sem alvo seguro — tentando negativar para imunizar...")
-                            alvo = buscar_alvo_imunizacao(client, estado, 0, excluir=alvos_tentados) if cache_ok else None
+                            log.warning("  Sem alvo seguro — negativando: score>=70% com XP loss...")
+                            alvo = buscar_alvo_imunizacao(client, estado, 70, excluir=alvos_tentados, xp_max=20) if cache_ok else None
                         if not alvo:
                             log.warning("Nenhum alvo seguro encontrado no cache!")
                             break
