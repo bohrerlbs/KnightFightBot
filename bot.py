@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.43 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.44 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
