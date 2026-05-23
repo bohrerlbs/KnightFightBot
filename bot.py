@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.40 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.41 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -171,6 +171,7 @@ HORARIO_GASTAR_GOLD  = True   # ao parar: compra armadura barata com todo o gold
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
+IMUNIZAR_NEGATIVANDO = False  # aceita atacar qualquer alvo (mesmo perdendo) para obter imunidade
 SCORE_MIN_GOLD_ALTO  = 75
 GOLD_ALTO_THRESHOLD  = 5000
 GOLD_CONTA_BROKE     = 100   # gold na conta considerado "sem gold"
@@ -1369,6 +1370,7 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
         if not candidatos:
             return None
 
+    negativando = score_min <= 0
     log.info(f"Candidatos imunização no cache: {len(candidatos)} (score_min={score_min})")
 
     meu_lv = MY_STATS.get("level", 22)
@@ -1378,7 +1380,7 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
         delta = meu_lv - c.get("level", meu_lv)
         return max(0, delta - 5)
 
-    # Busca progressiva: score >= 80, aumentando XP aceito de 0 até PERDA_XP_MAX
+    # Busca progressiva: score >= score_min, aumentando XP aceito de 0 até PERDA_XP_MAX
     # Checa todos os candidatos em cada nível de XP antes de relaxar
     validos = []
     xp_limite_max = abs(PERDA_XP_MAX)
@@ -1389,7 +1391,9 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None):
                             and xp_perda(c) <= xp_aceito]
         if candidatos_round:
             validos = candidatos_round
-            if xp_aceito == 0:
+            if negativando:
+                log.warning(f"  Negativando para imunizar: {len(validos)} candidatos (melhor score: {validos[0]['score']}%)")
+            elif xp_aceito == 0:
                 log.info(f"  Score >= {score_min} sem perder XP: {len(validos)} candidatos")
             else:
                 log.info(f"  Score >= {score_min} aceitando -{xp_aceito} XP: {len(validos)} candidatos")
@@ -2566,29 +2570,31 @@ def tentar_comprar_item_alvo(client, estado):
         log.warning(f"  Gold insuficiente após venda ({gold_atual}g < {gold_bruto}g) — abortando")
         return False
 
-    # Carrega página da URL de compra (funciona para waffen, schilde e ruestungen)
-    try:
-        soup = client.get(url_compra, fragment=False)
-    except Exception as e:
-        log.warning(f"  Comprar {alvo['nome']}: erro ao carregar — {e}")
-        return False
-
-    if _esta_bloqueado_por_missao(soup):
-        log.debug(f"  Comprar {alvo['nome']}: bloqueado por missão ativa")
-        return False
+    # Carrega página da URL de compra — reutiliza soup_pre quando pré-check foi feito,
+    # eliminando race condition entre venda do item atual e segundo GET da mesma página
+    if url_venda_atual:
+        soup = soup_pre  # já validado: sem bloqueio de missão, formulário presente
+    else:
+        try:
+            soup = client.get(url_compra, fragment=False)
+        except Exception as e:
+            log.warning(f"  Comprar {alvo['nome']}: erro ao carregar — {e}")
+            return False
+        if _esta_bloqueado_por_missao(soup):
+            log.debug(f"  Comprar {alvo['nome']}: bloqueado por missão ativa")
+            return False
+        if not soup.find("form"):
+            trecho = soup.get_text(" ", strip=True)[:200]
+            log.warning(f"  Comprar {alvo['nome']}: formulário não encontrado — limpando alvo para re-scan. Página: {trecho!r}")
+            estado.pop("item_alvo", None)
+            salvar_estado(estado)
+            try:
+                verificar_alvo_equipamento(client, estado)
+            except Exception:
+                pass
+            return False
 
     form = soup.find("form")
-    if not form:
-        trecho = soup.get_text(" ", strip=True)[:200]
-        log.warning(f"  Comprar {alvo['nome']}: formulário não encontrado — limpando alvo para re-scan. Página: {trecho!r}")
-        estado.pop("item_alvo", None)
-        salvar_estado(estado)
-        # Força re-scan na próxima iteração
-        try:
-            verificar_alvo_equipamento(client, estado)
-        except Exception:
-            pass
-        return False
 
     campos = {}
     for inp in form.find_all("input"):
@@ -5472,7 +5478,8 @@ def imunizar_agora(client, estado=None):
     """
     Tenta imunizar com o melhor alvo disponível no cache.
     Esgota TODOS os candidatos disponíveis sem delay entre tentativas.
-    Ordem: score >= SCORE_MIN_IMUNIZACAO → 70 → SCORE_MIN_PIG_BROKE. Retorna True se conseguiu.
+    Ordem: score >= SCORE_MIN_IMUNIZACAO → 70 → SCORE_MIN_PIG_BROKE → 0 (se IMUNIZAR_NEGATIVANDO).
+    Retorna True se conseguiu.
     """
     if estado is None:
         estado = carregar_estado()
@@ -5483,7 +5490,10 @@ def imunizar_agora(client, estado=None):
     meu_clan = estado.get("meu_clan_id")
     alvos_tentados = set()  # acumulado entre todos os níveis de score
 
-    for score_min in [SCORE_MIN_IMUNIZACAO, 70, SCORE_MIN_PIG_BROKE]:
+    score_tiers = [SCORE_MIN_IMUNIZACAO, 70, SCORE_MIN_PIG_BROKE]
+    if IMUNIZAR_NEGATIVANDO:
+        score_tiers.append(0)
+    for score_min in score_tiers:
         while True:
             alvo = buscar_alvo_imunizacao(client, carregar_estado(), score_min,
                                           excluir=alvos_tentados)
@@ -6087,8 +6097,12 @@ def loop_acoes(client):
                         alvo = buscar_alvo_imunizacao(client, estado, score_min_imun,
                                                        excluir=alvos_tentados) if cache_ok else None
                     if not alvo:
-                        log.warning("Nenhum alvo seguro encontrado no cache!")
-                        break
+                        if IMUNIZAR_NEGATIVANDO:
+                            log.warning("  Sem alvo seguro — tentando negativar para imunizar...")
+                            alvo = buscar_alvo_imunizacao(client, estado, 0, excluir=alvos_tentados) if cache_ok else None
+                        if not alvo:
+                            log.warning("Nenhum alvo seguro encontrado no cache!")
+                            break
 
                     alvos_tentados.add(alvo["user_id"])
                     meu_clan = estado.get("meu_clan_id")
@@ -6398,6 +6412,8 @@ if __name__ == "__main__":
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:
         globals()["SCORE_MIN_PIG_BROKE"]  = int(cfg["score_min_pig_broke"])
+    if "imunizar_negativando" in cfg:
+        globals()["IMUNIZAR_NEGATIVANDO"] = bool(cfg["imunizar_negativando"])
     if cfg.get("gold_conta_broke") is not None:
         globals()["GOLD_CONTA_BROKE"]     = int(cfg["gold_conta_broke"])
     if cfg.get("gold_min_pig") is not None:
