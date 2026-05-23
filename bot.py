@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.42 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.43 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5555,6 +5555,12 @@ def _taverna_1h(client):
     """
     log.info("⏳ Sem pig e sem missão — ciclo taverna 1h")
 
+    # Aborta se horário de parada foi atingido mid-ciclo: a próxima iteração do loop
+    # chama rotina_encerramento_noturno que gasta gold antes de entrar na taverna
+    if esta_fora_horario():
+        log.info("  _taverna_1h: horário de parada atingido — abortando, encerramento noturno assume")
+        return
+
     # Passo 1: SEMPRE tenta imunizar antes de entrar na taverna
     # O objetivo é entrar com imunidade máxima (1h) para não ficar descoberto durante a taverna
     # Só pula se imunidade já for >= duração da taverna (1h = 3600s)
@@ -5719,7 +5725,13 @@ def _tentar_ataque_continuo(client, estado):
             log.info(f"  {c['nome']} Lv{c['level']} — indisponível")
             time.sleep(0.5)
             continue
-        log.info(f"Ataque contínuo: atacando {c['nome']} Lv{c['level']} score={c['score']}")
+        # Recalcula score com stats frescos — cache pode estar desatualizado
+        av_fresco = avaliar_alvo(perfil)
+        score_fresco = av_fresco["score"]
+        if score_fresco < ATACAR_CONTINUO_SCORE_MIN:
+            log.info(f"  {c['nome']}: score fresco {score_fresco} < {ATACAR_CONTINUO_SCORE_MIN} (cache={c['score']}) — pulando")
+            continue
+        log.info(f"Ataque contínuo: atacando {c['nome']} Lv{c['level']} score={score_fresco} (cache={c['score']})")
         res = executar_ataque(client, uid)
         if res.get("status") == "executado":
             log.info("  Ataque contínuo: OK — aguardando CD")
