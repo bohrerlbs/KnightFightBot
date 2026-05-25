@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.44 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.45 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1764,96 +1764,104 @@ def calcular_horas_ate_inicio():
 def comprar_armadura_barata(client):
     """
     Compra o máximo possível da armadura disponível em /shop/ruestungen/.
-    Usa _parsear_shop_todos_itens para encontrar a mais barata com buy link.
-    Segue o buy link para a página de confirmação e faz POST do formulário.
-    Retorna (qtd_comprada, preco_unitario, nome).
+    Lopa em múltiplas rodadas até gold < 50 ou servidor bloquear (limite por transação).
+    Retorna (qtd_total_comprada, preco_unitario, nome).
     """
-    gold_atual, _ = parsear_gold_gems(client)
-    if gold_atual <= 0:
-        log.info("  Comprar armadura: sem gold")
-        return 0, 0, ""
+    total_qtd = 0
+    preco_ultimo = 0
+    nome_ultimo = "Armadura"
 
-    try:
-        soup_list = client.get("/shop/ruestungen/", fragment=False)
-    except Exception as e:
-        log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
-        return 0, 0, ""
+    for _rodada in range(20):
+        gold_atual, _ = parsear_gold_gems(client)
+        if gold_atual < 50:
+            break
 
-    if _esta_bloqueado_por_missao(soup_list):
-        log.debug("  Comprar armadura: bloqueado por missão ativa")
-        return 0, 0, ""
+        try:
+            soup_list = client.get("/shop/ruestungen/", fragment=False)
+        except Exception as e:
+            log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
+            break
 
-    # Usa o mesmo parser da loja que funciona em todos os servers
-    itens, _ = _parsear_shop_todos_itens(soup_list, "ruestungen")
-    compraveis = [i for i in itens if i["pode_comprar"] and i["url_compra"] and i["gold"] >= 50]
-    if not compraveis:
-        log.info("  Comprar armadura: nenhuma armadura disponível na loja")
-        return 0, 0, ""
-    barata = min(compraveis, key=lambda i: i["gold"])
-    buy_url = barata["url_compra"]
+        if _esta_bloqueado_por_missao(soup_list):
+            log.debug("  Comprar armadura: bloqueado por missão ativa")
+            break
 
-    # Segue buy link para página de confirmação
-    try:
-        soup = client.get(buy_url, fragment=False)
-    except Exception as e:
-        log.warning(f"  Comprar armadura: erro ao carregar confirmação — {e}")
-        return 0, 0, ""
+        itens, _ = _parsear_shop_todos_itens(soup_list, "ruestungen")
+        compraveis = [i for i in itens if i["pode_comprar"] and i["url_compra"] and i["gold"] >= 50]
+        if not compraveis:
+            log.info("  Comprar armadura: nenhuma armadura disponível na loja")
+            break
+        barata = min(compraveis, key=lambda i: i["gold"])
+        buy_url = barata["url_compra"]
 
-    form = soup.find("form")
-    costs_el = soup.find(id="costs_gold")
-    if not form or not costs_el:
-        log.warning("  Comprar armadura: formulário/costs_gold não encontrado na confirmação")
-        return 0, 0, ""
+        try:
+            soup = client.get(buy_url, fragment=False)
+        except Exception as e:
+            log.warning(f"  Comprar armadura: erro ao carregar confirmação — {e}")
+            break
 
-    try:
-        preco = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
-    except ValueError:
-        log.warning("  Comprar armadura: preço inválido")
-        return 0, 0, ""
+        form = soup.find("form")
+        costs_el = soup.find(id="costs_gold")
+        if not form or not costs_el:
+            log.warning("  Comprar armadura: formulário/costs_gold não encontrado na confirmação")
+            break
 
-    if preco <= 0:
-        log.warning("  Comprar armadura: preço zero")
-        return 0, 0, ""
+        try:
+            preco = int(costs_el.get("value", "0").replace(".", "").replace(",", ""))
+        except ValueError:
+            log.warning("  Comprar armadura: preço inválido")
+            break
 
-    if gold_atual < preco:
-        log.info(f"  Comprar armadura: gold ({gold_atual}g) < preço ({preco}g)")
-        return 0, preco, ""
+        if preco <= 0 or gold_atual < preco:
+            break
 
-    # Nome do item
-    nome = "Armadura"
-    txt_pagina = soup.get_text()
-    for pat in [r"purchase this armour \(([^)]+)\)", r"diese Rüstung \(([^)]+)\)",
-                r"armadura \(([^)]+)\)", r"armure \(([^)]+)\)"]:
-        m_nome = re.search(pat, txt_pagina, re.IGNORECASE)
-        if m_nome:
-            nome = m_nome.group(1).strip(); break
+        nome = "Armadura"
+        txt_pagina = soup.get_text()
+        for pat in [r"purchase this armour \(([^)]+)\)", r"diese Rüstung \(([^)]+)\)",
+                    r"armadura \(([^)]+)\)", r"armure \(([^)]+)\)"]:
+            m_nome = re.search(pat, txt_pagina, re.IGNORECASE)
+            if m_nome:
+                nome = m_nome.group(1).strip(); break
 
-    qtd = min(gold_atual // preco, 999)
-    log.info(f"  Comprando {qtd}x {nome} @ {preco}g (gold: {gold_atual}g)...")
+        qtd = min(gold_atual // preco, 999)
+        log.info(f"  Comprando {qtd}x {nome} @ {preco}g (gold: {gold_atual}g, rodada {_rodada + 1})...")
 
-    campos = {}
-    for inp in form.find_all("input"):
-        n = inp.get("name")
-        if n:
-            campos[n] = inp.get("value", "")
-    campos["amount"] = str(qtd)
-    campos["buy"] = "1"
+        campos = {}
+        for inp in form.find_all("input"):
+            n = inp.get("name")
+            if n:
+                campos[n] = inp.get("value", "")
+        campos["amount"] = str(qtd)
+        campos["buy"] = "1"
 
-    action = form.get("action") or buy_url
-    if action.startswith("http"):
-        from urllib.parse import urlparse as _up2
-        action = _up2(action).path
-    if not action or action == "#":
-        action = buy_url
+        action = form.get("action") or buy_url
+        if action.startswith("http"):
+            from urllib.parse import urlparse as _up2
+            action = _up2(action).path
+        if not action or action == "#":
+            action = buy_url
 
-    try:
-        client.post(action, data=campos, fragment=False)
-    except Exception as e:
-        log.warning(f"  Compra armadura: erro no POST — {e}")
-        return 0, preco, nome
+        try:
+            client.post(action, data=campos, fragment=False)
+        except Exception as e:
+            log.warning(f"  Compra armadura: erro no POST — {e}")
+            break
 
-    log.info(f"  ✓ Comprou {qtd}x {nome} (gastou ~{qtd * preco}g)")
-    return qtd, preco, nome
+        # Confirma que gold realmente baixou — se não, servidor bloqueou a transação
+        gold_pos, _ = parsear_gold_gems(client)
+        comprado = (gold_atual - gold_pos) // preco if preco > 0 else qtd
+        if gold_pos >= gold_atual:
+            log.warning(f"  Comprar armadura: gold não diminuiu ({gold_atual}g→{gold_pos}g) — servidor bloqueou, parando")
+            break
+
+        log.info(f"  ✓ Comprou ~{comprado}x {nome} (gastou ~{gold_atual - gold_pos}g)")
+        total_qtd += comprado
+        preco_ultimo = preco
+        nome_ultimo = nome
+
+    if total_qtd == 0:
+        log.info("  Comprar armadura: nada comprado (sem gold, sem itens ou bloqueado)")
+    return total_qtd, preco_ultimo, nome_ultimo
 
 
 def _parsear_shop_listagem(soup, tipo):
