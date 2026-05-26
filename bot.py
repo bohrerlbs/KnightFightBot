@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.45 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.46 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5013,9 +5013,12 @@ def parsear_status(soup):
 
     level = 0
     for tag in soup.find_all(attrs={"data-tooltip": True}):
-        if "Level:" in tag.get("data-tooltip", ""):
-            m = re.search(r"Level:\s*(\d+)", tag["data-tooltip"])
-            if m: level = int(m.group(1))
+        tip = tag.get("data-tooltip", "")
+        if re.search(r"(?:Level|N[íi]vel|Stufe|Niveau|Poziom|Livello)\s*:", tip, re.IGNORECASE):
+            m = re.search(r"(?:Level|N[íi]vel|Stufe|Niveau|Poziom|Livello)\s*:\s*(\d+)", tip, re.IGNORECASE)
+            if m:
+                level = int(m.group(1))
+                break
 
     # Extrai moral
     moral = ""
