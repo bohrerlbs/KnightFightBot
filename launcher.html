@@ -581,6 +581,14 @@ header {
         <input type="checkbox" id="f-horario-gastar-gold" checked style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="f-horario-gastar-gold" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">Gastar gold — compra armadura barata antes de entrar na taverna</label>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <input type="checkbox" id="f-banco-gold" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('f-horario-gastar-gold').checked=false">
+        <label for="f-banco-gold" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">Banco Gold — guarda gold em armaduras, saca só o necessário para cada compra (incompatível com Modo Pig)</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <input type="checkbox" id="f-taverna-inteligente" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="f-taverna-inteligente" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">Taverna Inteligente — entra taverna até o CD da próxima missão, encadeia sessões se necessário</label>
+      </div>
     </div>
 
     <button class="btn-primary" onclick="saveProfile()">v Criar Perfil e Iniciar Bot</button>
@@ -701,6 +709,18 @@ header {
         <input type="checkbox" id="cfg-horario-gastar-gold" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
         <label for="cfg-horario-gastar-gold" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
           Gastar gold — compra armadura barata antes de entrar na taverna
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <input type="checkbox" id="cfg-banco-gold" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)" onchange="if(this.checked)document.getElementById('cfg-horario-gastar-gold').checked=false">
+        <label for="cfg-banco-gold" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Banco Gold — guarda gold em armaduras, saca só o necessário para cada compra (incompatível com Modo Pig)
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <input type="checkbox" id="cfg-taverna-inteligente" style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
+        <label for="cfg-taverna-inteligente" style="color:var(--text);font-size:12px;cursor:pointer;margin:0">
+          Taverna Inteligente — entra taverna até o CD da próxima missão, encadeia sessões se necessário
         </label>
       </div>
     </div>
@@ -867,6 +887,8 @@ function openCfgModal(name){
       document.getElementById('cfg-horario-parada').value = cfg.horario_parada || '22:00';
       document.getElementById('cfg-horario-ativo').checked = !!cfg.horario_ativo;
       document.getElementById('cfg-horario-gastar-gold').checked = cfg.horario_gastar_gold !== false;
+      document.getElementById('cfg-banco-gold').checked = !!cfg.banco_gold;
+      document.getElementById('cfg-taverna-inteligente').checked = !!cfg.taverna_inteligente;
       document.getElementById('cfg-game-user').value   = cfg.game_user || '';
       document.getElementById('cfg-game-pass').value   = cfg.game_pass ? '••••••••' : '';
       document.getElementById('cfg-game-pass').dataset.hasPass = cfg.game_pass ? '1' : '';
@@ -897,6 +919,8 @@ function saveCfg(){
     horario_parada:       document.getElementById('cfg-horario-parada').value || '22:00',
     horario_ativo:        document.getElementById('cfg-horario-ativo').checked,
     horario_gastar_gold:  document.getElementById('cfg-horario-gastar-gold').checked,
+    banco_gold:           document.getElementById('cfg-banco-gold').checked,
+    taverna_inteligente:  document.getElementById('cfg-taverna-inteligente').checked,
     game_user:       document.getElementById('cfg-game-user').value.trim(),
     game_pass:       (function(){
       var v = document.getElementById('cfg-game-pass').value;
@@ -1719,6 +1743,8 @@ function saveProfile(){
     horario_inicio:            document.getElementById('f-horario-inicio').value || '08:00',
     horario_parada:            document.getElementById('f-horario-parada').value || '22:00',
     horario_gastar_gold:       document.getElementById('f-horario-gastar-gold').checked,
+    banco_gold:                document.getElementById('f-banco-gold').checked,
+    taverna_inteligente:       document.getElementById('f-taverna-inteligente').checked,
     game_user:                 document.getElementById('f-game-user').value.trim(),
     game_pass:                 document.getElementById('f-game-pass').value,
   };

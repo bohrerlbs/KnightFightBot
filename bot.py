@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.46 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.47 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -168,6 +168,8 @@ HORARIO_ATIVO        = False  # controle de horário de operação
 HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (entra taverna)
 HORARIO_GASTAR_GOLD  = True   # ao parar: compra armadura barata com todo o gold antes de entrar taverna
+BANCO_GOLD          = False  # gerencia gold em armaduras como reserva (opt-in; incompatível com MODO_PIG)
+TAVERNA_INTELIGENTE = False  # duração da taverna baseada no CD da próxima missão (opt-in)
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
 SCORE_MIN_IMUNIZACAO = 80    # score mínimo para imunizar
@@ -1864,6 +1866,80 @@ def comprar_armadura_barata(client):
     return total_qtd, preco_ultimo, nome_ultimo
 
 
+# ═══════════════════════════════════════════
+# BANCO GOLD (opt-in via BANCO_GOLD=True)
+# Armazena gold excedente em armaduras baratas (50g compra / 25g venda).
+# ═══════════════════════════════════════════
+
+def _contar_armaduras_banco(client):
+    """Conta armaduras NÃO equipadas na seção inventário de /shop/ruestungen/.
+    Retorna (qtd_total, sell_url_da_primeira) para uso em banco_gold_sacar."""
+    try:
+        soup = client.get("/shop/ruestungen/", fragment=False)
+        inv_bg = None
+        for boxtop in soup.find_all("div", class_="box-top"):
+            if "invent" in boxtop.get_text().strip().lower():
+                inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
+                break
+        if not inv_bg:
+            return 0, None
+        qtd = 0
+        sell_url = None
+        for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
+            sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
+            if not sell_a:
+                continue
+            tr_txt = tr.get_text()
+            is_eq = bool(re.search(r"equipped|equipado|ausger[üu]stet", tr_txt, re.IGNORECASE))
+            if is_eq:
+                continue
+            m_qty = re.search(r"(\d+)\s+item", tr_txt, re.IGNORECASE)
+            q = int(m_qty.group(1)) if m_qty else 1
+            qtd += q
+            if sell_url is None:
+                href = sell_a["href"]
+                if href.startswith("http"):
+                    from urllib.parse import urlparse as _up_b
+                    _pb = _up_b(href)
+                    href = _pb.path + ("?" + _pb.query if _pb.query else "")
+                sell_url = href
+        return qtd, sell_url
+    except Exception as e:
+        log.warning(f"_contar_armaduras_banco: erro — {e}")
+        return 0, None
+
+
+def banco_gold_saldo(client):
+    """Retorna valor do banco em gold: qtd_armaduras_não_equipadas × 25g."""
+    qtd, _ = _contar_armaduras_banco(client)
+    return qtd * 25
+
+
+def banco_gold_sacar(client, valor_necessario):
+    """Vende armaduras de banco até cobrir valor_necessario. Retorna gold sacado."""
+    import math as _math
+    if valor_necessario <= 0:
+        return 0
+    qtd_vender = _math.ceil(valor_necessario / 25)
+    qtd_disponivel, sell_url = _contar_armaduras_banco(client)
+    if qtd_disponivel == 0 or not sell_url:
+        log.warning(f"  Banco: sem armaduras para sacar {valor_necessario}g")
+        return 0
+    qtd_real = min(qtd_vender, qtd_disponivel)
+    vender_item_atual(client, sell_url, quantidade=qtd_real)
+    sacado = qtd_real * 25
+    log.info(f"  Banco: vendeu {qtd_real}x armadura → +{sacado}g liberados")
+    return sacado
+
+
+def banco_gold_depositar(client):
+    """Compra armaduras baratas com todo o gold livre (depósito no banco)."""
+    qtd, preco, nome = comprar_armadura_barata(client)
+    if qtd > 0:
+        log.info(f"  Banco: depositou {qtd}x {nome} ({qtd * preco}g → banco)")
+    return qtd, preco, nome
+
+
 def _parsear_shop_listagem(soup, tipo):
     """
     Analisa página de listagem de loja (/shop/waffen/ ou /shop/schilde/).
@@ -2503,7 +2579,24 @@ def tentar_comprar_item_alvo(client, estado):
 
     gold_atual = estado.get("gold_atual", 0)
     if gold_atual < alvo["gold_necessario"]:
-        return False
+        if BANCO_GOLD:
+            try:
+                saldo_b = banco_gold_saldo(client)
+            except Exception:
+                saldo_b = 0
+            capital = gold_atual + saldo_b
+            if capital >= alvo["gold_necessario"]:
+                falta = alvo["gold_necessario"] - gold_atual
+                sacado = banco_gold_sacar(client, falta)
+                gold_atual += sacado
+                estado["gold_atual"] = gold_atual
+                salvar_estado(estado)
+                log.info(f"  Banco sacou {sacado}g — gold agora {gold_atual}g")
+            else:
+                log.info(f"  Guardando para {alvo['nome']}: capital {capital}g < {alvo['gold_necessario']}g necessário (banco={saldo_b}g)")
+                return False
+        else:
+            return False
 
     gold_bruto = alvo.get("gold_bruto", alvo["gold_necessario"])
     url_venda_atual = alvo.get("url_venda_atual")
@@ -4435,8 +4528,13 @@ def rotina_encerramento_noturno(client):
             time.sleep(seg_tav + 30)
         sair_taverna(client)
 
-    # 2. Compra armadura com todo o gold (opcional)
-    if HORARIO_GASTAR_GOLD:
+    # 2. Deposita gold antes de dormir (banco tem prioridade sobre HORARIO_GASTAR_GOLD)
+    if BANCO_GOLD:
+        try:
+            banco_gold_depositar(client)
+        except Exception as e:
+            log.warning(f"  Banco depositar pré-encerramento: erro — {e}")
+    elif HORARIO_GASTAR_GOLD:
         try:
             qtd, preco, nome = comprar_armadura_barata(client)
             if qtd > 0:
@@ -4483,14 +4581,20 @@ def rotina_encerramento_noturno(client):
             sair_taverna(client)
             gold_pos, _ = parsear_gold_gems(client)
             log.info(f"  Gold após taverna noturna: {gold_pos}g")
-            # Gasta gold coletado da taverna antes de entrar na próxima (se ainda fora do horário)
-            if HORARIO_GASTAR_GOLD and esta_fora_horario():
-                try:
-                    qtd, preco, nome = comprar_armadura_barata(client)
-                    if qtd > 0:
-                        log.info(f"  Gold pós-taverna gasto em armadura: {qtd}x {nome} @ {preco}g")
-                except Exception as e:
-                    log.warning(f"  Compra armadura pós-taverna: erro — {e}")
+            # Deposita gold antes de entrar na próxima sessão (se ainda fora do horário)
+            if esta_fora_horario():
+                if BANCO_GOLD:
+                    try:
+                        banco_gold_depositar(client)
+                    except Exception as e:
+                        log.warning(f"  Banco depositar pós-taverna: erro — {e}")
+                elif HORARIO_GASTAR_GOLD:
+                    try:
+                        qtd, preco, nome = comprar_armadura_barata(client)
+                        if qtd > 0:
+                            log.info(f"  Gold pós-taverna gasto em armadura: {qtd}x {nome} @ {preco}g")
+                    except Exception as e:
+                        log.warning(f"  Compra armadura pós-taverna: erro — {e}")
         except Exception as e:
             log.warning(f"  Erro na taverna noturna: {e} — tentando novamente em 5min")
             time.sleep(300)
@@ -4561,16 +4665,28 @@ def verificar_treinamento(client):
             gold_reservado = amuleto_alvo["gold_necessario"]
             motivo_reserva = amuleto_alvo["nome"]
         # Pausa treino sempre que há um alvo de compra com preço válido.
-        # Se gold < reservado: acumulando. Se gold >= reservado: compra deveria ter acontecido
-        # mas falhou (url_compra=None, rescan falhou) — não gasta o gold em treino.
+        # Com BANCO_GOLD: pausa só se capital_total (líquido + banco) for insuficiente.
+        # Sem BANCO_GOLD: pausa sempre que gold_t < gold_reservado (comportamento original).
         if gold_reservado > 0:
-            if gold_t < gold_reservado:
-                log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
-                         f"({gold_t}g / {gold_reservado}g)")
+            if BANCO_GOLD:
+                try:
+                    saldo_b = banco_gold_saldo(client)
+                except Exception:
+                    saldo_b = 0
+                capital = gold_t + saldo_b
+                if capital < gold_reservado:
+                    log.info(f"  Treinamento pausado — capital {capital}g (líquido={gold_t}g banco={saldo_b}g) "
+                             f"< {gold_reservado}g para {motivo_reserva}")
+                    return []
+                # Capital suficiente — banco cobre na hora da compra, treino pode prosseguir
             else:
-                log.info(f"  Treinamento pausado — aguardando compra de {motivo_reserva} "
-                         f"({gold_t}g disponível, compra pendente)")
-            return []
+                if gold_t < gold_reservado:
+                    log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
+                             f"({gold_t}g / {gold_reservado}g)")
+                else:
+                    log.info(f"  Treinamento pausado — aguardando compra de {motivo_reserva} "
+                             f"({gold_t}g disponível, compra pendente)")
+                return []
 
     nomes = {
         "staerke": "Força", "ausdauer": "Resistência",
@@ -5224,9 +5340,11 @@ def recarregar_config():
             cfg = json.load(f)
         changed = []
         for field, key, cast in [
-            ("gold_min_pig",    "GOLD_MIN_PIG",    int),
-            ("perda_xp_max",    "PERDA_XP_MAX",    lambda x: abs(int(x))),
-            ("gold_ignorar_xp", "GOLD_IGNORAR_XP", int),
+            ("gold_min_pig",       "GOLD_MIN_PIG",       int),
+            ("perda_xp_max",       "PERDA_XP_MAX",       lambda x: abs(int(x))),
+            ("gold_ignorar_xp",    "GOLD_IGNORAR_XP",    int),
+            ("banco_gold",         "BANCO_GOLD",         bool),
+            ("taverna_inteligente","TAVERNA_INTELIGENTE", bool),
         ]:
             if field in cfg:
                 novo = cast(cfg[field])
@@ -5598,6 +5716,13 @@ def _taverna_1h(client):
     except Exception as e:
         log.warning(f"  Treinamento pré-taverna: erro — {e}")
 
+    # Passo 2b: deposita gold restante no banco antes de dormir
+    if BANCO_GOLD:
+        try:
+            banco_gold_depositar(client)
+        except Exception as e:
+            log.warning(f"  Banco depositar pré-taverna: erro — {e}")
+
     # Passo 3: verifica se já está em missão ativa
     em_missao, seg_missao = verificar_taverna_ativa(client)
     if em_missao and seg_missao > 0:
@@ -5751,6 +5876,103 @@ def _tentar_ataque_continuo(client, estado):
     return False
 
 
+def _taverna_ate_cd(client):
+    """
+    TAVERNA_INTELIGENTE: entra taverna com duração igual ao CD da próxima missão.
+    Se CD > 12h encadeia sessões (máx 12h cada) com depósito de gold entre elas.
+    Ao acordar deixa o loop_acoes retomar normalmente.
+    """
+    rv = verificar_raubzug(client)
+    if rv["livre"] or rv["segundos_cd"] <= 60:
+        # Sem CD relevante — cai de volta na lógica de 1h normal
+        _taverna_1h(client)
+        return
+
+    seg_espera = rv["segundos_cd"]
+    log.info(f"  [TAVERNA_INTELIGENTE] CD missão: {fmt_t(seg_espera)} — organizando taverna...")
+
+    while seg_espera > 60:
+        if esta_fora_horario():
+            log.info("  [TAVERNA_INTELIGENTE] Fora do horário — encerramento noturno assume")
+            return
+
+        horas_alvo = min(seg_espera / 3600, 12.0)
+
+        # Deposita gold antes de dormir
+        if BANCO_GOLD:
+            try:
+                banco_gold_depositar(client)
+            except Exception as e:
+                log.warning(f"  [TAVERNA_INTELIGENTE] Banco depositar: {e}")
+
+        # Imuniza antes de entrar (cobre toda a sessão)
+        if not MODO_PIG:
+            estado_i = carregar_estado()
+            imun_i = imunidade_restante(estado_i)
+            if imun_i < horas_alvo * 3600:
+                imunizar_agora(client, estado_i)
+
+        # Escolhe filtro por duração alvo
+        if horas_alvo >= 10:
+            filter_id, horas_max = 4, 12
+        elif horas_alvo >= 7:
+            filter_id, horas_max = 3, 9
+        elif horas_alvo >= 4:
+            filter_id, horas_max = 2, 6
+        else:
+            filter_id, horas_max = 1, 3
+
+        jobs = []
+        for _ in range(20):
+            jobs = parsear_taverna(client, horas_max=horas_max, filter_id=filter_id)
+            if jobs:
+                break
+
+        if not jobs:
+            log.warning(f"  [TAVERNA_INTELIGENTE] Sem jobs filter={filter_id} — aguardando 5min")
+            time.sleep(300)
+            rv = verificar_raubzug(client)
+            seg_espera = rv["segundos_cd"] if not rv["livre"] else 0
+            continue
+
+        # Aceita o job de maior duração disponível no filtro
+        melhor = max(jobs, key=lambda j: j["horas"])
+        log.info(f"  🍺 [TAVERNA_INTELIGENTE] {melhor['horas']}h aceito (+{melhor['gold']}g) — dormindo...")
+
+        fim_iso = (agora() + timedelta(hours=melhor["horas"])).isoformat()
+        atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "taverna",
+            "taverna_fim": fim_iso, "taverna_horas": melhor["horas"], "taverna_gold": melhor["gold"]})
+
+        try:
+            client.get_url(melhor["url"])
+        except Exception as e:
+            log.warning(f"  [TAVERNA_INTELIGENTE] Aceitar job: {e} — aguardando 1min")
+            time.sleep(60)
+            rv = verificar_raubzug(client)
+            seg_espera = rv["segundos_cd"] if not rv["livre"] else 0
+            continue
+
+        time.sleep(melhor["horas"] * 3600)
+        sair_taverna(client)
+        atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
+
+        gold_pos, _ = parsear_gold_gems(client)
+        log.info(f"  [TAVERNA_INTELIGENTE] Saiu da taverna — gold: {gold_pos}g")
+
+        # Re-verifica CD real após sair
+        rv = verificar_raubzug(client)
+        seg_espera = rv["segundos_cd"] if not rv["livre"] else 0
+        log.info(f"  [TAVERNA_INTELIGENTE] CD restante: {fmt_t(seg_espera)}")
+
+
+def _entrar_taverna(client):
+    """Roteador: usa _taverna_ate_cd se TAVERNA_INTELIGENTE, senão _taverna_1h."""
+    if TAVERNA_INTELIGENTE:
+        _taverna_ate_cd(client)
+    else:
+        _taverna_1h(client)
+
+
 def loop_acoes(client):
     """
     Loop de ações: dorme enquanto em taverna ou missão/CD, acorda quando libre.
@@ -5820,7 +6042,7 @@ def loop_acoes(client):
                     res_pig_mode.get("status") == "em_cd" and res_pig_mode.get("segundos", 0) > 1800
                 ):
                     if TAVERNA_ATIVA:
-                        _taverna_1h(client)
+                        _entrar_taverna(client)
                     else:
                         log.info("  [MODO_PIG] Sem missão e taverna desativada — aguardando")
                         time.sleep(INTERVALO_RAPIDO_SEG)
@@ -5987,7 +6209,7 @@ def loop_acoes(client):
                 # Na verdade ataque custa 5g → com < 5g não pode imunizar também
                 # Vai direto para taverna para gerar gold
                 if TAVERNA_ATIVA:
-                    _taverna_1h(client)
+                    _entrar_taverna(client)
                 time.sleep(INTERVALO_RAPIDO_SEG)
                 continue
 
@@ -6211,7 +6433,7 @@ def loop_acoes(client):
                 if gold_atual < 10:
                     log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo")
                     if TAVERNA_ATIVA:
-                        _taverna_1h(client)
+                        _entrar_taverna(client)
                     elif ATACAR_CONTINUO:
                         _tentar_ataque_continuo(client, estado)
                     else:
@@ -6233,7 +6455,7 @@ def loop_acoes(client):
                         res.get("status") == "em_cd" and res.get("segundos", 0) > 1800
                     ):
                         if TAVERNA_ATIVA:
-                            _taverna_1h(client)
+                            _entrar_taverna(client)
                         elif ATACAR_CONTINUO:
                             _tentar_ataque_continuo(client, estado)
                         else:
@@ -6244,7 +6466,7 @@ def loop_acoes(client):
                 if gold_atual < 10:
                     log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão")
                     if TAVERNA_ATIVA:
-                        _taverna_1h(client)
+                        _entrar_taverna(client)
                     elif ATACAR_CONTINUO:
                         _tentar_ataque_continuo(client, estado)
                     else:
@@ -6257,7 +6479,7 @@ def loop_acoes(client):
                     ):
                         if TAVERNA_ATIVA:
                             log.info("  Sem missão após imunizar — entrando na taverna sem esperar CD")
-                            _taverna_1h(client)
+                            _entrar_taverna(client)
                         elif ATACAR_CONTINUO:
                             _tentar_ataque_continuo(client, estado)
                         else:
@@ -6457,6 +6679,10 @@ if __name__ == "__main__":
         globals()["HORARIO_PARADA"] = str(cfg["horario_parada"])
     if "horario_gastar_gold" in cfg:
         globals()["HORARIO_GASTAR_GOLD"] = bool(cfg["horario_gastar_gold"])
+    if "banco_gold" in cfg:
+        globals()["BANCO_GOLD"] = bool(cfg["banco_gold"])
+    if "taverna_inteligente" in cfg:
+        globals()["TAVERNA_INTELIGENTE"] = bool(cfg["taverna_inteligente"])
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:
@@ -6497,6 +6723,16 @@ if __name__ == "__main__":
         sys.exit(1)
 
     client = KFClient(COOKIES_RAW)
+
+    # Valida combinações de flags incompatíveis
+    if BANCO_GOLD and MODO_PIG:
+        log.error("BANCO_GOLD incompatível com MODO_PIG — desative um dos dois no config.json")
+        sys.exit(1)
+    if BANCO_GOLD and HORARIO_GASTAR_GOLD:
+        log.warning("BANCO_GOLD ativo: HORARIO_GASTAR_GOLD ignorado — banco gerencia o gold")
+    if TAVERNA_INTELIGENTE and MODO_PIG:
+        log.warning("TAVERNA_INTELIGENTE com MODO_PIG: sem imunização durante as sessões longas")
+
     modo = args.modo
     dry  = args.dry
 
