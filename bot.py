@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.49 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.50 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -691,18 +691,21 @@ def coletar_perfis_cache(client):
     salvar_perfis_cache(cache)
     log.info(f"Cache de perfis concluído: {atualizados} coletados, {erros} erros")
 
-def candidatos_imunizacao_do_cache(estado):
+def candidatos_imunizacao_do_cache(estado, level_min=None):
     """
     Retorna lista de candidatos para imunização ordenados por:
     1. Score de vitória (maior = mais seguro)
     2. Level próximo ao meu (prefere ±5)
 
     Usa cache de perfis — sem requisições HTTP.
-    Filtra: level >= level_min_xp(), sem bloqueio 12h, sem ser eu mesmo.
+    Filtra: level >= level_min (default: level_min_xp()), sem bloqueio 12h, sem ser eu mesmo.
     """
     cache = carregar_perfis_cache()
     if not cache.get("perfis"):
         return []
+
+    if level_min is None:
+        level_min = level_min_xp()
 
     meu_lv = MY_STATS["level"]
     candidatos = []
@@ -710,7 +713,7 @@ def candidatos_imunizacao_do_cache(estado):
     for uid, p in cache["perfis"].items():
         if uid == MY_USER_ID:
             continue
-        if p.get("level", 0) < level_min_xp():
+        if p.get("level", 0) < level_min:
             continue
         pode, _ = pode_atacar_player(estado, uid)
         if not pode:
@@ -1360,7 +1363,13 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None, xp_max=None)
     1. Menor XP perdida (xp_max estende o limite normal de PERDA_XP_MAX)
     2. Score mais alto dentro do mesmo tier de XP
     """
-    candidatos = candidatos_imunizacao_do_cache(estado)
+    meu_lv = MY_STATS.get("level", 22)
+    xp_limite_max = xp_max if xp_max is not None else abs(PERDA_XP_MAX)
+
+    # Expande pool para incluir players mais baixos quando xp_max permite perda de XP
+    # Fórmula: xp_perda = max(0, meu_lv - alvo_lv - 5), então alvo_lv_min = meu_lv - 5 - xp_max
+    level_min = max(1, meu_lv - 5 - xp_limite_max)
+    candidatos = candidatos_imunizacao_do_cache(estado, level_min=level_min)
 
     if not candidatos:
         log.warning("Cache de perfis vazio — não é possível buscar alvo sem HTTP massivo")
@@ -1373,9 +1382,7 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None, xp_max=None)
             return None
 
     negativando = xp_max is not None and xp_max > abs(PERDA_XP_MAX)
-    log.info(f"Candidatos imunização no cache: {len(candidatos)} (score_min={score_min})")
-
-    meu_lv = MY_STATS.get("level", 22)
+    log.info(f"Candidatos imunização no cache: {len(candidatos)} lv>={level_min} (score_min={score_min})")
 
     # Filtra por score mínimo e perda de XP aceitável
     def xp_perda(c):
@@ -1385,7 +1392,6 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None, xp_max=None)
     # Busca progressiva: score >= score_min, aumentando XP aceito de 0 até xp_limite_max
     # Negativando usa xp_max maior que PERDA_XP_MAX para aceitar mais XP loss
     validos = []
-    xp_limite_max = xp_max if xp_max is not None else abs(PERDA_XP_MAX)
     # Ordena por (menor xp_perda, maior score) para minimizar XP perdida em qualquer modo
     candidatos = sorted(candidatos, key=lambda c: (xp_perda(c), -c["score"]))
 
