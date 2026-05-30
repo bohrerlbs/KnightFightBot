@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.48 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.49 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5706,12 +5706,11 @@ def _taverna_1h(client):
         log.info("  _taverna_1h: horário de parada atingido — abortando, encerramento noturno assume")
         return
 
-    # Verifica margem até HORARIO_PARADA para não iniciar sessão que cruza a meia-noite
+    # Verifica margem até HORARIO_PARADA — job mínimo é 1h; não entra se não houver tempo
     horas_ate_parada = calcular_horas_ate_parada()
-    if horas_ate_parada < 0.3:
+    if horas_ate_parada < 1.1:
         log.info(f"  _taverna_1h: apenas {horas_ate_parada*60:.0f} min até parada — abortando, encerramento noturno assume")
         return
-    _horas_max_tv = min(1.0, horas_ate_parada - 0.1)
 
     # Passo 1: SEMPRE tenta imunizar antes de entrar na taverna
     # O objetivo é entrar com imunidade máxima (1h) para não ficar descoberto durante a taverna
@@ -5758,7 +5757,7 @@ def _taverna_1h(client):
         log.info("  ✓ Missão concluída — retomando")
     else:
         # Passo 4: aceitar job de 1h (ou esperar aparecer um)
-        ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=_horas_max_tv)
+        ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=1)
         if ok_tab:
             log.info(f"  🍺 Taverna: job {horas_tab}h aceito (+{gold_tab}g) — dormindo {horas_tab}h")
             fim_iso = (agora() + timedelta(hours=horas_tab)).isoformat()
@@ -5920,10 +5919,10 @@ def _taverna_ate_cd(client):
             return
 
         horas_ate_parada = calcular_horas_ate_parada()
-        if horas_ate_parada < 0.3:
-            log.info(f"  [TAVERNA_INTELIGENTE] Apenas {horas_ate_parada*60:.0f} min até parada — encerramento noturno assume")
-            return
         horas_alvo = min(seg_espera / 3600, 12.0, horas_ate_parada - 0.1)
+        if horas_alvo < 1.0:
+            log.info(f"  [TAVERNA_INTELIGENTE] {horas_alvo:.1f}h disponível < 1h mínimo — encerramento noturno assume")
+            return
 
         # Deposita gold antes de dormir
         if BANCO_GOLD:
