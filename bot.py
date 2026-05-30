@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.47 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.48 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1761,6 +1761,22 @@ def calcular_horas_ate_inicio():
     if inicio <= agora_local:
         inicio += _td(days=1)
     return (inicio - agora_local).total_seconds() / 3600
+
+
+def calcular_horas_ate_parada():
+    """Retorna float: horas até o próximo HORARIO_PARADA (999 se HORARIO_ATIVO=False)."""
+    if not HORARIO_ATIVO:
+        return 999.0
+    from datetime import datetime as _dt, timedelta as _td
+    agora_local = _dt.now()
+    try:
+        h, m = map(int, HORARIO_PARADA.split(":"))
+    except Exception:
+        return 999.0
+    parada = agora_local.replace(hour=h, minute=m, second=0, microsecond=0)
+    if parada <= agora_local:
+        parada += _td(days=1)
+    return (parada - agora_local).total_seconds() / 3600
 
 
 def comprar_armadura_barata(client):
@@ -5690,6 +5706,13 @@ def _taverna_1h(client):
         log.info("  _taverna_1h: horário de parada atingido — abortando, encerramento noturno assume")
         return
 
+    # Verifica margem até HORARIO_PARADA para não iniciar sessão que cruza a meia-noite
+    horas_ate_parada = calcular_horas_ate_parada()
+    if horas_ate_parada < 0.3:
+        log.info(f"  _taverna_1h: apenas {horas_ate_parada*60:.0f} min até parada — abortando, encerramento noturno assume")
+        return
+    _horas_max_tv = min(1.0, horas_ate_parada - 0.1)
+
     # Passo 1: SEMPRE tenta imunizar antes de entrar na taverna
     # O objetivo é entrar com imunidade máxima (1h) para não ficar descoberto durante a taverna
     # Só pula se imunidade já for >= duração da taverna (1h = 3600s)
@@ -5735,7 +5758,7 @@ def _taverna_1h(client):
         log.info("  ✓ Missão concluída — retomando")
     else:
         # Passo 4: aceitar job de 1h (ou esperar aparecer um)
-        ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=1)
+        ok_tab, horas_tab, gold_tab, msg_tab = aceitar_job_taverna(client, horas_max=_horas_max_tv)
         if ok_tab:
             log.info(f"  🍺 Taverna: job {horas_tab}h aceito (+{gold_tab}g) — dormindo {horas_tab}h")
             fim_iso = (agora() + timedelta(hours=horas_tab)).isoformat()
@@ -5896,7 +5919,11 @@ def _taverna_ate_cd(client):
             log.info("  [TAVERNA_INTELIGENTE] Fora do horário — encerramento noturno assume")
             return
 
-        horas_alvo = min(seg_espera / 3600, 12.0)
+        horas_ate_parada = calcular_horas_ate_parada()
+        if horas_ate_parada < 0.3:
+            log.info(f"  [TAVERNA_INTELIGENTE] Apenas {horas_ate_parada*60:.0f} min até parada — encerramento noturno assume")
+            return
+        horas_alvo = min(seg_espera / 3600, 12.0, horas_ate_parada - 0.1)
 
         # Deposita gold antes de dormir
         if BANCO_GOLD:
