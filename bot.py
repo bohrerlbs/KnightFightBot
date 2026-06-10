@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.50 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.51 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1960,6 +1960,22 @@ def banco_gold_depositar(client):
     if qtd > 0:
         log.info(f"  Banco: depositou {qtd}x {nome} ({qtd * preco}g → banco)")
     return qtd, preco, nome
+
+
+def _custo_treino_minimo(soup):
+    """Lê menor custo de treino dos tooltips do homepage (sempre visível, independente de gold).
+    Exclui Agilidade se BUILD_1MAO=False."""
+    AGI_KEYS = ("dexterity", "agilidade", "geschicklichkeit", "zręczność", "destreza", "dextérité")
+    custos = []
+    for tag in soup.find_all(attrs={"data-tooltip": True}):
+        tip = tag["data-tooltip"]
+        m = re.search(r"Training costs\s*([\d.,]+)\s*gold", tip, re.IGNORECASE)
+        if not m:
+            continue
+        if not BUILD_1MAO and any(k in tip.lower() for k in AGI_KEYS):
+            continue
+        custos.append(parse_num(m.group(1)))
+    return min(custos) if custos else 0
 
 
 def _parsear_shop_listagem(soup, tipo):
@@ -4709,6 +4725,27 @@ def verificar_treinamento(client):
                     log.info(f"  Treinamento pausado — aguardando compra de {motivo_reserva} "
                              f"({gold_t}g disponível, compra pendente)")
                 return []
+
+    # Com BANCO_GOLD: sacar mínimo do banco se gold líquido insuficiente para treinar
+    if BANCO_GOLD:
+        gold_liq = estado_t.get("gold_atual", 0)
+        try:
+            soup_home = client.get("/", fragment=False)
+            custo_min = _custo_treino_minimo(soup_home)
+        except Exception:
+            custo_min = 0
+        if custo_min > 0 and gold_liq < custo_min:
+            try:
+                saldo_b = banco_gold_saldo(client)
+            except Exception:
+                saldo_b = 0
+            falta = custo_min - gold_liq
+            if saldo_b >= falta:
+                sacado = banco_gold_sacar(client, falta)
+                if sacado > 0:
+                    log.info(f"  Banco: sacou {sacado}g para treino (custo mín: {custo_min}g, líquido: {gold_liq}g)")
+                    estado_t["gold_atual"] = gold_liq + sacado
+                    salvar_estado(estado_t)
 
     nomes = {
         "staerke": "Força", "ausdauer": "Resistência",
