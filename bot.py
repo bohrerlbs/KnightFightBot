@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.51 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.52 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -2616,22 +2616,24 @@ def tentar_comprar_item_alvo(client, estado):
         return False
 
     gold_atual = estado.get("gold_atual", 0)
-    if gold_atual < alvo["gold_necessario"]:
+    _gb_pre = alvo.get("gold_bruto", alvo["gold_necessario"])
+    _meta_saque = _gb_pre if not alvo.get("url_compra") else alvo["gold_necessario"]
+    if gold_atual < _meta_saque:
         if BANCO_GOLD:
             try:
                 saldo_b = banco_gold_saldo(client)
             except Exception:
                 saldo_b = 0
             capital = gold_atual + saldo_b
-            if capital >= alvo["gold_necessario"]:
-                falta = alvo["gold_necessario"] - gold_atual
+            if capital >= _meta_saque:
+                falta = _meta_saque - gold_atual
                 sacado = banco_gold_sacar(client, falta)
                 gold_atual += sacado
                 estado["gold_atual"] = gold_atual
                 salvar_estado(estado)
                 log.info(f"  Banco sacou {sacado}g — gold agora {gold_atual}g")
             else:
-                log.info(f"  Guardando para {alvo['nome']}: capital {capital}g < {alvo['gold_necessario']}g necessário (banco={saldo_b}g)")
+                log.info(f"  Guardando para {alvo['nome']}: capital {capital}g < {_meta_saque}g necessário (banco={saldo_b}g)")
                 return False
         else:
             return False
