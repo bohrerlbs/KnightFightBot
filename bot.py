@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.52 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.53 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -1913,10 +1913,12 @@ def _contar_armaduras_banco(client):
                 continue
             tr_txt = tr.get_text()
             is_eq = bool(re.search(r"equipped|equipado|ausger[üu]stet", tr_txt, re.IGNORECASE))
-            if is_eq:
-                continue
             m_qty = re.search(r"(\d+)\s+item", tr_txt, re.IGNORECASE)
             q = int(m_qty.group(1)) if m_qty else 1
+            if is_eq:
+                q = max(0, q - 1)
+            if q <= 0:
+                continue
             qtd += q
             if sell_url is None:
                 href = sell_a["href"]
