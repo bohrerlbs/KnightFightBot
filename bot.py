@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.54 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.55 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5767,6 +5767,8 @@ def _taverna_1h(client):
     DURACAO_TAVERNA = 3600  # 1h em segundos
     if MODO_PIG:
         log.info("  [MODO_PIG] Pulando imunização antes da taverna — bot deve ficar atacável")
+    elif BANCO_GOLD:
+        log.info("  [BANCO_GOLD] Pulando imunização — gold em armaduras, derrota PvP sem impacto relevante")
     elif imun >= DURACAO_TAVERNA:
         log.info(f"  Imunidade suficiente ({fmt_t(imun)}) — não precisa renovar antes da taverna")
     else:
@@ -5949,16 +5951,25 @@ def _taverna_ate_cd(client):
     """
     TAVERNA_INTELIGENTE: entra taverna com duração igual ao CD da próxima missão.
     Se CD > 12h encadeia sessões (máx 12h cada) com depósito de gold entre elas.
+    Com BANCO_GOLD e sem CD: entra taverna longa até HORARIO_PARADA em vez de ciclos de 1h.
     Ao acordar deixa o loop_acoes retomar normalmente.
     """
     rv = verificar_raubzug(client)
     if rv["livre"] or rv["segundos_cd"] <= 60:
-        # Sem CD relevante — cai de volta na lógica de 1h normal
-        _taverna_1h(client)
-        return
+        if not BANCO_GOLD:
+            # Sem CD e sem banco: cai na lógica de 1h normal
+            _taverna_1h(client)
+            return
+        # BANCO_GOLD ativo e sem CD pendente: taverna longa até HORARIO_PARADA (ou 12h)
+        seg_espera = int(calcular_horas_ate_parada() * 3600)
+        if seg_espera < 3600:
+            _taverna_1h(client)
+            return
+        log.info(f"  [TAVERNA_INTELIGENTE+BANCO] Livre e sem pig/missão — taverna longa {fmt_t(seg_espera)}")
+    else:
+        seg_espera = rv["segundos_cd"]
 
-    seg_espera = rv["segundos_cd"]
-    log.info(f"  [TAVERNA_INTELIGENTE] CD missão: {fmt_t(seg_espera)} — organizando taverna...")
+    log.info(f"  [TAVERNA_INTELIGENTE] CD/alvo: {fmt_t(seg_espera)} — organizando taverna...")
 
     while seg_espera > 60:
         if esta_fora_horario():
@@ -5978,8 +5989,8 @@ def _taverna_ate_cd(client):
             except Exception as e:
                 log.warning(f"  [TAVERNA_INTELIGENTE] Banco depositar: {e}")
 
-        # Imuniza antes de entrar (cobre toda a sessão)
-        if not MODO_PIG:
+        # Imuniza antes de entrar (cobre toda a sessão) — pula se BANCO_GOLD (gold em armaduras)
+        if not MODO_PIG and not BANCO_GOLD:
             estado_i = carregar_estado()
             imun_i = imunidade_restante(estado_i)
             if imun_i < horas_alvo * 3600:
