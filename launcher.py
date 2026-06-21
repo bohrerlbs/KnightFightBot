@@ -234,15 +234,19 @@ def start_bg_bot(name, modo="free", ef_offset_max=5.0):
             f.write(f"workdir: {workdir_abs} exists={workdir_abs.exists()}\n")
             f.write(f"python: {sys.executable}\n")
 
-        log_f = open(str(log_file_abs), "a", encoding="utf-8")
+        # stdout -> DEVNULL e stderr -> arquivo separado de bot_bg.log: o bot_bg.py já tem
+        # seu próprio RotatingFileHandler escrevendo em bot_bg.log; se o stdout do processo
+        # filho também aponta pra esse mesmo arquivo, o handle herdado nunca é fechado e
+        # bloqueia o os.rename() da rotação (WinError 32), fazendo o log crescer sem limite.
+        err_f = open(str(err_file.resolve()), "a", encoding="utf-8")
         proc = subprocess.Popen(
             [sys.executable, "-X", "utf8", "-u", str(bot_bg_abs), "--workdir", str(workdir_abs)],
-            stdout=log_f,
-            stderr=log_f,
+            stdout=subprocess.DEVNULL,
+            stderr=err_f,
             env=env,
             cwd=str(BASE_DIR),
         )
-        log_f.close()  # fecha handle do pai — filho já tem sua cópia, libera para rotação
+        err_f.close()  # fecha handle do pai — filho já tem sua cópia
         running_bots[bg_key] = proc
         return {"ok": True, "pid": proc.pid, "port": cfg.get("port", 8770)}
     except Exception as e:
@@ -300,16 +304,19 @@ def start_bot(name):
         return {"ok": False, "error": "bot.py não encontrado na pasta " + str(BASE_DIR)}
     port = get_profile_port(name)
     profile_dir = PROFILES_DIR / name
-    log_path = profile_dir / "bot.log"
+    err_path = profile_dir / "bot_err.log"
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     try:
+        # stdout -> DEVNULL e stderr -> bot_err.log (separado do bot.log): bot.py já tem seu
+        # próprio RotatingFileHandler escrevendo em bot.log; redirecionar o stdout do processo
+        # filho pro mesmo arquivo mantém um handle aberto que bloqueia a rotação (WinError 32).
         p = subprocess.Popen(
             [sys.executable, str(bot_py), "--workdir", str(profile_dir)],
             cwd=str(BASE_DIR),
-            stdout=open(log_path, "a", encoding="utf-8"),
-            stderr=subprocess.STDOUT,
+            stdout=subprocess.DEVNULL,
+            stderr=open(err_path, "a", encoding="utf-8"),
             env=env
         )
         running_bots[name] = p
