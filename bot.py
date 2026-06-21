@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.57 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.58 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -5433,6 +5433,14 @@ def loop_lento(client):
                 status = parsear_status(client.get("/status/"))
                 atualizar_ciclo_file("status", status)
                 log.info(f"Status: Lv{status['level']} | {status['vitorias']}V/{status['derrotas']}D | {status['preciosidades']} prec")
+
+                # Garante que estado.json["level"] (lido pelo dashboard) reflete o nível
+                # real — bot_bg.py também escreve esse campo, mas com parser que só
+                # reconhece tooltip em inglês; sem isso o dashboard ficava preso num
+                # nível errado capturado pelo bot_bg sem nunca se corrigir.
+                if status.get("level") and status["level"] != estado.get("level"):
+                    estado["level"] = status["level"]
+                    salvar_estado(estado)
 
                 # Atualiza clan_id periodicamente
                 clan_id_atual = get_my_clan_id(client)

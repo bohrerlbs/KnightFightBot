@@ -286,10 +286,11 @@ def parsear_status_bg(soup):
                     status["ef"] = float(m.group(1).replace(",", "."))
                     break
 
-        # Level
-        lv = soup.find("a", class_="tooltip", attrs={"data-tooltip": re.compile(r"Level:\s*\d+")})
+        # Level (multi-idioma: EN/PT/DE/FR/PL/IT — tooltip varia conforme idioma da conta)
+        _LV_PAT = re.compile(r"(?:Level|N[íi]vel|Stufe|Niveau|Poziom|Livello)\s*:\s*(\d+)", re.IGNORECASE)
+        lv = soup.find("a", class_="tooltip", attrs={"data-tooltip": _LV_PAT})
         if lv:
-            m = re.search(r"Level:\s*(\d+)", lv["data-tooltip"])
+            m = _LV_PAT.search(lv["data-tooltip"])
             if m: status["level"] = int(m.group(1))
 
         # Atributos via tooltips
