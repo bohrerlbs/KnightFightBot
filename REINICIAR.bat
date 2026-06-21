@@ -74,7 +74,7 @@ if exist "%TMPFILE%" (
         set "PROF=%%P"
         set "PROF=!PROF: =!"
         echo   Iniciando: !PROF!
-        powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8764/api/start' -Method Post -Body (@{name='!PROF!'} | ConvertTo-Json) -ContentType 'application/json' -TimeoutSec 10; if (-not $r.ok) { Write-Host ('    [AVISO] ' + $r.error) } } catch { Write-Host ('    [ERRO] ' + $_.Exception.Message) }"
+        powershell -NoProfile -Command "try { $json = (@{name='!PROF!'} | ConvertTo-Json -Compress); $bytes = [System.Text.Encoding]::UTF8.GetBytes($json); $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8764/api/start' -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -TimeoutSec 10; if (-not $r.ok) { Write-Host ('    [AVISO] ' + $r.error) } } catch { Write-Host ('    [ERRO] ' + $_.Exception.Message) }"
         timeout /t 1 /nobreak > nul
     )
     del /q "%TMPFILE%"

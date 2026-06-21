@@ -844,10 +844,12 @@ class Handler(BaseHTTPRequestHandler):
             if is_admin(session): return True
             return name.lower() in [x.lower() for x in (session.get("profiles") or [])]
         if   p == "/api/start":
-            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
+            if not d.get("name"): self._json({"ok":False,"error":"Corpo da requisição inválido ou sem 'name'"}); return
+            if not can_access(d["name"]): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(start_bot(d["name"]))
         elif p == "/api/stop":
-            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
+            if not d.get("name"): self._json({"ok":False,"error":"Corpo da requisição inválido ou sem 'name'"}); return
+            if not can_access(d["name"]): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(stop_bot(d["name"]))
         elif p == "/api/save":
             name_req = re.sub(r'[^\w\-]', '_', d.get("name","")).lower()
@@ -872,7 +874,8 @@ class Handler(BaseHTTPRequestHandler):
                                 sess["profiles"] = profs
             self._json(result)
         elif p == "/api/delete":
-            if not can_access(d.get("name","")): self._json({"ok":False,"error":"Sem permissão"}); return
+            if not d.get("name"): self._json({"ok":False,"error":"Corpo da requisição inválido ou sem 'name'"}); return
+            if not can_access(d["name"]): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(delete_profile(d["name"]))
         elif p == "/api/update":
             if not is_admin(session): self._json({"ok":False,"error":"Sem permissão"}); return
