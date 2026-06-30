@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.58 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.59 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -475,19 +475,27 @@ def fmt_t(seg):
 _estado_lock = __import__("threading").Lock()
 
 def carregar_estado():
+    def _default():
+        return {
+            "ultimo_ataque": None,
+            "imunidade_ate": None,
+            "minutos_missao_hoje": 0,
+            "missoes_hoje": 0,
+            "dia_atual": agora().strftime("%Y-%m-%d"),
+            "historico_ataques": {},
+            "gold_atual": 0,
+        }
     with _estado_lock:
-        if os.path.exists(ESTADO_FILE):
-            with open(ESTADO_FILE, encoding="utf-8") as f:
-                return json.load(f)
-    return {
-        "ultimo_ataque": None,
-        "imunidade_ate": None,
-        "minutos_missao_hoje": 0,
-        "missoes_hoje": 0,
-        "dia_atual": agora().strftime("%Y-%m-%d"),
-        "historico_ataques": {},
-        "gold_atual": 0,
-    }
+        for path in (ESTADO_FILE, ESTADO_FILE + ".bak"):
+            if os.path.exists(path):
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    if data:
+                        return data
+                except Exception:
+                    log.warning(f"estado.json corrompido ({path}) — usando fallback")
+    return _default()
 
 def salvar_estado(e):
     hoje = agora().strftime("%Y-%m-%d")
@@ -496,11 +504,18 @@ def salvar_estado(e):
         e["minutos_missao_hoje"] = 0
         e["dia_atual"] = hoje
         log.info("Novo dia — contadores resetados")
-    # Escrita atômica: grava em arquivo temp e renomeia — evita corrupção por race condition entre threads
+    # Escrita atômica com fsync: garante flush no disco antes do rename — evita zeros em queda de energia
     tmp = ESTADO_FILE + ".tmp"
     with _estado_lock:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(e, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        if os.path.exists(ESTADO_FILE):
+            try:
+                os.replace(ESTADO_FILE, ESTADO_FILE + ".bak")
+            except Exception:
+                pass
         os.replace(tmp, ESTADO_FILE)
 
 def registrar_ataque(estado, user_id, resultado="desconhecido", gold_ganho=0, xp_ganho=0):
