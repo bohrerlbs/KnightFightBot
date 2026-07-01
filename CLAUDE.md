@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.60
+## Versao atual: 2.3.61
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -57,3 +57,17 @@
   para com sys.exit(1) em vez de rodar quebrado
 - So roda no bot.py; bot_bg.py nao tem login proprio, depende do cookie que o bot.py grava
   em config.json
+
+## HTTP 418 (v2.3.61+) — cookie preso a userid antigo
+- KFClient.get/post chamam r.raise_for_status() -> 418 vira requests.exceptions.HTTPError,
+  NAO SessaoExpiradaError (essa so cobre redirect pra /login), entao o catch de sessao
+  vencida nunca pegava 418
+- 2 pontos cobertos: (1) /status/ inicial no arranque do modo loop -> se 418, chama
+  tratar_reset_personagem() direto (nem tenta comparar level, pois o proprio /status/
+  falhou); (2) dentro do loop_acoes, novo "except requests.exceptions.HTTPError" antes do
+  "except Exception" generico -> chama renovar_cookie_auto() e continua. Antes dessa
+  correcao, um 418 em pleno loop caia no except Exception generico que so loga e dorme
+  pra sempre (bot fica "parado" sem nunca relogar) — foi o que aconteceu no reset de
+  2026-07-01, a deteccao por level nao ajudou pq o /status/ em si ja dava 418
+- renovar_cookie_auto() agora retorna dict {"cookie","userid"} (antes so retornava a
+  string do cookie) e atualiza userid no config.json tambem, nao so cookie

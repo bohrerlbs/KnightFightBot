@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.60 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.61 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -104,7 +104,8 @@ def fazer_login_moonid(server, username, password):
     return {"cookie": "; ".join(f"{k}={v}" for k, v in cookies_dict.items()), "userid": userid}
 
 def renovar_cookie_auto(cfg_path="config.json"):
-    """Tenta renovar o cookie usando game_user/game_pass do config. Retorna novo cookie ou None."""
+    """Tenta renovar o cookie (e userid, se mudou) usando game_user/game_pass do config.
+    Retorna {"cookie":..., "userid":...} ou None se não conseguir."""
     try:
         import json as _j
         with open(cfg_path, encoding="utf-8") as f:
@@ -118,10 +119,15 @@ def renovar_cookie_auto(cfg_path="config.json"):
         resultado = fazer_login_moonid(server, game_user, game_pass)
         novo_cookie = resultado["cookie"]
         cfg["cookies"] = novo_cookie
+        # userid pode ter mudado (personagem deletado/recriado) — sem isso o bot continua
+        # operando com o userid antigo mesmo depois de renovar o cookie.
+        if resultado.get("userid") and resultado["userid"] != cfg.get("userid"):
+            log.warning(f"🆔 UserID mudou: {cfg.get('userid')} → {resultado['userid']}")
+            cfg["userid"] = resultado["userid"]
         with open(cfg_path, "w", encoding="utf-8") as f:
             _j.dump(cfg, f, indent=2, ensure_ascii=False)
         log.info("✓ Cookie renovado com sucesso!")
-        return novo_cookie
+        return {"cookie": novo_cookie, "userid": cfg.get("userid", "")}
     except Exception as e:
         log.error(f"Falha ao renovar cookie: {e}")
         return None
@@ -6628,8 +6634,29 @@ def loop_acoes(client):
             log.error(f"🔒 COOKIE VENCIDO: {e}")
             novo = renovar_cookie_auto()
             if novo:
-                globals()["COOKIES_RAW"] = novo
-                client = KFClient(novo)
+                globals()["COOKIES_RAW"] = novo["cookie"]
+                if novo.get("userid"):
+                    globals()["MY_USER_ID"] = novo["userid"]
+                client = KFClient(novo["cookie"])
+                atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
+                log.info("✓ Continuando com novo cookie...")
+            else:
+                atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "cookie_expirado"})
+                log.error("Bot pausado — configure game_user/game_pass no cfg ou atualize o cookie manualmente.")
+                time.sleep(3600)
+        except requests.exceptions.HTTPError as e:
+            # 418 em pleno loop (não só no status inicial) = mesma causa: personagem foi
+            # deletado/recriado enquanto o bot já estava rodando, cookie ficou preso ao
+            # userid antigo. Sem isso o bot cai pra sempre no "except Exception" genérico
+            # abaixo, que só loga e dorme — nunca tenta relogar (bot fica "parado" pra sempre).
+            status_code = getattr(e.response, "status_code", None)
+            log.error(f"🫖 HTTP {status_code} no loop — provável personagem deletado/recriado (cookie preso ao userid antigo): {e}")
+            novo = renovar_cookie_auto()
+            if novo:
+                globals()["COOKIES_RAW"] = novo["cookie"]
+                if novo.get("userid"):
+                    globals()["MY_USER_ID"] = novo["userid"]
+                client = KFClient(novo["cookie"])
                 atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                 log.info("✓ Continuando com novo cookie...")
             else:
@@ -6932,9 +6959,35 @@ if __name__ == "__main__":
         # ── Coleta status do personagem PRIMEIRO (rápido, 2s) ──
         log.info("Coletando status do personagem...")
         try:
-            status = parsear_status(client.get("/status/"))
+            try:
+                status = parsear_status(client.get("/status/"))
+            except Exception as e_status:
+                # HTTP 418 no /status/ inicial = cookie preso a um userid que não existe mais
+                # (personagem deletado/recriado) — o servidor nem deixa ler o level ao vivo,
+                # então a comparação de level abaixo nunca teria chance de rodar. Relogar
+                # de cara é o único jeito de sair desse estado (ver project_char_reset).
+                is_418 = isinstance(e_status, requests.exceptions.HTTPError) and \
+                         getattr(e_status.response, "status_code", None) == 418
+                if is_418 and cfg.get("game_user") and cfg.get("game_pass"):
+                    log.warning("⚠ HTTP 418 no /status/ inicial — provável personagem deletado/recriado (cookie preso ao userid antigo). Relogando...")
+                    try:
+                        resultado = tratar_reset_personagem(
+                            cfg.get("server", "int7"), cfg["game_user"], cfg["game_pass"])
+                        globals()["COOKIES_RAW"] = resultado["cookie"]
+                        if resultado.get("userid"):
+                            globals()["MY_USER_ID"] = resultado["userid"]
+                        client = KFClient(globals()["COOKIES_RAW"])
+                        status = parsear_status(client.get("/status/"))
+                        log.info(f"✓ Relogin resolveu o 418 — personagem novo Lv{status.get('level')} userid={globals()['MY_USER_ID']}")
+                    except Exception as e_reset:
+                        print(f"\n❌ 418 persistente mesmo após relogin automático: {e_reset}\n")
+                        log.error(f"❌ Falha ao tratar 418 automaticamente: {e_reset}")
+                        sys.exit(1)
+                else:
+                    raise
 
             # ── Detecta reset de personagem: level nunca regride no jogo ──
+            # (fallback pro caso do /status/ não dar 418 mas mesmo assim mostrar level menor)
             estado_prev = carregar_estado()
             level_local = estado_prev.get("level", 0)
             level_live  = status.get("level", 0)
