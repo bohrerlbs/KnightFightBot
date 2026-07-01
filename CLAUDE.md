@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.59
+## Versao atual: 2.3.60
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -46,3 +46,14 @@
 - waffen/schilde/ruestungen: req_skill_equipado < req_skill_loja E req_skill_loja <= skill_personagem -> compra
 - aneis/amuletos: req_level_equipado < req_level_loja E req_level_loja <= level_personagem -> compra
 - Contagem de aneis via secao inventario (qty_total real, nao por TR sell-link)
+
+## Deteccao automatica de reset de personagem (v2.3.60+)
+- No inicio do modo "loop", compara level ao vivo (/status/) com level salvo em estado.json
+- Se level_live < level_local -> reset confirmado (level nunca regride no jogo)
+- tratar_reset_personagem() faz backup de estado.json/pig_list.json/bg_estado.json etc em
+  _backup_personagem_antigo_<timestamp>/ e reloga via fazer_login_moonid() usando
+  game_user/game_pass do config.json, atualizando cookies+userid automaticamente
+- Se faltar game_user/game_pass ou o relogin falhar (ex: conta banida de verdade), o bot
+  para com sys.exit(1) em vez de rodar quebrado
+- So roda no bot.py; bot_bg.py nao tem login proprio, depende do cookie que o bot.py grava
+  em config.json

@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.59 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.60 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -125,6 +125,38 @@ def renovar_cookie_auto(cfg_path="config.json"):
     except Exception as e:
         log.error(f"Falha ao renovar cookie: {e}")
         return None
+
+def tratar_reset_personagem(server, game_user, game_pass, cfg_path="config.json"):
+    """Personagem foi deletado/recriado (level ao vivo regrediu vs. estado.json local).
+
+    Move o estado antigo (que ainda referencia o userid/personagem anterior) pra uma
+    pasta de backup e faz um relogin fresco pra capturar cookie+userid do personagem novo.
+    Sem isso o bot volta a tomar HTTP 418 em loop (cookie preso ao userid antigo — ver
+    memória project_char_reset_2026-07-01). Levanta exceção se o relogin falhar (ex: conta
+    banida de verdade) — não tenta mascarar isso, quem chama decide o que fazer.
+    """
+    import shutil
+    from datetime import datetime as _dt
+    ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = f"_backup_personagem_antigo_{ts}"
+    os.makedirs(backup_dir, exist_ok=True)
+    for nome in ("estado.json", "estado.json.bak", "pig_list.json", "pig_list.json.bak",
+                 "ultimo_ciclo.json", "bg_estado.json", "bg_ciclo.json"):
+        if os.path.exists(nome):
+            shutil.move(nome, os.path.join(backup_dir, nome))
+    log.warning(f"📦 Estado do personagem antigo movido para {backup_dir}/")
+
+    resultado = fazer_login_moonid(server, game_user, game_pass)
+
+    import json as _j
+    with open(cfg_path, encoding="utf-8") as f:
+        cfg = _j.load(f)
+    cfg["cookies"] = resultado["cookie"]
+    if resultado.get("userid"):
+        cfg["userid"] = resultado["userid"]
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        _j.dump(cfg, f, indent=2, ensure_ascii=False)
+    return resultado
 
 COOKIES_RAW = "COLE_SEUS_COOKIES_AQUI"
 MY_USER_ID  = "522001100"
@@ -6901,6 +6933,32 @@ if __name__ == "__main__":
         log.info("Coletando status do personagem...")
         try:
             status = parsear_status(client.get("/status/"))
+
+            # ── Detecta reset de personagem: level nunca regride no jogo ──
+            estado_prev = carregar_estado()
+            level_local = estado_prev.get("level", 0)
+            level_live  = status.get("level", 0)
+            if level_local and level_live and level_live < level_local:
+                log.warning(f"⚠ RESET DE PERSONAGEM DETECTADO: level ao vivo ({level_live}) < level salvo ({level_local})")
+                if cfg.get("game_user") and cfg.get("game_pass"):
+                    try:
+                        resultado = tratar_reset_personagem(
+                            cfg.get("server", "int7"), cfg["game_user"], cfg["game_pass"])
+                        globals()["COOKIES_RAW"] = resultado["cookie"]
+                        if resultado.get("userid"):
+                            globals()["MY_USER_ID"] = resultado["userid"]
+                        client = KFClient(globals()["COOKIES_RAW"])
+                        status = parsear_status(client.get("/status/"))
+                        log.info(f"✓ Reset tratado — personagem novo Lv{status.get('level')} userid={globals()['MY_USER_ID']}")
+                    except Exception as e_reset:
+                        print(f"\n❌ Personagem foi resetado mas o relogin automático falhou: {e_reset}\n")
+                        log.error(f"❌ Falha ao tratar reset automaticamente: {e_reset}")
+                        sys.exit(1)
+                else:
+                    print("\n❌ Personagem foi resetado (level regrediu) mas config.json não tem game_user/game_pass — relogin automático impossível.\n")
+                    log.error("Reset detectado mas sem game_user/game_pass no config.json")
+                    sys.exit(1)
+
             atualizar_ciclo_file("status", status)
             gold_conta, gems = parsear_gold_gems(client)
             status["gold_conta"] = gold_conta
