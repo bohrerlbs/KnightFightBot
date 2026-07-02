@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.61
+## Versao atual: 2.3.62
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -71,3 +71,18 @@
   2026-07-01, a deteccao por level nao ajudou pq o /status/ em si ja dava 418
 - renovar_cookie_auto() agora retorna dict {"cookie","userid"} (antes so retornava a
   string do cookie) e atualiza userid no config.json tambem, nao so cookie
+
+## Taverna curta vs taverna inteligente (v2.3.62+)
+- Prioridade correta: pig > missao > taverna. TAVERNA_INTELIGENTE (taverna longa, ate
+  12h/ate HORARIO_PARADA) so deve rodar quando realmente nao ha pig nem missao (cota_diaria
+  confirmada por gerenciar_missao com gold >= 10g)
+- Bug corrigido: os 3 pontos do loop_acoes que caiam em "sem gold" (gold<5g pre-pig,
+  gold<10g apos loop de pig sem alvo, gold<10g apos imunizar) chamavam _entrar_taverna()
+  direto -> com TAVERNA_INTELIGENTE ligado isso sempre virava sessao longa (12h), mesmo
+  quando o unico problema era falta de gold pontual (nao falta real de pig/missao) — foi o
+  caso do reset de personagem em 2026-07-01: personagem novo com pouco gold entrou 12h de
+  taverna quando so precisava de 1h pra levantar gold e voltar pras missoes
+- Agora esses 3 pontos chamam _taverna_1h(client) direto (ignora TAVERNA_INTELIGENTE,
+  sempre 1h curta) — bot.py:6357, 6581, 6614. O terceiro ponto legitimo (cota_diaria
+  confirmada, bot.py:6603 e 6627) continua usando _entrar_taverna() (taverna
+  longa/inteligente quando aplicavel)

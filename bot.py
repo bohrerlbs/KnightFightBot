@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.61 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.62 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -6349,12 +6349,12 @@ def loop_acoes(client):
             # ── Gold insuficiente para qualquer ataque (< 5g) ─────────────────
             # Ataque PvP custa 5g, missão de campo custa 10g. Taverna é gratuita.
             if gold_atual < 5:
-                log.warning(f"⚠ Gold {gold_atual}g < 5g — sem gold para ataques → imunizando e taverna")
-                # Tenta imunizar apenas se encontrar alvo (não custa gold, é um ataque mas o custo real é mínimo)
-                # Na verdade ataque custa 5g → com < 5g não pode imunizar também
-                # Vai direto para taverna para gerar gold
+                log.warning(f"⚠ Gold {gold_atual}g < 5g — sem gold para ataques → taverna curta (1h) para levantar gold")
+                # Sem gold nem pra atacar (5g) nem pra missão (10g) — 1h de taverna só pra
+                # levantar gold e voltar a tentar pig/missão no próximo ciclo. Não usa
+                # _entrar_taverna() aqui pra não cair na sessão longa do TAVERNA_INTELIGENTE.
                 if TAVERNA_ATIVA:
-                    _entrar_taverna(client)
+                    _taverna_1h(client)
                 time.sleep(INTERVALO_RAPIDO_SEG)
                 continue
 
@@ -6576,9 +6576,9 @@ def loop_acoes(client):
             # Nada pra atacar → missão (requer ≥ 10g) ou taverna/ataque contínuo
             if not ataque_feito:
                 if gold_atual < 10:
-                    log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo")
+                    log.info(f"  Gold {gold_atual}g < 10g — não pode iniciar missão de campo — taverna curta (1h)")
                     if TAVERNA_ATIVA:
-                        _entrar_taverna(client)
+                        _taverna_1h(client)
                     elif ATACAR_CONTINUO:
                         _tentar_ataque_continuo(client, estado)
                     else:
@@ -6609,9 +6609,9 @@ def loop_acoes(client):
                 # Acabou de imunizar — verifica se tem missão disponível (requer ≥ 10g)
                 # Se não tiver (ou gold insuficiente), vai para taverna/ataque contínuo
                 if gold_atual < 10:
-                    log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão")
+                    log.info(f"  Gold {gold_atual}g < 10g após imunizar — sem missão — taverna curta (1h)")
                     if TAVERNA_ATIVA:
-                        _entrar_taverna(client)
+                        _taverna_1h(client)
                     elif ATACAR_CONTINUO:
                         _tentar_ataque_continuo(client, estado)
                     else:
