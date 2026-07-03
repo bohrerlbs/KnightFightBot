@@ -1,8 +1,8 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.8
+# KnightFight — BattleGround Bot v1.0.9
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
-import os, sys, json, time, re, logging, argparse, threading
+import os, sys, json, time, re, logging, argparse, threading, random
 from datetime import datetime, timedelta
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -1726,11 +1726,14 @@ def loop_bg(client, eu, modo):
             log.warning("  Sem alvos viáveis após todas tentativas. Aguardando próximo ciclo...")
             atualizar_ciclo("status", "sem_alvo")
 
-        # Aguarda cooldown
-        proximo = agora() + timedelta(seconds=cooldown)
-        log.info(f"  💤 Próximo ataque em {fmt_t(cooldown)} ({proximo:%H:%M:%S})")
+        # Aguarda cooldown + variação aleatória (1-10min) para não atacar sempre
+        # no intervalo exato — evita padrão de timing facilmente detectável
+        jitter = random.randint(60, 600)
+        espera = cooldown + jitter
+        proximo = agora() + timedelta(seconds=espera)
+        log.info(f"  💤 Próximo ataque em {fmt_t(espera)} (cooldown {fmt_t(cooldown)} + jitter {fmt_t(jitter)}) ({proximo:%H:%M:%S})")
         atualizar_ciclo("proximo_ataque", proximo.isoformat())
-        time.sleep(cooldown)
+        time.sleep(espera)
 
 # ═══════════════════════════════════════════════════════════════
 # SERVIDOR DASHBOARD
