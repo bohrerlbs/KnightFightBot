@@ -1,5 +1,5 @@
 """
-KnightFight Bot v2.3.62 — Loop 24h com cache de perfis
+KnightFight Bot v2.3.63 — Loop 24h com cache de perfis
 ==================================================
 FLUXO:
   Ao iniciar: coleta cache de perfis (500 perfis, ~15min)
@@ -73,10 +73,15 @@ def fazer_login_moonid(server, username, password):
     next_val = next_inp["value"] if next_inp else (urlparse(connect_url).path.rstrip("/") + "/")
 
     # Passo 4: POST login → moonid redireciona via OAuth → game server autentica
+    # Origin é obrigatório: moonid.net passou a exigi-lo na checagem de CSRF do Django
+    # além do Referer — sem ele o POST leva 403 "CSRF verification failed", que sem essa
+    # checagem explicita era mal-interpretado como usuário/senha invalidos.
     r2 = s.post("https://moonid.net/account/login/", data={
         "username": username, "password": password,
         "csrfmiddlewaretoken": csrf, "next": next_val,
-    }, headers={"Referer": r1.url}, timeout=20, allow_redirects=True)
+    }, headers={"Referer": r1.url, "Origin": "https://moonid.net"}, timeout=20, allow_redirects=True)
+    if r2.status_code == 403:
+        raise Exception(f"Login bloqueado pelo servidor (403 CSRF) — não é erro de senha: {r2.text[:200]}")
     if "/account/login/" in r2.url:
         raise Exception("Login falhou — usuário ou senha inválidos")
 

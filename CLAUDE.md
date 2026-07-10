@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.62
+## Versao atual: 2.3.63
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -86,3 +86,14 @@
   sempre 1h curta) — bot.py:6357, 6581, 6614. O terceiro ponto legitimo (cota_diaria
   confirmada, bot.py:6603 e 6627) continua usando _entrar_taverna() (taverna
   longa/inteligente quando aplicavel)
+
+## Login automatico moonid.net exige header Origin (v2.3.63+)
+- fazer_login_moonid() (bot.py:42) fazia POST em https://moonid.net/account/login/ so com
+  header Referer -> moonid.net passou a exigir tambem Origin: https://moonid.net na
+  checagem CSRF do Django; sem isso o POST leva 403 "CSRF verification failed"
+- O codigo antigo so checava "/account/login/" in r2.url pra decidir se foi erro de senha,
+  entao um 403 CSRF virava "usuario ou senha invalidos" mesmo com credenciais corretas —
+  foi o caso do perfil btt_br2 (R4tazana/Rat225@, mesma conta do razar_br2, senha correta
+  confirmada manualmente pelo usuario)
+- Fix: adiciona Origin: https://moonid.net ao POST + checa r2.status_code == 403
+  separadamente pra dar mensagem de erro correta (nao mascarar como senha invalida)
