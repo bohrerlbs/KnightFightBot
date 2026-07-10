@@ -1,7 +1,7 @@
 """
 KnightFight Bot — Launcher v1.0.5
 """
-import os, sys, json, subprocess, threading, time, re, webbrowser, hashlib, secrets
+import os, sys, json, subprocess, threading, time, re, webbrowser, hashlib, secrets, urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -725,7 +725,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"lines": get_log_tail(p.split("/")[-1], 30)})
         elif p.startswith("/api/cfg/"):
             # Retorna config.json de um perfil específico
-            pname = p.split("/")[-1]
+            pname = urllib.parse.unquote(p.split("/")[-1], encoding="utf-8")
             # Tenta lowercase e uppercase
             cfg_p = None
             for attempt in [pname.lower(), pname.upper(), pname]:
@@ -745,7 +745,7 @@ class Handler(BaseHTTPRequestHandler):
             parts   = [x for x in p.split("/") if x]  # ['proxy(bg)', 'name', 'path...']
             if len(parts) < 2:
                 self.send_response(404); self.end_headers(); return
-            pname   = parts[1]
+            pname   = urllib.parse.unquote(parts[1], encoding="utf-8")
             subpath = "/" + "/".join(parts[2:]) if len(parts) > 2 else "/"
             # Verifica acesso ao perfil
             allowed = [pr.get("_name","").lower() for pr in filter_profiles(get_profiles(), session)]
@@ -970,12 +970,11 @@ class Handler(BaseHTTPRequestHandler):
                     }
             self._json(diag)
         elif p.startswith("/api/bg/stop/"):
-            from urllib.parse import unquote as _uq2
-            name_bg = _uq2(p.split("/")[-1] or p.split("/")[-2])
+            name_bg = urllib.parse.unquote(p.split("/")[-1] or p.split("/")[-2], encoding="utf-8")
             if not can_access(name_bg): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(stop_bg_bot(name_bg))
         elif p.startswith("/api/bg/status/"):
-            self._json(status_bg_bot(p.split("/")[-1] or p.split("/")[-2]))
+            self._json(status_bg_bot(urllib.parse.unquote(p.split("/")[-1] or p.split("/")[-2], encoding="utf-8")))
         else:
             self.send_response(404); self.end_headers()
 
