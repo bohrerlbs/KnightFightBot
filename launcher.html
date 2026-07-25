@@ -347,54 +347,6 @@ header {
   <div class="modal">
     <div class="modal-title">* Novo Perfil</div>
 
-    <div class="capture-box" id="new-capture-box">
-      <div style="font-size:12px;color:var(--text);margin-bottom:8px">
-        <strong>Login automático</strong> - abre o browser, faça login e o bot captura o cookie sozinho
-      </div>
-      <select class="form-select" id="cap-server" style="margin-bottom:8px" onchange="toggleCustomServer('cap')">
-        
-        <optgroup label="International">
-          <option value="int1">int1</option>
-          <option value="int2">int2</option>
-          <option value="int3">int3</option>
-          <option value="int4">int4</option>
-          <option value="int5">int5</option>
-          <option value="int6">int6</option>
-          <option value="int7" selected>int7</option>
-        </optgroup>
-        <optgroup label="Brasil">
-          <option value="br1">br1</option>
-          <option value="br2">br2</option>
-          <option value="br3">br3</option>
-        </optgroup>
-        <optgroup label="Portugal">
-          <option value="pt1">pt1</option>
-          <option value="pt2">pt2</option>
-        </optgroup>
-        <optgroup label="Deutsch">
-          <option value="de1">de1</option>
-          <option value="de2">de2</option>
-          <option value="de3">de3</option>
-        </optgroup>
-        <optgroup label="França">
-          <option value="fr1">fr1</option>
-          <option value="fr2">fr2</option>
-        </optgroup>
-        <optgroup label="Espanha">
-          <option value="es1">es1</option>
-          <option value="es2">es2</option>
-        </optgroup>
-        <optgroup label="Outro">
-          <option value="custom">Outro (digitar abaixo)</option>
-        </optgroup>
-      </select>
-      <input class="form-input" id="cap-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-bottom:8px">
-      <button class="btn-capture" id="btn-capture" onclick="captureCookie()">
-        [web] Abrir browser e capturar cookie automaticamente
-      </button>
-      <div class="capture-status" id="cap-status" style="margin-top:8px;display:none"></div>
-    </div>
-
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Nome do perfil</label>
@@ -470,6 +422,54 @@ header {
     <div class="form-group" id="new-cookie-group" style="margin-top:8px">
       <label class="form-label">Cookie <span style="color:var(--muted)">(opcional se preenchiu user/senha acima)</span></label>
       <textarea class="form-input" id="f-cookies" rows="2" placeholder="Ou cole manualmente: F12 -> Network -> Cookie"></textarea>
+    </div>
+
+    <div class="capture-box" id="new-capture-box" style="margin-top:8px">
+      <div style="font-size:12px;color:var(--text);margin-bottom:8px">
+        <strong>Avançado (opcional)</strong> — abre o browser e captura o cookie sozinho. Só use se não quiser preencher usuário/senha acima. Requer Selenium instalado (<code>pip install selenium webdriver-manager</code>).
+      </div>
+      <select class="form-select" id="cap-server" style="margin-bottom:8px" onchange="toggleCustomServer('cap')">
+
+        <optgroup label="International">
+          <option value="int1">int1</option>
+          <option value="int2">int2</option>
+          <option value="int3">int3</option>
+          <option value="int4">int4</option>
+          <option value="int5">int5</option>
+          <option value="int6">int6</option>
+          <option value="int7" selected>int7</option>
+        </optgroup>
+        <optgroup label="Brasil">
+          <option value="br1">br1</option>
+          <option value="br2">br2</option>
+          <option value="br3">br3</option>
+        </optgroup>
+        <optgroup label="Portugal">
+          <option value="pt1">pt1</option>
+          <option value="pt2">pt2</option>
+        </optgroup>
+        <optgroup label="Deutsch">
+          <option value="de1">de1</option>
+          <option value="de2">de2</option>
+          <option value="de3">de3</option>
+        </optgroup>
+        <optgroup label="França">
+          <option value="fr1">fr1</option>
+          <option value="fr2">fr2</option>
+        </optgroup>
+        <optgroup label="Espanha">
+          <option value="es1">es1</option>
+          <option value="es2">es2</option>
+        </optgroup>
+        <optgroup label="Outro">
+          <option value="custom">Outro (digitar abaixo)</option>
+        </optgroup>
+      </select>
+      <input class="form-input" id="cap-server-custom" placeholder="ex: br1, pt2, de3..." style="display:none;margin-bottom:8px">
+      <button class="btn-capture" id="btn-capture" onclick="captureCookie()">
+        [web] Abrir browser e capturar cookie automaticamente
+      </button>
+      <div class="capture-status" id="cap-status" style="margin-top:8px;display:none"></div>
     </div>
 
     <div style="margin-top:14px;padding:10px 12px;background:rgba(0,0,0,0.2);border-radius:4px;border:1px solid var(--border2)">

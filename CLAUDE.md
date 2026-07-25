@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.63
+## Versao atual: 2.3.65
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -97,3 +97,21 @@
   confirmada manualmente pelo usuario)
 - Fix: adiciona Origin: https://moonid.net ao POST + checa r2.status_code == 403
   separadamente pra dar mensagem de erro correta (nao mascarar como senha invalida)
+
+## Modal "Novo Perfil" — captura de cookie via Selenium era o fluxo errado (v2.3.65)
+- LEIA-ME.txt do zip de distribuicao manda todo mundo logar no launcher com
+  admin/admin123 (unico login compartilhado) -> _myRole sempre vira 'admin' no JS ->
+  openNewProfileModal() nunca esconde 'new-capture-box' (esse esconderijo so vale pra
+  usuarios nao-admin, ver adminOnlyIds em launcher.html:1004)
+- Resultado: todo amigo que abria "Novo Perfil" via pelo topo do modal o botao
+  "[web] Abrir browser e capturar cookie automaticamente", que depende de Selenium
+  (launcher.py:589, capture_cookie_browser) — mesmo sem precisar disso, ja que o
+  fluxo recomendado (usuario/senha do moonid.net, sem Selenium, login via requests em
+  fazer_login_moonid) fica logo abaixo
+- Fix: moveu o capture-box pra depois do campo de cookie manual, renomeou pra
+  "Avançado (opcional)" deixando claro que requer Selenium; instalar_dependencias.bat
+  agora verifica com `python -c "import ... selenium ..."` se a instalacao realmente
+  funcionou (antes dizia "OK - Dependencias instaladas!" mesmo quando pip falhava
+  silenciosamente, ex: --quiet escondia o erro e nunca havia checagem pos-instalacao)
+- release/KnightFightBot.zip reconstruido manualmente (nao ha script de build pro zip;
+  lista de arquivos replicada a mao — ver histórico do commit "pacote release")
