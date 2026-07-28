@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.65
+## Versao atual: 2.3.66
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -115,3 +115,18 @@
   silenciosamente, ex: --quiet escondia o erro e nunca havia checagem pos-instalacao)
 - release/KnightFightBot.zip reconstruido manualmente (nao ha script de build pro zip;
   lista de arquivos replicada a mao — ver histórico do commit "pacote release")
+
+## instalar_dependencias.bat — "pip nao reconhecido" mesmo com Python OK (v2.3.66)
+- Python 3.14 instalado via python.org com "Add to PATH" as vezes linka python.exe mas
+  nao Scripts\ (onde fica pip.exe) -> `python --version` funciona mas `pip install...`
+  solto da erro "'pip' nao e reconhecido como um comando interno ou externo" mesmo com
+  Python instalado corretamente — foi o caso de um amigo tentando rodar o instalador
+- Fix: troca `pip install ...` por `python -m pip install ...` em todos os pontos do
+  instalar_dependencias.bat (inclusive na mensagem de erro manual) — invoca o pip como
+  modulo do proprio interpretador Python ja resolvido, sem depender do PATH do pip.exe
+- Tambem removido o em dash "—" do titulo do echo (trocado por hifen "-"): esse
+  caractere multi-byte UTF-8 combinado com `chcp 65001` estava corrompendo a saida do
+  console em alguns PCs (aparecia `'ho' nao e reconhecido...` no topo do output, em vez
+  do titulo)
+- release/KnightFightBot.zip atualizado com o instalar_dependencias.bat corrigido (sem
+  script de build, arquivo substituido direto dentro do zip via python zipfile)

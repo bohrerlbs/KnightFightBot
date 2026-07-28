@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo.
-echo  KnightFight Bot — Instalador de dependencias
+echo  KnightFight Bot - Instalador de dependencias
 echo  =============================================
 echo.
 
@@ -29,11 +29,11 @@ echo  OK - %PYVER%
 echo.
 
 echo [2/2] Instalando dependencias...
-pip install requests beautifulsoup4 lxml selenium webdriver-manager
+python -m pip install requests beautifulsoup4 lxml selenium webdriver-manager
 if %errorlevel% neq 0 (
     echo.
     echo  Tentando novamente com --break-system-packages...
-    pip install requests beautifulsoup4 lxml selenium webdriver-manager --break-system-packages
+    python -m pip install requests beautifulsoup4 lxml selenium webdriver-manager --break-system-packages
 )
 echo.
 
@@ -46,7 +46,7 @@ if %errorlevel% neq 0 (
     echo  =============================================
     echo.
     echo  Rode manualmente no CMD e veja a mensagem de erro completa:
-    echo    pip install requests beautifulsoup4 lxml selenium webdriver-manager
+    echo    python -m pip install requests beautifulsoup4 lxml selenium webdriver-manager
     echo.
     pause
     exit /b 1
