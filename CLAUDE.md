@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.70
+## Versao atual: 2.3.71
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -227,3 +227,17 @@
   o /status/ respondesse, e um bloqueio de IP nessa hora deixava o "Cookie vencido" preso
 - Licao de teste: NAO usar portas 87xx pra launcher de teste — sao as portas dos dashboards dos
   bots (de15 = 8799); um taskkill por porta derrubou o bot de15 sem querer
+
+## "Unexpected end of JSON input" no botao Ligar todos (v2.3.71)
+- Sintoma (amigo, 2026-09-21 08:42, foto na pasta): toast "Erro de conexao: SyntaxError:
+  Unexpected end of JSON input" ao usar "Ligar todos (escalonado)". O Handler do launcher.py NAO
+  tem `else` no do_POST: rota desconhecida responde `HTTP/1.0 404` com corpo VAZIO, e o JS faz
+  r.json() -> esse SyntaxError. Ou seja: o launcher.py EM EXECUCAO nao tem /api/start_all
+  (anterior a 2.3.69) — a pagina (launcher.html) e nova, o processo nao. Causa tipica: trocar
+  o launcher.py sem fechar o launcher antigo (o python segue com o codigo velho na memoria)
+- Diagnostico rapido: abrir http://localhost:8764/api/version — se NAO tiver "pid" o processo e
+  anterior a 2.3.70 (sem /api/start_all nem auto-update)
+- launcher.html agora: banner vermelho #old-launcher-banner quando /api/version vem sem `pid`, e
+  startAll() trata 404 com mensagem clara ("versao antiga - feche e abra o iniciar_launcher.bat")
+- NAO reiniciar o launcher com bots rodando: os bots sao processos filhos independentes, mas o
+  launcher novo comeca com running_bots vazio (mostra "parado" e permitiria iniciar duplicado)

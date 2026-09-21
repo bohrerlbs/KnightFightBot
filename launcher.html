@@ -336,6 +336,9 @@ header {
 </header>
 
 <div class="container">
+  <div id="old-launcher-banner" style="display:none;background:linear-gradient(135deg,#3d0a0a,#5c1010);border:1px solid #c0392b;color:#ff8a80;font-size:13px;padding:10px 16px;margin:0 0 12px;border-radius:4px;font-weight:600">
+    &#9888; O programa do launcher que está rodando é uma versão ANTIGA (a página já é nova, o processo não). O botão "Ligar todos" não vai funcionar até reiniciar: feche a janela preta do launcher (ou encerre o python no Gerenciador de Tarefas) e abra de novo o <code>iniciar_launcher.bat</code>. Se o <code>launcher.py</code> da pasta ainda for antigo, baixe a versão nova por cima dele antes de abrir.
+  </div>
   <div id="ip-banner" style="display:none;background:linear-gradient(135deg,#3d2a0a,#5c4210);border:1px solid #d68910;color:#f5b041;font-size:13px;padding:10px 16px;margin:0 0 12px;border-radius:4px;font-weight:600"></div>
   <div id="stagger-banner" style="display:none;background:linear-gradient(135deg,#0a2d3d,#104a5c);border:1px solid #2e86c1;color:#85c1e9;font-size:13px;padding:10px 16px;margin:0 0 12px;border-radius:4px;font-weight:600;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <span id="stagger-text"></span>
@@ -1114,8 +1117,17 @@ function logClass(line){
 function startAll(){
   if(!confirm('Ligar todos os perfis parados, um a cada 45 segundos?\n\nA fila espera sozinha se o IP estiver bloqueado.')) return;
   fetch('/api/start_all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
-    .then(function(r){return r.json();})
+    .then(function(r){
+      if(r.status === 404){
+        // launcher.py antigo não conhece a rota (responde 404 sem corpo)
+        toast('O launcher em execução é uma versão antiga - feche-o e abra o iniciar_launcher.bat de novo','err');
+        var ob = document.getElementById('old-launcher-banner'); if(ob) ob.style.display = 'block';
+        return null;
+      }
+      return r.json();
+    })
     .then(function(d){
+      if(!d) return;
       if(d.ok){ toast('Ligando '+d.total+' perfis (1 a cada '+d.intervalo+'s, ~'+Math.ceil(d.duracao_seg/60)+' min no total)'); loadProfiles(); setTimeout(loadProfiles,2000); }
       else toast('Erro: '+d.error,'err');
     })
@@ -1856,6 +1868,12 @@ fetch('/api/version', {credentials:'include'})
   .then(d=>{
     document.getElementById('ver').textContent = `v${d.current}`;
     window._launcherPid = d.pid || null;   // pid deste launcher (pra detectar o reinício pós-update)
+    // launcher.py em execução sem `pid` = anterior à 2.3.70 (não tem /api/start_all nem auto-update):
+    // a página é nova mas o processo ainda é o antigo (arquivo trocado sem fechar o launcher).
+    if(!d.pid){
+      var ob = document.getElementById('old-launcher-banner');
+      if(ob) ob.style.display = 'block';
+    }
     console.log('Version check:', d);
     if(d.update && d.latest){
       latestVersion = d.latest;
