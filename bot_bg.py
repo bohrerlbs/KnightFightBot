@@ -1,8 +1,8 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.9
+# KnightFight — BattleGround Bot v1.0.10
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
-import os, sys, json, time, re, logging, argparse, threading, random
+import os, sys, json, time, re, logging, argparse, threading, random, tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -154,6 +154,95 @@ def atualizar_ciclo(chave, valor):
     salvar_json(CICLO_FILE, ciclo)
 
 # ═══════════════════════════════════════════════════════════════
+# PROTEÇÃO CONTRA BLOQUEIO DE IP (CloudFront 403)
+# Mesma lógica e MESMO arquivo de estado do bot.py (mantenha os dois em sincronia): o
+# CloudFront bloqueia o IP inteiro, então bot.py e bot_bg.py precisam se coordenar.
+# ═══════════════════════════════════════════════════════════════
+RATE_MIN_INTERVALO_SEG  = 0.2
+BLOQUEIO_IP_BACKOFF_SEG = (900, 1800, 3600)
+_BLOQ_FILE = os.path.join(tempfile.gettempdir(), "kfbot_ip_block.json")
+_bloq_lock = threading.Lock()
+_bloq = {"ate": 0.0, "strikes": 0, "slot": 0.0, "lido_em": 0.0}
+
+class BloqueioIPError(Exception):
+    """CloudFront bloqueou o IP (HTTP 403 'Request blocked'). Não é cookie vencido."""
+    pass
+
+def _bloq_sincronizar(forcar=False):
+    agora_ts = time.time()
+    if not forcar and agora_ts - _bloq["lido_em"] < 2:
+        return
+    _bloq["lido_em"] = agora_ts
+    try:
+        d = json.loads(Path(_BLOQ_FILE).read_text(encoding="utf-8"))
+        _bloq["ate"] = max(_bloq["ate"], float(d.get("ate", 0)))
+        _bloq["strikes"] = max(_bloq["strikes"], int(d.get("strikes", 0)))
+    except Exception:
+        pass
+
+def _bloq_salvar():
+    try:
+        Path(_BLOQ_FILE).write_text(json.dumps({"ate": _bloq["ate"], "strikes": _bloq["strikes"]}), encoding="utf-8")
+    except Exception:
+        pass
+
+def bloqueio_ip_restante():
+    with _bloq_lock:
+        _bloq_sincronizar()
+        return max(0.0, _bloq["ate"] - time.time())
+
+def _bloq_registrar():
+    with _bloq_lock:
+        _bloq_sincronizar(forcar=True)
+        agora_ts = time.time()
+        if agora_ts < _bloq["ate"]:
+            return
+        seg = BLOQUEIO_IP_BACKOFF_SEG[min(_bloq["strikes"], len(BLOQUEIO_IP_BACKOFF_SEG) - 1)]
+        _bloq["strikes"] += 1
+        _bloq["ate"] = agora_ts + seg
+        _bloq_salvar()
+        n = _bloq["strikes"]
+    log.error(f"🚧 IP BLOQUEADO pelo CloudFront (HTTP 403) — requisições em pausa por "
+              f"{fmt_t(seg)} (ocorrência #{n}). Não é cookie vencido.")
+
+def _bloq_sucesso():
+    with _bloq_lock:
+        if _bloq["strikes"]:
+            _bloq["strikes"] = 0
+            _bloq["ate"] = 0.0
+            _bloq_salvar()
+    log.info("✓ IP liberado — requisições normalizadas")
+
+class _KFSession(requests.Session):
+    """Session com limite de taxa e detecção de bloqueio de IP. Durante um bloqueio
+    conhecido, a requisição espera o fim da janela; a 1ª depois dela é o teste."""
+    def request(self, method, url, **kw):
+        avisou = False
+        while True:
+            rest = bloqueio_ip_restante()
+            if rest <= 0:
+                break
+            if not avisou:
+                log.warning(f"🚧 IP bloqueado — requisição aguardando {fmt_t(rest)}")
+                avisou = True
+            time.sleep(min(30, rest + 0.1))
+
+        with _bloq_lock:
+            agora_ts = time.time()
+            slot = max(agora_ts, _bloq["slot"] + RATE_MIN_INTERVALO_SEG)
+            _bloq["slot"] = slot
+        if slot > agora_ts:
+            time.sleep(slot - agora_ts)
+
+        r = super().request(method, url, **kw)
+        if r.status_code == 403 and "the request could not be satisfied" in r.text[:1500].lower():
+            _bloq_registrar()
+            raise BloqueioIPError(f"HTTP 403 do CloudFront em {url}")
+        if r.status_code < 400 and _bloq["strikes"]:
+            _bloq_sucesso()
+        return r
+
+# ═══════════════════════════════════════════════════════════════
 # CLIENTE HTTP
 # ═══════════════════════════════════════════════════════════════
 class ClienteBG:
@@ -164,7 +253,7 @@ class ClienteBG:
         if not cookies_raw or cookies_raw == "COLE_SEUS_COOKIES_AQUI":
             log.error("COOKIES NAO CONFIGURADOS! Configure no launcher.")
             raise ValueError("Cookies não configurados")
-        self.session  = requests.Session()
+        self.session  = _KFSession()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",

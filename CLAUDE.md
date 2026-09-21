@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.66
+## Versao atual: 2.3.67
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -130,3 +130,37 @@
   do titulo)
 - release/KnightFightBot.zip atualizado com o instalar_dependencias.bat corrigido (sem
   script de build, arquivo substituido direto dentro do zip via python zipfile)
+
+## Bloqueio de IP pelo CloudFront — 403 "Request blocked" (v2.3.67)
+- Sintoma: bot loga "Falha ao renovar cookie: URL de login nao encontrada no servidor 'X'" e o
+  dashboard/launcher mostra "cookie vencido" mesmo com game_user/game_pass certos. Nao e
+  login: o host do jogo (*.knightfight.moonid.net) devolve HTTP 403 do CloudFront ("The request
+  could not be satisfied / Request blocked") pra QUALQUER pagina, ate no Chrome e ate com cookie
+  valido — o IP da maquina foi bloqueado. moonid.net/account/login/ continua 200. Confirmado em
+  2026-09-21 (IP 201.10.41.197): abrir o jogo por VPN funcionou. Os primeiros 403 no bot.log
+  apareceram em 2026-09-20 20:59, quando ~11 perfis iniciaram juntos (ranking + cache de perfis
+  + scans de loja), tudo no mesmo IP. O limite exato do WAF nao e conhecido
+- Por que enganava: KFClient chama raise_for_status(), entao 403 virava HTTPError -> o handler
+  do loop_acoes (v2.3.61, pensado pro 418) rodava renovar_cookie_auto() -> mais requisicoes ao
+  host bloqueado -> falhava no passo 1 do fazer_login_moonid -> marcava status_bot
+  "cookie_expirado" e dormia 3600s
+- Fix: classe _KFSession(requests.Session) (bot.py, antes de fazer_login_moonid) usada em
+  KFClient e no login. Em toda requisicao: (1) se ha bloqueio conhecido, ESPERA o fim da janela
+  (login usa esperar_bloqueio=False e levanta BloqueioIPError na hora); (2) limite de taxa de
+  0.2s entre requisicoes por processo (RATE_MIN_INTERVALO_SEG); (3) 403 cujo corpo tem "the
+  request could not be satisfied" -> BloqueioIPError + janela de backoff 15min/30min/1h
+  (BLOQUEIO_IP_BACKOFF_SEG); a 1a requisicao apos a janela e o teste, 200 zera o contador
+- Estado do bloqueio e compartilhado entre TODOS os processos via arquivo
+  <tempdir>/kfbot_ip_block.json ({"ate","strikes"}) — bot.py e bot_bg.py usam o mesmo arquivo,
+  entao um processo detectar o bloqueio faz os outros pararem sem levar 403 tambem
+- Handlers do loop_acoes: BloqueioIPError nao tenta relogar; se o relogin falha durante
+  bloqueio, dorme o restante da janela em vez de marcar "cookie_expirado". 403 que NAO e do
+  CloudFront segue o caminho HTTPError normal (mensagem "provavel personagem deletado" agora so
+  aparece pra 418). scrape_ranking aborta e devolve {} se pegar bloqueio no meio (snapshot
+  parcial corromperia o delta da pig list); os 2 chamadores de snapshot inicial checam `if j`
+- bot_bg.py tem copia compacta da mesma logica (nao ha modulo compartilhado de proposito:
+  launcher.download_update() baixa uma lista FIXA de arquivos, um kf_net.py novo quebraria quem
+  atualiza so o bot.py). Se mudar uma, mude a outra
+- Ainda NAO tratado: rajada de largada — todos os perfis iniciam ranking+cache ao mesmo tempo
+  (e o ranking inicial roda duas vezes: inicializar_background e loop_ranking). Se o bloqueio
+  voltar, o proximo passo e escalonar o inicio dos perfis / dedup do ranking inicial

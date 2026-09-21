@@ -10,7 +10,7 @@ FLUXO:
 
 import requests
 from bs4 import BeautifulSoup
-import json, re, time, logging, os, threading
+import json, re, time, logging, os, threading, tempfile
 from pathlib import Path
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
@@ -39,6 +39,120 @@ def _verificar_sessao(r, url=""):
         txt_low = txt.lower()
         if any(k in txt_low for k in ["moonid.net/login", "password", "passwort", "forgot password"]):
             raise SessaoExpiradaError(f"Login detectado ({len(txt)} bytes) em {url}")
+
+
+# ═══════════════════════════════════════════
+# PROTEÇÃO CONTRA BLOQUEIO DE IP (CloudFront 403) — v2.3.67
+# ═══════════════════════════════════════════
+# O host do jogo fica atrás do CloudFront/WAF, que bloqueia o IP inteiro (403 "Request
+# blocked", inclusive no navegador) quando o volume de requisições passa do limite. Não é
+# cookie vencido nem personagem resetado: relogar só gera mais requisições e prolonga o
+# bloqueio. Todos os perfis (processos) da máquina dividem o mesmo IP, então o estado do
+# bloqueio é compartilhado via arquivo no temp do sistema (bot_bg.py usa o mesmo arquivo).
+RATE_MIN_INTERVALO_SEG  = 0.2                 # intervalo mínimo entre requisições, por processo
+BLOQUEIO_IP_BACKOFF_SEG = (900, 1800, 3600)   # 15min, 30min, 1h (depois fica em 1h)
+_BLOQ_FILE = os.path.join(tempfile.gettempdir(), "kfbot_ip_block.json")
+_bloq_lock = threading.Lock()
+_bloq = {"ate": 0.0, "strikes": 0, "slot": 0.0, "lido_em": 0.0}
+
+class BloqueioIPError(Exception):
+    """CloudFront bloqueou o IP (HTTP 403 'Request blocked'). Não é cookie vencido."""
+    pass
+
+def _bloq_sincronizar(forcar=False):
+    """Lê o estado compartilhado entre processos (no máx. 1x/2s). Chamar com _bloq_lock."""
+    agora_ts = time.time()
+    if not forcar and agora_ts - _bloq["lido_em"] < 2:
+        return
+    _bloq["lido_em"] = agora_ts
+    try:
+        with open(_BLOQ_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        _bloq["ate"] = max(_bloq["ate"], float(d.get("ate", 0)))
+        _bloq["strikes"] = max(_bloq["strikes"], int(d.get("strikes", 0)))
+    except Exception:
+        pass
+
+def _bloq_salvar():
+    try:
+        with open(_BLOQ_FILE, "w", encoding="utf-8") as f:
+            json.dump({"ate": _bloq["ate"], "strikes": _bloq["strikes"]}, f)
+    except Exception:
+        pass
+
+def bloqueio_ip_restante():
+    """Segundos restantes do bloqueio de IP conhecido (0 = livre)."""
+    with _bloq_lock:
+        _bloq_sincronizar()
+        return max(0.0, _bloq["ate"] - time.time())
+
+def _resp_e_bloqueio_ip(r):
+    return r.status_code == 403 and "the request could not be satisfied" in r.text[:1500].lower()
+
+def _bloq_registrar():
+    """Registra um bloqueio novo (ou reaproveita um já registrado por outra thread/processo)."""
+    with _bloq_lock:
+        _bloq_sincronizar(forcar=True)
+        agora_ts = time.time()
+        if agora_ts < _bloq["ate"]:
+            return
+        seg = BLOQUEIO_IP_BACKOFF_SEG[min(_bloq["strikes"], len(BLOQUEIO_IP_BACKOFF_SEG) - 1)]
+        _bloq["strikes"] += 1
+        _bloq["ate"] = agora_ts + seg
+        _bloq_salvar()
+        n = _bloq["strikes"]
+    log.error(f"🚧 IP BLOQUEADO pelo CloudFront (HTTP 403) — requisições em pausa por "
+              f"{fmt_t(seg)} (ocorrência #{n}). Não é cookie vencido.")
+
+def _bloq_sucesso():
+    with _bloq_lock:
+        if _bloq["strikes"]:
+            _bloq["strikes"] = 0
+            _bloq["ate"] = 0.0
+            _bloq_salvar()
+    log.info("✓ IP liberado — requisições normalizadas")
+
+class _KFSession(requests.Session):
+    """Session com limite de taxa e detecção de bloqueio de IP.
+
+    Durante um bloqueio conhecido, a requisição espera o fim da janela (esperar_bloqueio=True)
+    ou levanta BloqueioIPError na hora (False, usado no login). A 1ª requisição depois da
+    janela funciona como teste: se voltar 403, a janela seguinte é maior.
+    """
+    def __init__(self, esperar_bloqueio=True):
+        super().__init__()
+        self._esperar_bloqueio = esperar_bloqueio
+
+    def request(self, method, url, **kw):
+        avisou = False
+        while True:
+            rest = bloqueio_ip_restante()
+            if rest <= 0:
+                break
+            if not self._esperar_bloqueio:
+                raise BloqueioIPError(f"IP bloqueado pelo CloudFront — restam {fmt_t(rest)}")
+            if not avisou:
+                log.warning(f"🚧 IP bloqueado — requisição aguardando {fmt_t(rest)}")
+                avisou = True
+            time.sleep(min(30, rest + 0.1))
+
+        # Limite de taxa: cada requisição reserva o próximo slot livre
+        with _bloq_lock:
+            agora_ts = time.time()
+            slot = max(agora_ts, _bloq["slot"] + RATE_MIN_INTERVALO_SEG)
+            _bloq["slot"] = slot
+        if slot > agora_ts:
+            time.sleep(slot - agora_ts)
+
+        r = super().request(method, url, **kw)
+        if _resp_e_bloqueio_ip(r):
+            _bloq_registrar()
+            raise BloqueioIPError(f"HTTP 403 do CloudFront em {url}")
+        if r.status_code < 400 and _bloq["strikes"]:
+            _bloq_sucesso()
+        return r
+
+
 def fazer_login_moonid(server, username, password):
     """Faz login no jogo via fluxo OAuth moonid.net. Retorna dict com 'cookie' e 'userid'.
 
@@ -49,7 +163,9 @@ def fazer_login_moonid(server, username, password):
       4. Visita /status/ para confirmar sessão e extrair userid
     """
     from urllib.parse import urlparse
-    s = requests.Session()
+    # esperar_bloqueio=False: com o IP bloqueado o login falha na hora (BloqueioIPError) em vez
+    # de travar a thread por até 1h — quem chama decide esperar (ver renovar_cookie_auto).
+    s = _KFSession(esperar_bloqueio=False)
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
     # Passo 1: Teaser page → URL OAuth do botão Login (ex: moonid.net/api/account/connect/193)
@@ -133,6 +249,9 @@ def renovar_cookie_auto(cfg_path="config.json"):
             _j.dump(cfg, f, indent=2, ensure_ascii=False)
         log.info("✓ Cookie renovado com sucesso!")
         return {"cookie": novo_cookie, "userid": cfg.get("userid", "")}
+    except BloqueioIPError as e:
+        log.warning(f"🚧 Renovação de cookie adiada — {e}")
+        return None
     except Exception as e:
         log.error(f"Falha ao renovar cookie: {e}")
         return None
@@ -624,7 +743,7 @@ def atualizar_ciclo_file(chave, valor):
 # ═══════════════════════════════════════════
 class KFClient:
     def __init__(self, cookies_raw):
-        self.session = requests.Session()
+        self.session = _KFSession()
         for part in cookies_raw.split(";"):
             part = part.strip()
             if "=" in part:
@@ -1528,6 +1647,10 @@ def scrape_ranking(client, paginas=None):
         }
         try:
             soup = client.post("/", data=data)
+        except BloqueioIPError as e:
+            # Snapshot parcial corromperia o delta da pig list — descarta a rodada inteira
+            log.warning(f"  Ranking abortado na página {pagina}: {e}")
+            return {}
         except Exception as e:
             log.warning(f"  Erro página {pagina}: {e}")
             continue
@@ -5604,6 +5727,8 @@ def loop_ranking(client):
                 log.warning("[RANKING] Cache +25h sem atualizar — forçando varredura...")
                 coletar_perfis_cache(client)
 
+        except BloqueioIPError as e:
+            log.warning(f"[RANKING] Rodada adiada — {e}")
         except Exception as e:
             log.error(f"Erro loop ranking: {e}", exc_info=True)
 
@@ -6645,17 +6770,30 @@ def loop_acoes(client):
                 client = KFClient(novo["cookie"])
                 atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                 log.info("✓ Continuando com novo cookie...")
+            elif bloqueio_ip_restante() > 0:
+                # Login falhou por causa do bloqueio de IP, não por cookie/senha: não marca
+                # "cookie_expirado" (dashboard/launcher mostrariam "cookie vencido" à toa).
+                rest = bloqueio_ip_restante()
+                log.warning(f"🚧 Login adiado: IP bloqueado — aguardando {fmt_t(rest)}")
+                time.sleep(rest + 5)
             else:
                 atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "cookie_expirado"})
                 log.error("Bot pausado — configure game_user/game_pass no cfg ou atualize o cookie manualmente.")
                 time.sleep(3600)
+        except BloqueioIPError as e:
+            # Bloqueio de IP (CloudFront 403): NÃO tenta relogar (só geraria mais requisições).
+            # A próxima requisição do ciclo espera o fim da janela dentro do _KFSession.
+            log.warning(f"🚧 {e} — ciclo adiado até o IP ser liberado")
         except requests.exceptions.HTTPError as e:
             # 418 em pleno loop (não só no status inicial) = mesma causa: personagem foi
             # deletado/recriado enquanto o bot já estava rodando, cookie ficou preso ao
             # userid antigo. Sem isso o bot cai pra sempre no "except Exception" genérico
             # abaixo, que só loga e dorme — nunca tenta relogar (bot fica "parado" pra sempre).
             status_code = getattr(e.response, "status_code", None)
-            log.error(f"🫖 HTTP {status_code} no loop — provável personagem deletado/recriado (cookie preso ao userid antigo): {e}")
+            if status_code == 418:
+                log.error(f"🫖 HTTP 418 no loop — provável personagem deletado/recriado (cookie preso ao userid antigo): {e}")
+            else:
+                log.error(f"HTTP {status_code} no loop — tentando renovar sessão: {e}")
             novo = renovar_cookie_auto()
             if novo:
                 globals()["COOKIES_RAW"] = novo["cookie"]
@@ -6664,6 +6802,10 @@ def loop_acoes(client):
                 client = KFClient(novo["cookie"])
                 atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
                 log.info("✓ Continuando com novo cookie...")
+            elif bloqueio_ip_restante() > 0:
+                rest = bloqueio_ip_restante()
+                log.warning(f"🚧 Login adiado: IP bloqueado — aguardando {fmt_t(rest)}")
+                time.sleep(rest + 5)
             else:
                 atualizar_ciclo_file("status_bot", {"parado": True, "motivo": "cookie_expirado"})
                 log.error("Bot pausado — configure game_user/game_pass no cfg ou atualize o cookie manualmente.")
@@ -7094,8 +7236,11 @@ if __name__ == "__main__":
             log.info("Background: coletando ranking inicial...")
             try:
                 j = scrape_ranking(client)
-                salvar_snapshot(j)
-                log.info("Background: ranking coletado!")
+                if j:
+                    salvar_snapshot(j)
+                    log.info("Background: ranking coletado!")
+                else:
+                    log.warning("Background: ranking não coletado (vazio/bloqueado) — loop_ranking tenta na próxima rodada")
             except Exception as e:
                 log.error(f"Erro ranking inicial: {e}")
 
