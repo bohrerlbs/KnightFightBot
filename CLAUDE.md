@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.67
+## Versao atual: 2.3.68
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -164,3 +164,14 @@
 - Ainda NAO tratado: rajada de largada — todos os perfis iniciam ranking+cache ao mesmo tempo
   (e o ranking inicial roda duas vezes: inicializar_background e loop_ranking). Se o bloqueio
   voltar, o proximo passo e escalonar o inicio dos perfis / dedup do ranking inicial
+
+## Aviso de bloqueio de IP no launcher (v2.3.68)
+- launcher.py get_bloqueio_ip() le o MESMO arquivo <tempdir>/kfbot_ip_block.json que bot.py e
+  bot_bg.py gravam e devolve (segundos_restantes, ocorrencia); get_profiles() poe
+  `_ip_bloqueio` / `_ip_bloqueio_n` em cada perfil. Nao depende de status_bot: o aviso some
+  sozinho quando a janela expira (sem "parado" velho preso no ultimo_ciclo.json)
+- launcher.html: banner ambar global (#ip-banner) + badge no card de cada perfil rodando
+  ("IP bloqueado — aguardando ~Xm (sem relogar)"). Atualiza a cada REFRESH (15s)
+- Se o bot iniciar e o IP ainda estiver bloqueado: 1a requisicao leva 403 -> grava a janela
+  (15min) -> os demais processos leem o arquivo (<=2s) e entram em espera. Se o IP ja foi
+  liberado mas o arquivo ainda tem janela futura, apague kfbot_ip_block.json pra destravar

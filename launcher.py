@@ -72,8 +72,23 @@ _bg_start_lock = threading.Lock()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def get_bloqueio_ip():
+    """Bloqueio de IP (CloudFront 403) detectado pelos bots — lê o mesmo arquivo de estado
+    que bot.py/bot_bg.py gravam no temp do sistema. Retorna (segundos_restantes, ocorrencia)
+    ou (0, 0) se o IP está livre."""
+    try:
+        import tempfile
+        d = json.loads((Path(tempfile.gettempdir()) / "kfbot_ip_block.json").read_text(encoding="utf-8"))
+        rest = float(d.get("ate", 0)) - time.time()
+        if rest > 0:
+            return int(rest), int(d.get("strikes", 0))
+    except Exception:
+        pass
+    return 0, 0
+
 def get_profiles():
     profiles = []
+    ip_rest, ip_n = get_bloqueio_ip()
     # Limpa processos mortos do dicionário
     dead = [n for n, p in running_bots.items() if p.poll() is not None]
     for n in dead:
@@ -97,6 +112,8 @@ def get_profiles():
             else:
                 cfg["_bg_running"] = False
             cfg["_log_tail"] = get_log_tail(d.name, 5)
+            cfg["_ip_bloqueio"]   = ip_rest   # >0 = bot detectou bloqueio de IP e está aguardando
+            cfg["_ip_bloqueio_n"] = ip_n
             # Lê status_bot e equipamento do ciclo para taverna countdown e dashboard
             ciclo_path = d / "ultimo_ciclo.json"
             if ciclo_path.exists():

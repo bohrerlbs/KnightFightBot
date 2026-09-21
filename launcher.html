@@ -336,6 +336,7 @@ header {
 </header>
 
 <div class="container">
+  <div id="ip-banner" style="display:none;background:linear-gradient(135deg,#3d2a0a,#5c4210);border:1px solid #d68910;color:#f5b041;font-size:13px;padding:10px 16px;margin:0 0 12px;border-radius:4px;font-weight:600"></div>
   <div class="section-title">Perfis</div>
   <div class="profiles-grid" id="profiles-grid">
     <div style="color:var(--muted);font-style:italic;padding:20px;font-size:13px">Carregando...</div>
@@ -1103,8 +1104,27 @@ function logClass(line){
   return 'info';
 }
 
+function fmtBloqueio(s){
+  var m = Math.floor(s/60), ss = s%60;
+  if(m >= 60) return Math.floor(m/60)+'h'+String(m%60).padStart(2,'0')+'m';
+  return m+'m'+String(ss).padStart(2,'0')+'s';
+}
+
 function renderProfiles(profiles){
   var grid = document.getElementById('profiles-grid');
+
+  // Banner global: os bots detectaram bloqueio de IP (CloudFront 403) e estão em espera
+  var ipBanner = document.getElementById('ip-banner');
+  var ipRest = profiles.length ? (profiles[0]._ip_bloqueio || 0) : 0;
+  if(ipBanner){
+    if(ipRest > 0){
+      ipBanner.textContent = '🚧 IP bloqueado pelo servidor do jogo (CloudFront 403) — os bots detectaram e estão em espera, '
+        + 'sem relogar. Próxima tentativa em ~'+fmtBloqueio(ipRest)+' (ocorrência #'+(profiles[0]._ip_bloqueio_n||1)+').';
+      ipBanner.style.display = 'block';
+    } else {
+      ipBanner.style.display = 'none';
+    }
+  }
 
   // Preserva seleção do ef-offset antes de reconstruir o HTML
   var _savedEfOffsets = {};
@@ -1137,6 +1157,13 @@ function renderProfiles(profiles){
       html += '<div style="background:linear-gradient(135deg,#3d0a0a,#5c1010);border:1px solid #c0392b;color:#ff6b6b;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;">';
       html += '<span style="font-size:14px">&#128274;</span>';
       html += ' <strong>Cookie vencido</strong> — atualize o cookie no Config e reinicie';
+      html += '</div>';
+    }
+    // Badge de bloqueio de IP (bot em espera, não é cookie vencido)
+    if(running && (p._ip_bloqueio || 0) > 0){
+      html += '<div style="background:linear-gradient(135deg,#3d2a0a,#5c4210);border:1px solid #d68910;color:#f5b041;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;">';
+      html += '<span style="font-size:14px">&#128679;</span>';
+      html += ' <strong>IP bloqueado</strong> — aguardando ~'+fmtBloqueio(p._ip_bloqueio)+' (sem relogar)';
       html += '</div>';
     }
     // Badge de taverna com countdown
