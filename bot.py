@@ -1745,7 +1745,23 @@ def buscar_alvo_imunizacao(client, estado, score_min, excluir=None, xp_max=None)
 # ═══════════════════════════════════════════
 # RANKING
 # ═══════════════════════════════════════════
+_ranking_lock = threading.Lock()
+_ranking_ultimo = {"ts": 0.0}
+
 def scrape_ranking(client, paginas=None):
+    """Uma coleta por vez. No arranque, inicializar_background e loop_ranking pediam o ranking
+    ao mesmo tempo (o dobro de requisições): a 2ª espera a 1ª e, se ela acabou de coletar
+    (<5min), devolve {} — os chamadores já ignoram resultado vazio."""
+    with _ranking_lock:
+        if paginas is None and time.time() - _ranking_ultimo["ts"] < 300:
+            log.info("  Ranking coletado há <5min por outra thread — pulando")
+            return {}
+        dados = _scrape_ranking_impl(client, paginas)
+        if paginas is None and dados:
+            _ranking_ultimo["ts"] = time.time()
+        return dados
+
+def _scrape_ranking_impl(client, paginas=None):
     if paginas is None:
         # Gera lista de páginas com base em RANKING_MAX_PLAYERS (cada página = 100 jogadores)
         n = max(1, min(100, RANKING_MAX_PLAYERS // 100))
@@ -1798,6 +1814,11 @@ def scrape_ranking(client, paginas=None):
             }
             count += 1
         log.info(f"  Página {pagina}: {count} jogadores")
+        if count <= 1:
+            # Passou do último jogador deste servidor (servidores menores que RANKING_MAX_PLAYERS
+            # devolvem 1 linha nas páginas seguintes): as demais só gerariam requisições à toa.
+            log.info(f"  Fim do ranking na página {pagina} — servidor tem menos de {RANKING_MAX_PLAYERS} jogadores")
+            break
         time.sleep(2)
 
     log.info(f"Ranking completo: {len(jogadores)} jogadores")
@@ -7225,6 +7246,11 @@ if __name__ == "__main__":
 
         # ── Coleta status do personagem PRIMEIRO (rápido, 2s) ──
         log.info("Coletando status do personagem...")
+        # Limpa "parado"/"cookie_expirado" velho de execuções anteriores. Problema real volta a
+        # marcar sozinho (SessaoExpiradaError no loop); a checagem de taverna logo abaixo
+        # re-marca o status se o personagem já estiver em taverna. Feito ANTES do /status/ pra
+        # não ficar preso caso ele falhe por bloqueio de IP.
+        atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
         try:
             try:
                 status = parsear_status(client.get("/status/"))
@@ -7289,10 +7315,6 @@ if __name__ == "__main__":
             estado_atual["gems"] = gems
             salvar_estado(estado_atual)
             log.info(f"Status: Lv{status['level']} | {status['vitorias']}V/{status['derrotas']}D | {gold_conta}g | {gems} pedras")
-            # Limpa "parado"/"cookie_expirado" velho de execuções anteriores: se chegou aqui, o
-            # /status/ respondeu e o bot está funcionando (a checagem de taverna logo abaixo
-            # re-marca o status caso o personagem já esteja em taverna).
-            atualizar_ciclo_file("status_bot", {"parado": False, "motivo": "ok", "taverna_fim": None})
         except Exception as e:
             log.error(f"Erro status inicial: {e}")
 

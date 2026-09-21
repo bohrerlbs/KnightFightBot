@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.69
+## Versao atual: 2.3.70
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -200,3 +200,30 @@
   de IP; banner com progresso + "Cancelar fila" (/api/start_all_cancel); badge "Na fila" nos
   cards. Nao-admin so liga os proprios perfis. NAO inclui bots BG (precisam de modo/ef_offset)
 
+
+## Auto-update do launcher quebrado + ranking (v2.3.70)
+- Sintoma (amigo, 2026-09-21): clicou "Atualizar", a versao ficou 2.3.66 e a barra "Ligando
+  perfis" nao apareceu. Causas: (1) download_update() gravava launcher.py.new e dependia do
+  updater.bat, que NAO vai no release/KnightFightBot.zip -> o launcher.py novo nunca era
+  aplicado, logo o backend seguia antigo (sem /api/start_all, sem _stagger); (2) mesmo com o
+  .bat, nada encerrava o launcher velho, que seguia dono da porta 8764; (3) o JS pos-update
+  reiniciava TODOS os bots com 1.5s de intervalo (a rajada que causa o bloqueio de IP);
+  (4) a tela so le a versao ao carregar, entao mostrava a versao velha ate dar F5
+- Fix: launcher.py _reiniciar_launcher_com_update() valida (compile) e grava launcher.py.new,
+  responde o /api/update e, ~1s depois, um processo auxiliar desanexado (Windows) espera 3s,
+  troca o arquivo e sobe o launcher novo (KF_NO_BROWSER=1: nao abre outra aba); o processo
+  velho sai (os._exit). aplicar_update_pendente() no __main__ aplica um .new que tenha sobrado.
+  /api/version agora devolve `pid`; o JS (aguardarLauncherEReligar) espera o pid mudar, chama
+  /api/start_all (fila escalonada) e recarrega a pagina
+- Quem estiver preso num launcher.py velho (sem esse fix) precisa trocar o arquivo na mao:
+  fechar o launcher, baixar https://raw.githubusercontent.com/bohrerlbs/KnightFightBot/master/launcher.py
+  por cima de launcher.py (ou renomear o launcher.py.new que sobrou) e abrir de novo
+- Ranking: scrape_ranking() agora (a) roda uma coleta por vez com lock e devolve {} se outra
+  thread coletou ha <5min (inicializar_background e loop_ranking coletavam juntos no arranque =
+  o dobro de requisicoes); (b) para na 1a pagina com <=1 linha (fim do ranking do servidor):
+  servidores menores que RANKING_MAX_PLAYERS (ex.: de15 ~3300 jogadores) varriam ate a pagina
+  10000 a toa — o limite de 10000 continua valendo, so nao pede paginas depois do fim
+- bot.py limpa status_bot (cookie_expirado velho) ANTES do /status/ inicial; antes so limpava se
+  o /status/ respondesse, e um bloqueio de IP nessa hora deixava o "Cookie vencido" preso
+- Licao de teste: NAO usar portas 87xx pra launcher de teste — sao as portas dos dashboards dos
+  bots (de15 = 8799); um taskkill por porta derrubou o bot de15 sem querer

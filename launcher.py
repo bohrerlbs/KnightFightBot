@@ -551,9 +551,9 @@ def check_update():
         with urllib.request.urlopen(f"{GITHUB_RAW}/VERSION", timeout=5) as r:
             latest = r.read().decode().strip()
         current = get_version()
-        return {"current": current, "latest": latest, "update": latest != current}
+        return {"current": current, "latest": latest, "update": latest != current, "pid": os.getpid()}
     except:
-        return {"current": get_version(), "latest": None, "update": False}
+        return {"current": get_version(), "latest": None, "update": False, "pid": os.getpid()}
 
 def get_modelo_status():
     """Verifica quantos combates novos há desde o último modelo subido."""
@@ -667,21 +667,80 @@ def download_update():
             (BASE_DIR / "VERSION_BG").write_bytes(r.read())
     except:
         pass
-    # Atualiza launcher.py via arquivo temporário + updater.bat
+    # Atualiza launcher.py: baixa pra launcher.py.new, valida a sintaxe e reinicia o próprio
+    # launcher aplicando o arquivo (v2.3.70). Antes dependia de um updater.bat que nem vai no
+    # zip de distribuição — o launcher.py novo nunca era aplicado (e nada encerrava o processo
+    # velho, que seguia dono da porta 8764 com código antigo).
     try:
         with urllib.request.urlopen(f"{GITHUB_RAW}/launcher.py", timeout=15) as r:
             new_content = r.read()
+        compile(new_content, "launcher.py.new", "exec")   # não instala arquivo quebrado
         (BASE_DIR / "launcher.py.new").write_bytes(new_content)
         updated.append("launcher.py")
-        # Dispara updater.bat que substitui e reinicia após o launcher fechar
-        import subprocess as _sp
-        updater = BASE_DIR / "updater.bat"
-        if updater.exists():
-            _sp.Popen(["cmd", "/c", str(updater)], creationflags=0x00000008)
+        _reiniciar_launcher_com_update()
     except Exception as e:
         errors.append(f"launcher.py: {e}")
 
     return {"ok": len(errors) == 0, "updated": updated, "errors": errors, "restart": "launcher.py" in updated}
+
+def _reiniciar_launcher_com_update():
+    """Aplica launcher.py.new e reinicia o launcher. Roda depois de ~1s, dando tempo da
+    resposta HTTP do /api/update chegar ao navegador antes do processo sair."""
+    def _go():
+        time.sleep(1.0)
+        novo, atual = BASE_DIR / "launcher.py.new", BASE_DIR / "launcher.py"
+        env = os.environ.copy()
+        env["KF_NO_BROWSER"] = "1"   # a página aberta recarrega sozinha; não abrir outra aba
+        if os.name == "nt":
+            # Processo auxiliar desanexado: espera este launcher sair (libera a porta), troca
+            # o arquivo e sobe o novo numa janela de console própria.
+            helper = "; ".join([
+                "import os, sys, time, shutil, subprocess",
+                "base = sys.argv[1]",
+                "time.sleep(3)",
+                "novo = os.path.join(base, 'launcher.py.new')",
+                "atual = os.path.join(base, 'launcher.py')",
+                "shutil.copyfile(novo, atual) if os.path.exists(novo) else None",
+                "os.remove(novo) if os.path.exists(novo) else None",
+                "subprocess.Popen([sys.executable, atual], cwd=base, creationflags=0x00000010)",
+            ])
+            subprocess.Popen([sys.executable, "-c", helper, str(BASE_DIR)], env=env,
+                             creationflags=0x00000008, close_fds=True)
+            os._exit(0)
+        else:
+            import shutil
+            shutil.copyfile(novo, atual)
+            novo.unlink()
+            os.environ["KF_NO_BROWSER"] = "1"
+            os.execv(sys.executable, [sys.executable, str(atual)])
+    threading.Thread(target=_go, daemon=True).start()
+
+def aplicar_update_pendente():
+    """Se sobrou um launcher.py.new (atualização baixada mas não aplicada — ex.: launcher fechado
+    antes do reinício), aplica agora e reinicia com o código novo."""
+    novo = BASE_DIR / "launcher.py.new"
+    if not novo.exists():
+        return
+    try:
+        import shutil
+        data = novo.read_bytes()
+        compile(data, "launcher.py.new", "exec")
+        atual = Path(__file__).resolve()
+        if data != atual.read_bytes():
+            shutil.copyfile(novo, atual)
+            novo.unlink()
+            print("Atualização pendente aplicada — reiniciando o launcher...")
+            os.environ["KF_NO_BROWSER"] = "0"
+            if os.name == "nt":
+                subprocess.Popen([sys.executable, str(atual)], cwd=str(BASE_DIR))
+                sys.exit(0)
+            os.execv(sys.executable, [sys.executable, str(atual)])
+        else:
+            novo.unlink()
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"Atualização pendente ignorada (launcher.py.new inválido): {e}")
 
 def capture_cookie_browser(server="int7"):
     try:
@@ -1105,7 +1164,8 @@ def run():
     url    = f"http://localhost:{LAUNCHER_PORT}/launcher"
     print(f"KnightFight Bot Launcher {get_version()}")
     print(f"Abrindo {url}")
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    if os.environ.get("KF_NO_BROWSER") != "1":
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1115,4 +1175,5 @@ def run():
                 p.terminate()
 
 if __name__ == "__main__":
+    aplicar_update_pendente()
     run()

@@ -1855,6 +1855,7 @@ fetch('/api/version', {credentials:'include'})
   .then(r=>{ if(r.status===302||r.redirected){ window.location.href='/login'; throw 'redir'; } return r.json(); })
   .then(d=>{
     document.getElementById('ver').textContent = `v${d.current}`;
+    window._launcherPid = d.pid || null;   // pid deste launcher (pra detectar o reinício pós-update)
     console.log('Version check:', d);
     if(d.update && d.latest){
       latestVersion = d.latest;
@@ -1878,20 +1879,9 @@ Os bots serão parados e reiniciados automaticamente.`)) return;
     .then(r=>r.json())
     .then(d=>{
       if(d.ok){
-        toast(`v Atualizado: ${d.updated.join(', ')} - reiniciando bots...`);
+        toast(`v Atualizado: ${d.updated.join(', ')} - reiniciando o launcher...`);
         b.classList.remove('show');
-        // Reinicia todos os perfis (foram parados pelo update)
-        setTimeout(()=>{
-          fetch('/api/profiles').then(r=>r.json()).then(profiles=>{
-            var i = 0;
-            profiles.forEach(p=>{
-              // Reinicia todos, não só os que estavam rodando
-              setTimeout(()=>startBot(p._name), i * 1500);
-              i++;
-            });
-            setTimeout(loadProfiles, profiles.length * 1500 + 1000);
-          });
-        }, 1500);
+        aguardarLauncherEReligar();
       } else {
         toast(`Erro na atualização: ${d.errors.join(', ')}`, 'err');
         b.textContent = `^ v${latestVersion} disponível - clique para instalar`;
@@ -1899,6 +1889,37 @@ Os bots serão parados e reiniciados automaticamente.`)) return;
       }
     })
     .catch(()=>{ toast('Erro de conexão','err'); b.disabled=false; });
+}
+
+// Depois de atualizar, o launcher reinicia sozinho (novo processo, código novo). Espera ele voltar
+// — reconhecido pelo pid diferente —, liga os bots pela fila escalonada (nunca todos de uma vez:
+// a rajada de requisições faz o WAF do jogo bloquear o IP) e recarrega a página.
+function aguardarLauncherEReligar(){
+  var tentativas = 0;
+  var t = setInterval(function(){
+    tentativas++;
+    fetch('/api/version',{cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(v){
+        if(!v || !v.current) return;
+        // launchers antigos não informam pid: qualquer resposta com pid já é o processo novo
+        if(window._launcherPid && v.pid === window._launcherPid) return;
+        clearInterval(t);
+        fetch('/api/start_all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+          .then(function(r){ return r.json(); })
+          .catch(function(){ return {}; })
+          .then(function(){
+            toast('Launcher atualizado para v'+v.current+' - ligando os bots em sequência');
+            setTimeout(function(){ location.reload(); }, 2500);
+          });
+      })
+      .catch(function(){
+        if(tentativas > 40){
+          clearInterval(t);
+          toast('O launcher não voltou sozinho - feche esta janela e abra o iniciar_launcher.bat','err');
+        }
+      });
+  }, 1500);
 }
 
 function loadTunnel(){
