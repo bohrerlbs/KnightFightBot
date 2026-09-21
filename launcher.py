@@ -72,6 +72,83 @@ _bg_start_lock = threading.Lock()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Ligar todos os bots de forma escalonada ───────────────────────────────────
+# Iniciar os ~11 perfis de uma vez gera uma rajada (ranking + cache de perfis + scans de loja
+# de todos juntos) no mesmo IP, que o WAF do jogo bloqueia. Aqui um perfil sobe a cada
+# STAGGER_SEG; se houver bloqueio de IP ativo, a fila espera a janela acabar.
+STAGGER_SEG = 45
+_stagger = {"ativo": False, "cancelar": False, "total": 0, "feitos": 0, "fila": [],
+            "atual": None, "proximo_em": 0.0, "pausado_ip": False, "erros": []}
+_stagger_lock = threading.Lock()
+
+def _stagger_dormir(seg):
+    """Dorme em passos de 1s, saindo cedo se cancelado. Retorna False se cancelado."""
+    fim = time.time() + seg
+    while time.time() < fim:
+        if _stagger["cancelar"]:
+            return False
+        time.sleep(min(1.0, max(0.0, fim - time.time())))
+    return not _stagger["cancelar"]
+
+def _stagger_worker(fila):
+    try:
+        for i, name in enumerate(list(fila)):
+            # Com o IP bloqueado não adianta subir mais bots: espera a janela acabar
+            while not _stagger["cancelar"]:
+                rest, _n = get_bloqueio_ip()
+                _stagger["pausado_ip"] = rest > 0
+                if rest <= 0:
+                    break
+                time.sleep(5)
+            if _stagger["cancelar"]:
+                break
+            _stagger["atual"] = name
+            r = start_bot(name)
+            if not r.get("ok") and "Já está rodando" not in str(r.get("error", "")):
+                _stagger["erros"].append(f"{name}: {r.get('error')}")
+            with _stagger_lock:
+                _stagger["feitos"] += 1
+                if name in _stagger["fila"]:
+                    _stagger["fila"].remove(name)
+            if i < len(fila) - 1:
+                _stagger["proximo_em"] = time.time() + STAGGER_SEG
+                if not _stagger_dormir(STAGGER_SEG):
+                    break
+    finally:
+        with _stagger_lock:
+            _stagger.update(ativo=False, atual=None, proximo_em=0.0, pausado_ip=False, fila=[])
+
+def start_all_staggered(allowed=None):
+    """Inicia todos os perfis parados, um a cada STAGGER_SEG. allowed = lista de nomes
+    permitidos (usuário não-admin) ou None para todos."""
+    with _stagger_lock:
+        if _stagger["ativo"]:
+            return {"ok": False, "error": "Já existe uma sequência de inicialização em andamento"}
+        perm = None if allowed is None else {a.lower() for a in allowed}
+        fila = [p["_name"] for p in get_profiles()
+                if not p.get("_running") and (perm is None or p["_name"].lower() in perm)]
+        if not fila:
+            return {"ok": False, "error": "Nenhum perfil parado para iniciar"}
+        _stagger.update(ativo=True, cancelar=False, total=len(fila), feitos=0, fila=list(fila),
+                        atual=None, proximo_em=0.0, pausado_ip=False, erros=[])
+    threading.Thread(target=_stagger_worker, args=(fila,), daemon=True).start()
+    return {"ok": True, "total": len(fila), "intervalo": STAGGER_SEG,
+            "duracao_seg": STAGGER_SEG * (len(fila) - 1)}
+
+def cancel_start_all():
+    if not _stagger["ativo"]:
+        return {"ok": False, "error": "Nenhuma sequência em andamento"}
+    _stagger["cancelar"] = True
+    return {"ok": True}
+
+def stagger_snapshot():
+    if not _stagger["ativo"]:
+        return None
+    prox = max(0, int(_stagger["proximo_em"] - time.time())) if _stagger["proximo_em"] else 0
+    return {"total": _stagger["total"], "feitos": _stagger["feitos"], "fila": list(_stagger["fila"]),
+            "atual": _stagger["atual"], "proximo_em_seg": prox, "pausado_ip": _stagger["pausado_ip"],
+            "intervalo": STAGGER_SEG}
+
 def get_bloqueio_ip():
     """Bloqueio de IP (CloudFront 403) detectado pelos bots — lê o mesmo arquivo de estado
     que bot.py/bot_bg.py gravam no temp do sistema. Retorna (segundos_restantes, ocorrencia)
@@ -89,6 +166,7 @@ def get_bloqueio_ip():
 def get_profiles():
     profiles = []
     ip_rest, ip_n = get_bloqueio_ip()
+    stg = stagger_snapshot()
     # Limpa processos mortos do dicionário
     dead = [n for n, p in running_bots.items() if p.poll() is not None]
     for n in dead:
@@ -114,6 +192,8 @@ def get_profiles():
             cfg["_log_tail"] = get_log_tail(d.name, 5)
             cfg["_ip_bloqueio"]   = ip_rest   # >0 = bot detectou bloqueio de IP e está aguardando
             cfg["_ip_bloqueio_n"] = ip_n
+            cfg["_stagger"]       = stg   # sequência "ligar todos" em andamento (ou None)
+            cfg["_na_fila"]       = bool(stg and d.name in stg["fila"])
             # Lê status_bot e equipamento do ciclo para taverna countdown e dashboard
             ciclo_path = d / "ultimo_ciclo.json"
             if ciclo_path.exists():
@@ -864,6 +944,10 @@ class Handler(BaseHTTPRequestHandler):
             if not d.get("name"): self._json({"ok":False,"error":"Corpo da requisição inválido ou sem 'name'"}); return
             if not can_access(d["name"]): self._json({"ok":False,"error":"Sem permissão"}); return
             self._json(start_bot(d["name"]))
+        elif p == "/api/start_all":
+            self._json(start_all_staggered(None if is_admin(session) else (session.get("profiles") or [])))
+        elif p == "/api/start_all_cancel":
+            self._json(cancel_start_all())
         elif p == "/api/stop":
             if not d.get("name"): self._json({"ok":False,"error":"Corpo da requisição inválido ou sem 'name'"}); return
             if not can_access(d["name"]): self._json({"ok":False,"error":"Sem permissão"}); return

@@ -337,7 +337,14 @@ header {
 
 <div class="container">
   <div id="ip-banner" style="display:none;background:linear-gradient(135deg,#3d2a0a,#5c4210);border:1px solid #d68910;color:#f5b041;font-size:13px;padding:10px 16px;margin:0 0 12px;border-radius:4px;font-weight:600"></div>
-  <div class="section-title">Perfis</div>
+  <div id="stagger-banner" style="display:none;background:linear-gradient(135deg,#0a2d3d,#104a5c);border:1px solid #2e86c1;color:#85c1e9;font-size:13px;padding:10px 16px;margin:0 0 12px;border-radius:4px;font-weight:600;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <span id="stagger-text"></span>
+    <button class="btn-secondary" onclick="cancelStartAll()" style="font-size:10px;padding:4px 10px">Cancelar fila</button>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div class="section-title">Perfis</div>
+    <button class="btn-secondary" id="btn-start-all" onclick="startAll()" style="font-size:11px;padding:6px 14px" title="Liga todos os perfis parados, um por vez, para não gerar rajada de requisições">&#9654; Ligar todos (escalonado)</button>
+  </div>
   <div class="profiles-grid" id="profiles-grid">
     <div style="color:var(--muted);font-style:italic;padding:20px;font-size:13px">Carregando...</div>
   </div>
@@ -1104,6 +1111,26 @@ function logClass(line){
   return 'info';
 }
 
+function startAll(){
+  if(!confirm('Ligar todos os perfis parados, um a cada 45 segundos?\n\nA fila espera sozinha se o IP estiver bloqueado.')) return;
+  fetch('/api/start_all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok){ toast('Ligando '+d.total+' perfis (1 a cada '+d.intervalo+'s, ~'+Math.ceil(d.duracao_seg/60)+' min no total)'); loadProfiles(); setTimeout(loadProfiles,2000); }
+      else toast('Erro: '+d.error,'err');
+    })
+    .catch(function(e){ toast('Erro de conexão: '+e,'err'); });
+}
+
+function cancelStartAll(){
+  fetch('/api/start_all_cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok){ toast('Fila cancelada — os já iniciados continuam rodando'); setTimeout(loadProfiles,1200); }
+      else toast('Erro: '+d.error,'err');
+    });
+}
+
 function fmtBloqueio(s){
   var m = Math.floor(s/60), ss = s%60;
   if(m >= 60) return Math.floor(m/60)+'h'+String(m%60).padStart(2,'0')+'m';
@@ -1112,6 +1139,24 @@ function fmtBloqueio(s){
 
 function renderProfiles(profiles){
   var grid = document.getElementById('profiles-grid');
+
+  // Banner da fila "ligar todos": progresso da inicialização escalonada
+  var stgBanner = document.getElementById('stagger-banner');
+  var stg = profiles.length ? profiles[0]._stagger : null;
+  if(stgBanner){
+    if(stg){
+      var msg = '&#9654; Ligando perfis em sequência: '+stg.feitos+'/'+stg.total+' iniciados';
+      if(stg.pausado_ip) msg += ' — <span style="color:#f5b041">pausada: IP bloqueado, aguardando liberar</span>';
+      else if(stg.proximo_em_seg > 0) msg += ' — próximo em ~'+stg.proximo_em_seg+'s';
+      if(stg.fila && stg.fila.length) msg += ' <span style="font-weight:400;opacity:.8">(na fila: '+stg.fila.join(', ')+')</span>';
+      document.getElementById('stagger-text').innerHTML = msg;
+      stgBanner.style.display = 'flex';
+    } else {
+      stgBanner.style.display = 'none';
+    }
+  }
+  var btnAll = document.getElementById('btn-start-all');
+  if(btnAll) btnAll.disabled = !!stg;
 
   // Banner global: os bots detectaram bloqueio de IP (CloudFront 403) e estão em espera
   var ipBanner = document.getElementById('ip-banner');
@@ -1157,6 +1202,12 @@ function renderProfiles(profiles){
       html += '<div style="background:linear-gradient(135deg,#3d0a0a,#5c1010);border:1px solid #c0392b;color:#ff6b6b;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;display:flex;align-items:center;gap:6px;">';
       html += '<span style="font-size:14px">&#128274;</span>';
       html += ' <strong>Cookie vencido</strong> — atualize o cookie no Config e reinicie';
+      html += '</div>';
+    }
+    // Badge de fila do "ligar todos"
+    if(p._na_fila){
+      html += '<div style="background:linear-gradient(135deg,#0a2d3d,#104a5c);border:1px solid #2e86c1;color:#85c1e9;font-size:11px;padding:5px 10px;margin:0 12px 8px;border-radius:4px;">';
+      html += '&#9203; <strong>Na fila</strong> — será iniciado em sequência';
       html += '</div>';
     }
     // Badge de bloqueio de IP (bot em espera, não é cookie vencido)

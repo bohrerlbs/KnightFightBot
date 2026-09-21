@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.68
+## Versao atual: 2.3.69
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -161,9 +161,7 @@
 - bot_bg.py tem copia compacta da mesma logica (nao ha modulo compartilhado de proposito:
   launcher.download_update() baixa uma lista FIXA de arquivos, um kf_net.py novo quebraria quem
   atualiza so o bot.py). Se mudar uma, mude a outra
-- Ainda NAO tratado: rajada de largada — todos os perfis iniciam ranking+cache ao mesmo tempo
-  (e o ranking inicial roda duas vezes: inicializar_background e loop_ranking). Se o bloqueio
-  voltar, o proximo passo e escalonar o inicio dos perfis / dedup do ranking inicial
+- (Rajada de largada e limite agregado: tratados na v2.3.69, secao abaixo)
 
 ## Aviso de bloqueio de IP no launcher (v2.3.68)
 - launcher.py get_bloqueio_ip() le o MESMO arquivo <tempdir>/kfbot_ip_block.json que bot.py e
@@ -175,3 +173,30 @@
 - Se o bot iniciar e o IP ainda estiver bloqueado: 1a requisicao leva 403 -> grava a janela
   (15min) -> os demais processos leem o arquivo (<=2s) e entram em espera. Se o IP ja foi
   liberado mas o arquivo ainda tem janela futura, apague kfbot_ip_block.json pra destravar
+
+## Limite agregado, despertar escalonado e "Ligar todos" (v2.3.69)
+- Pesquisa (docs AWS WAF): regra de rate-limit por IP com janela MOVEL de 1/2/5/10min (padrao
+  5min), limite minimo 10, valor definido pelo dono do site (desconhecido pra nos). O WAF aplica
+  "perto do limite", pode levar minutos pra detectar o excesso e costuma levar <30s pra liberar
+  quando a taxa cai. Ex.: 08:06:07 liberou e 08:06:56 bloqueou de novo com os 11 bots acordando
+  juntos — o limite por PROCESSO (0.2s) nao bastava, o que conta e a soma dos 11 (~50 req/s)
+- Bloco de protecao (bot.py e bot_bg.py, copia IDENTICA — mude os dois) agora tem:
+  (1) ritmo agregado adaptativo: intervalo por processo = max(0.2s, intervalo_agg x n_processos
+  vivos); n vem de batimentos em <tempdir>/kfbot_alive/<pid> (30s). intervalo_agg comeca em
+  0.1s (10 req/s somados), DOBRA a cada bloqueio (teto 1.0s) e afrouxa 20% a cada 30min sem
+  bloqueio; fica no kfbot_ip_block.json ("intervalo"). Com 11 bots: 1.1s/req cada no ritmo base
+  (2) contador de ocorrencias (backoff 15/30/60min) so zera apos 10min ESTAVEIS depois do 1o 200
+  ("limpo_desde"); antes zerava no 1o 200 e o backoff nunca crescia (2 bloqueios seguidos
+  viravam sempre "ocorrencia #1")
+  (3) despertar escalonado: cada processo sorteia 0-120s de atraso apos o fim da janela
+  (BLOQUEIO_IP_JITTER_SEG) — evita a manada. 1o 200 NAO limpa o ate dos outros processos
+  (4) o log do bloqueio informa req/min e req/5min do processo + processos ativos, pra calibrar
+  o limite real com o tempo; apagar kfbot_ip_block.json destrava na hora (estado vira "livre")
+- bot.py: no arranque, apos o /status/ inicial OK, limpa status_bot (parado/cookie_expirado
+  velho ficava preso no ultimo_ciclo.json e o launcher mostrava "Cookie vencido" com o bot
+  funcionando; a checagem de taverna logo depois re-marca se preciso)
+- launcher: botao "Ligar todos (escalonado)" -> POST /api/start_all liga os perfis parados um a
+  cada STAGGER_SEG=45s (launcher.py start_all_staggered); pausa sozinho enquanto houver bloqueio
+  de IP; banner com progresso + "Cancelar fila" (/api/start_all_cancel); badge "Na fila" nos
+  cards. Nao-admin so liga os proprios perfis. NAO inclui bots BG (precisam de modo/ef_offset)
+

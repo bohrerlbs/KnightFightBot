@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# KnightFight — BattleGround Bot v1.0.10
+# KnightFight — BattleGround Bot v1.0.11
 # Bot separado para o Battleground (BG)
 # ═══════════════════════════════════════════════════════════════
 import os, sys, json, time, re, logging, argparse, threading, random, tempfile
@@ -153,45 +153,161 @@ def atualizar_ciclo(chave, valor):
     ciclo["atualizado_em"] = agora().isoformat()
     salvar_json(CICLO_FILE, ciclo)
 
-# ═══════════════════════════════════════════════════════════════
-# PROTEÇÃO CONTRA BLOQUEIO DE IP (CloudFront 403)
-# Mesma lógica e MESMO arquivo de estado do bot.py (mantenha os dois em sincronia): o
-# CloudFront bloqueia o IP inteiro, então bot.py e bot_bg.py precisam se coordenar.
-# ═══════════════════════════════════════════════════════════════
-RATE_MIN_INTERVALO_SEG  = 0.2
-BLOQUEIO_IP_BACKOFF_SEG = (900, 1800, 3600)
+# ═══════════════════════════════════════════
+# PROTEÇÃO CONTRA BLOQUEIO DE IP (CloudFront / AWS WAF 403) — v2.3.69
+# ═══════════════════════════════════════════
+# O host do jogo fica atrás do CloudFront + AWS WAF. Uma regra de rate-limit por IP (janela
+# móvel de 1/2/5/10min, limite definido pelo dono do site e desconhecido pra nós) bloqueia o IP
+# inteiro — 403 "Request blocked", inclusive no navegador — e só libera quando a taxa cai. O
+# WAF pode levar minutos pra detectar o excesso e ~30s pra liberar. Não é cookie vencido nem
+# personagem resetado: relogar só gera mais requisições e prolonga o bloqueio.
+#
+# Todos os perfis (bot.py + bot_bg.py) da máquina dividem o mesmo IP, então tudo aqui é
+# coordenado entre processos via arquivos no temp do sistema:
+#   kfbot_ip_block.json  estado compartilhado: janela de bloqueio, contador, ritmo adaptativo
+#   kfbot_alive/<pid>    "batimento" de cada processo, pra dividir o orçamento de requisições
+# bot.py e bot_bg.py têm uma CÓPIA IDÊNTICA deste bloco: se mudar um, mude o outro.
+import atexit, random
+from collections import deque
+
+RATE_PROC_MIN_SEG       = 0.2     # nunca mais rápido que isso por processo (mesmo com 1 bot só)
+RATE_AGG_BASE_SEG       = 0.1     # intervalo mínimo AGREGADO (todos os processos somados): 10 req/s
+RATE_AGG_MAX_SEG        = 1.0     # teto do intervalo agregado adaptativo (1 req/s)
+RATE_RECUPERA_SEG       = 1800    # sem bloqueio há 30min: reduz o intervalo agregado em 20%
+BLOQUEIO_IP_BACKOFF_SEG = (900, 1800, 3600)   # 15min, 30min, 1h (depois fica em 1h)
+BLOQUEIO_IP_JITTER_SEG  = 120     # cada processo acorda em até 2min DEPOIS do fim da janela
+BLOQUEIO_IP_ESTAVEL_SEG = 600     # 10min sem 403 depois de liberar -> zera o contador de ocorrências
 _BLOQ_FILE = os.path.join(tempfile.gettempdir(), "kfbot_ip_block.json")
+_ALIVE_DIR = os.path.join(tempfile.gettempdir(), "kfbot_alive")
 _bloq_lock = threading.Lock()
-_bloq = {"ate": 0.0, "strikes": 0, "slot": 0.0, "lido_em": 0.0}
+_bloq = {"ate": 0.0, "strikes": 0, "slot": 0.0, "lido_em": 0.0, "intervalo": RATE_AGG_BASE_SEG,
+         "ajustado_em": 0.0, "limpo_desde": 0.0, "jitter": 0.0, "jitter_ate": 0.0}
+_alive = {"iniciado": False, "n": 1, "lido_em": 0.0}
+_reqs = deque()   # instantes das requisições deste processo (últimos 5min) — só pra calibrar/logar
 
 class BloqueioIPError(Exception):
-    """CloudFront bloqueou o IP (HTTP 403 'Request blocked'). Não é cookie vencido."""
+    """CloudFront/WAF bloqueou o IP (HTTP 403 'Request blocked'). Não é cookie vencido."""
     pass
 
+def _bloq_jitter_atualiza(agora_ts):
+    """Sorteia o atraso de despertar deste processo quando surge uma janela nova."""
+    if _bloq["ate"] != _bloq["jitter_ate"]:
+        _bloq["jitter_ate"] = _bloq["ate"]
+        _bloq["jitter"] = random.uniform(0, BLOQUEIO_IP_JITTER_SEG) if _bloq["ate"] > agora_ts else 0.0
+
 def _bloq_sincronizar(forcar=False):
+    """Lê o estado compartilhado (no máx. 1x/2s). Chamar com _bloq_lock."""
     agora_ts = time.time()
     if not forcar and agora_ts - _bloq["lido_em"] < 2:
         return
     _bloq["lido_em"] = agora_ts
     try:
-        d = json.loads(Path(_BLOQ_FILE).read_text(encoding="utf-8"))
-        _bloq["ate"] = max(_bloq["ate"], float(d.get("ate", 0)))
-        _bloq["strikes"] = max(_bloq["strikes"], int(d.get("strikes", 0)))
+        with open(_BLOQ_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        _bloq["ate"] = float(d.get("ate", 0))
+        _bloq["strikes"] = int(d.get("strikes", 0))
+        _bloq["intervalo"] = min(RATE_AGG_MAX_SEG, max(RATE_AGG_BASE_SEG, float(d.get("intervalo", RATE_AGG_BASE_SEG))))
+        _bloq["ajustado_em"] = float(d.get("ajustado_em", 0))
+        _bloq["limpo_desde"] = float(d.get("limpo_desde", 0))
+    except FileNotFoundError:
+        # arquivo apagado (ex: destravar na mão) = sem bloqueio; mantém só o ritmo adaptativo
+        _bloq.update(ate=0.0, strikes=0, limpo_desde=0.0)
     except Exception:
         pass
+    _bloq_jitter_atualiza(agora_ts)
 
 def _bloq_salvar():
     try:
-        Path(_BLOQ_FILE).write_text(json.dumps({"ate": _bloq["ate"], "strikes": _bloq["strikes"]}), encoding="utf-8")
+        with open(_BLOQ_FILE, "w", encoding="utf-8") as f:
+            json.dump({"ate": _bloq["ate"], "strikes": _bloq["strikes"], "intervalo": _bloq["intervalo"],
+                       "ajustado_em": _bloq["ajustado_em"], "limpo_desde": _bloq["limpo_desde"]}, f)
     except Exception:
         pass
 
+def _bloq_manutencao():
+    """Zera o contador após 10min estáveis e afrouxa o ritmo aos poucos. Chamar com _bloq_lock."""
+    agora_ts = time.time()
+    if _bloq["strikes"] and _bloq["limpo_desde"] and agora_ts - _bloq["limpo_desde"] >= BLOQUEIO_IP_ESTAVEL_SEG:
+        _bloq["strikes"] = 0
+        _bloq["limpo_desde"] = 0.0
+        _bloq_salvar()
+        log.info("✓ IP estável há 10min — contador de bloqueios zerado")
+    if _bloq["intervalo"] > RATE_AGG_BASE_SEG and _bloq["ajustado_em"] and agora_ts - _bloq["ajustado_em"] >= RATE_RECUPERA_SEG:
+        _bloq["intervalo"] = max(RATE_AGG_BASE_SEG, _bloq["intervalo"] * 0.8)
+        _bloq["ajustado_em"] = agora_ts
+        _bloq_salvar()
+        log.info(f"Ritmo agregado de requisições afrouxado para {1 / _bloq['intervalo']:.1f} req/s")
+
 def bloqueio_ip_restante():
+    """Segundos até este processo poder voltar a requisitar (0 = livre). Inclui o atraso escalonado."""
     with _bloq_lock:
         _bloq_sincronizar()
-        return max(0.0, _bloq["ate"] - time.time())
+        _bloq_manutencao()
+        if _bloq["ate"] <= 0:
+            return 0.0
+        return max(0.0, _bloq["ate"] + _bloq["jitter"] - time.time())
+
+def _resp_e_bloqueio_ip(r):
+    return r.status_code == 403 and "the request could not be satisfied" in r.text[:1500].lower()
+
+def _alive_iniciar():
+    """Registra este processo no diretório de batimentos (idempotente)."""
+    with _bloq_lock:
+        if _alive["iniciado"]:
+            return
+        _alive["iniciado"] = True
+    try:
+        os.makedirs(_ALIVE_DIR, exist_ok=True)
+        minha = os.path.join(_ALIVE_DIR, str(os.getpid()))
+        def _bater():
+            while True:
+                try:
+                    with open(minha, "w") as f:
+                        f.write(str(time.time()))
+                except Exception:
+                    pass
+                time.sleep(10)
+        try:
+            with open(minha, "w") as f:
+                f.write(str(time.time()))
+        except Exception:
+            pass
+        threading.Thread(target=_bater, daemon=True).start()
+        atexit.register(lambda: os.path.exists(minha) and os.remove(minha))
+    except Exception:
+        pass
+
+def _n_procs_vivos():
+    """Quantos processos do bot estão vivos (batimento nos últimos 30s). Chamar com _bloq_lock."""
+    agora_ts = time.time()
+    if agora_ts - _alive["lido_em"] < 10:
+        return _alive["n"]
+    _alive["lido_em"] = agora_ts
+    n = 0
+    try:
+        for e in os.scandir(_ALIVE_DIR):
+            idade = agora_ts - e.stat().st_mtime
+            if idade < 30:
+                n += 1
+            elif idade > 3600:
+                try: os.remove(e.path)
+                except Exception: pass
+    except Exception:
+        pass
+    _alive["n"] = max(1, n)
+    return _alive["n"]
+
+def _intervalo_proc():
+    """Intervalo mínimo entre requisições DESTE processo: o orçamento agregado dividido entre
+    os processos vivos. Chamar com _bloq_lock."""
+    return max(RATE_PROC_MIN_SEG, _bloq["intervalo"] * _n_procs_vivos())
+
+def _reqs_ultimos(seg):
+    corte = time.time() - seg
+    return sum(1 for t in _reqs if t >= corte)
 
 def _bloq_registrar():
+    """Registra um bloqueio novo (ou reaproveita um já registrado por outra thread/processo)."""
     with _bloq_lock:
         _bloq_sincronizar(forcar=True)
         agora_ts = time.time()
@@ -200,45 +316,71 @@ def _bloq_registrar():
         seg = BLOQUEIO_IP_BACKOFF_SEG[min(_bloq["strikes"], len(BLOQUEIO_IP_BACKOFF_SEG) - 1)]
         _bloq["strikes"] += 1
         _bloq["ate"] = agora_ts + seg
+        _bloq["limpo_desde"] = 0.0
+        # Ritmo adaptativo (AIMD): dobra o intervalo agregado a cada bloqueio, afrouxa devagar
+        _bloq["intervalo"] = min(RATE_AGG_MAX_SEG, _bloq["intervalo"] * 2)
+        _bloq["ajustado_em"] = agora_ts
+        _bloq_jitter_atualiza(agora_ts)
         _bloq_salvar()
-        n = _bloq["strikes"]
-    log.error(f"🚧 IP BLOQUEADO pelo CloudFront (HTTP 403) — requisições em pausa por "
-              f"{fmt_t(seg)} (ocorrência #{n}). Não é cookie vencido.")
+        n, iv = _bloq["strikes"], _bloq["intervalo"]
+        procs = _n_procs_vivos()
+        r60, r300 = _reqs_ultimos(60), _reqs_ultimos(300)
+    log.error(f"🚧 IP BLOQUEADO pelo CloudFront/WAF (HTTP 403) — requisições em pausa por {fmt_t(seg)} "
+              f"(ocorrência #{n}). Este processo fez {r60} req no último minuto e {r300} em 5min "
+              f"({procs} processos ativos); ritmo agregado reduzido para {1 / iv:.1f} req/s. "
+              f"Não é cookie vencido.")
 
 def _bloq_sucesso():
     with _bloq_lock:
-        if _bloq["strikes"]:
-            _bloq["strikes"] = 0
-            _bloq["ate"] = 0.0
+        if _bloq["strikes"] and not _bloq["limpo_desde"]:
+            _bloq["limpo_desde"] = time.time()
             _bloq_salvar()
-    log.info("✓ IP liberado — requisições normalizadas")
+        else:
+            return
+    log.info("✓ IP liberado — requisições normalizadas (contador de bloqueios zera após 10min estável)")
 
 class _KFSession(requests.Session):
-    """Session com limite de taxa e detecção de bloqueio de IP. Durante um bloqueio
-    conhecido, a requisição espera o fim da janela; a 1ª depois dela é o teste."""
+    """Session com limite de taxa compartilhado e detecção de bloqueio de IP.
+
+    Durante um bloqueio conhecido, a requisição espera o fim da janela (esperar_bloqueio=True)
+    ou levanta BloqueioIPError na hora (False, usado no login). Cada processo acorda num
+    instante aleatório depois da janela (evita a manada); a 1ª requisição depois disso é o
+    teste: se voltar 403, a janela seguinte é maior e o ritmo agregado cai pela metade.
+    """
+    def __init__(self, esperar_bloqueio=True):
+        super().__init__()
+        self._esperar_bloqueio = esperar_bloqueio
+
     def request(self, method, url, **kw):
+        _alive_iniciar()
         avisou = False
         while True:
             rest = bloqueio_ip_restante()
             if rest <= 0:
                 break
+            if not self._esperar_bloqueio:
+                raise BloqueioIPError(f"IP bloqueado pelo CloudFront — restam {fmt_t(rest)}")
             if not avisou:
                 log.warning(f"🚧 IP bloqueado — requisição aguardando {fmt_t(rest)}")
                 avisou = True
             time.sleep(min(30, rest + 0.1))
 
+        # Limite de taxa: cada requisição reserva o próximo slot livre
         with _bloq_lock:
             agora_ts = time.time()
-            slot = max(agora_ts, _bloq["slot"] + RATE_MIN_INTERVALO_SEG)
+            slot = max(agora_ts, _bloq["slot"] + _intervalo_proc())
             _bloq["slot"] = slot
+            _reqs.append(slot)
+            while _reqs and _reqs[0] < agora_ts - 300:
+                _reqs.popleft()
         if slot > agora_ts:
             time.sleep(slot - agora_ts)
 
         r = super().request(method, url, **kw)
-        if r.status_code == 403 and "the request could not be satisfied" in r.text[:1500].lower():
+        if _resp_e_bloqueio_ip(r):
             _bloq_registrar()
             raise BloqueioIPError(f"HTTP 403 do CloudFront em {url}")
-        if r.status_code < 400 and _bloq["strikes"]:
+        if r.status_code < 400 and _bloq["strikes"] and not _bloq["limpo_desde"]:
             _bloq_sucesso()
         return r
 
