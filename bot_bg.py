@@ -172,7 +172,10 @@ from collections import deque
 
 RATE_PROC_MIN_SEG       = 0.2     # nunca mais rápido que isso por processo (mesmo com 1 bot só)
 RATE_AGG_BASE_SEG       = 0.1     # intervalo mínimo AGREGADO (todos os processos somados): 10 req/s
-RATE_AGG_MAX_SEG        = 1.0     # teto do intervalo agregado adaptativo (1 req/s)
+RATE_AGG_MAX_SEG        = 20.0    # teto de SEGURANÇA (sanidade), não meta: deixa o ritmo
+                                   # cair até 1 req/20s agregado antes de travar, em vez de
+                                   # prender o algoritmo numa "velocidade mínima" arbitrária
+                                   # que pode ainda ser rápida demais pro WAF real (v2.3.72)
 RATE_RECUPERA_SEG       = 1800    # sem bloqueio há 30min: reduz o intervalo agregado em 20%
 BLOQUEIO_IP_BACKOFF_SEG = (900, 1800, 3600)   # 15min, 30min, 1h (depois fica em 1h)
 BLOQUEIO_IP_JITTER_SEG  = 120     # cada processo acorda em até 2min DEPOIS do fim da janela
@@ -225,14 +228,24 @@ def _bloq_salvar():
         pass
 
 def _bloq_manutencao():
-    """Zera o contador após 10min estáveis e afrouxa o ritmo aos poucos. Chamar com _bloq_lock."""
+    """Zera o contador após 10min estáveis e afrouxa o ritmo aos poucos. Chamar com _bloq_lock.
+
+    v2.3.72: o afrouxamento só pode contar tempo de sucesso CONFIRMADO (desde limpo_desde), nunca
+    tempo de espera de um bloqueio ativo. Antes usava só ajustado_em (hora da última mudança de
+    ritmo, gravada no MOMENTO do bloqueio) — como as janelas de bloqueio (30min/1h) são da mesma
+    ordem do RATE_RECUPERA_SEG, o ritmo relaxava sozinho ENQUANTO ainda esperava a janela acabar
+    (ou imediatamente ao desbloquear), desfazendo o dobro de cautela antes de rodar um único
+    request no ritmo novo — o processo ficava preso bloqueando de hora em hora sem nunca
+    realmente ficar mais devagar (visto na prática: 9 bloqueios seguidos, sempre no teto antigo)."""
     agora_ts = time.time()
     if _bloq["strikes"] and _bloq["limpo_desde"] and agora_ts - _bloq["limpo_desde"] >= BLOQUEIO_IP_ESTAVEL_SEG:
         _bloq["strikes"] = 0
         _bloq["limpo_desde"] = 0.0
         _bloq_salvar()
         log.info("✓ IP estável há 10min — contador de bloqueios zerado")
-    if _bloq["intervalo"] > RATE_AGG_BASE_SEG and _bloq["ajustado_em"] and agora_ts - _bloq["ajustado_em"] >= RATE_RECUPERA_SEG:
+    ancora = max(_bloq["ajustado_em"], _bloq["limpo_desde"])
+    if (_bloq["intervalo"] > RATE_AGG_BASE_SEG and _bloq["limpo_desde"] > 0
+            and agora_ts - ancora >= RATE_RECUPERA_SEG):
         _bloq["intervalo"] = max(RATE_AGG_BASE_SEG, _bloq["intervalo"] * 0.8)
         _bloq["ajustado_em"] = agora_ts
         _bloq_salvar()

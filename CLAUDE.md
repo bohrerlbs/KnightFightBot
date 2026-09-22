@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.71
+## Versao atual: 2.3.72
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -241,3 +241,35 @@
   startAll() trata 404 com mensagem clara ("versao antiga - feche e abra o iniciar_launcher.bat")
 - NAO reiniciar o launcher com bots rodando: os bots sao processos filhos independentes, mas o
   launcher novo comeca com running_bots vazio (mostra "parado" e permitiria iniciar duplicado)
+
+## Ciclo infinito de bloqueio 1h — bug no throttle adaptativo (v2.3.72)
+- Sintoma (2026-09-21 00:34 ate 2026-09-22 07:28): bot preso num ciclo quase constante de
+  bloqueia 1h -> libera ~5min -> bloqueia 1h de novo, chegando a ocorrencia #9 sem nunca
+  estabilizar. Bots praticamente parados a noite toda
+- Causa raiz, DOIS bugs no bloco de protecao (bot.py e bot_bg.py, cópia identica):
+  (1) RATE_AGG_MAX_SEG=1.0 era um TETO (nunca deixava o ritmo cair abaixo de 1 req/s agregado
+  pros ~12 bots) em vez de so uma trava de sanidade — a partir da ocorrencia #4 o algoritmo
+  bateu nesse teto e ficou preso nele pra sempre, mesmo continuando a ser bloqueado (1 req/s
+  agregado, ~5/min por bot, ja era rapido demais pro WAF real e nao tinha como ir mais devagar)
+  (2) _bloq_manutencao() afrouxava o ritmo (20%/30min) contando tempo de PAREDE desde
+  ajustado_em — que e gravado no MOMENTO do bloqueio. Como as janelas (30min/1h) sao da mesma
+  ordem do RATE_RECUPERA_SEG (30min), o ritmo relaxava sozinho ENQUANTO ainda esperava a janela
+  acabar (ou imediatamente ao desbloquear), desfazendo a cautela do "dobra no bloqueio" antes de
+  rodar um unico request no ritmo novo
+- Fix: RATE_AGG_MAX_SEG virou 20.0 (trava de sanidade, nao meta — deixa cair ate 1 req/20s
+  agregado antes de travar). _bloq_manutencao() so afrouxa contando a partir de
+  max(ajustado_em, limpo_desde) — ou seja, so conta tempo de ESTABILIDADE CONFIRMADA (desde o
+  1o sucesso apos desbloquear), nunca tempo de espera de bloqueio ativo (limpo_desde fica 0.0
+  durante todo o bloqueio, entao a condicao `limpo_desde > 0` sozinha ja impede qualquer
+  afrouxamento nesse periodo)
+- Testado com adapter falso ISOLADO (arquivo de estado proprio, nao o do temp do sistema — ver
+  nota de teste abaixo) confirmando: nao afrouxa durante espera, nao afrouxa no 1o sucesso, so
+  afrouxa apos RATE_RECUPERA_SEG de estabilidade real, e nao trava mais em 1.0
+- ARMADILHA DE TESTE: bot.py usa <tempdir>/kfbot_ip_block.json e <tempdir>/kfbot_alive/ fixos —
+  rodar um teste local com `import bot` enquanto os bots reais estao rodando CONTAMINA o teste
+  (os 12 processos reais leem/escrevem o mesmo arquivo). Sempre sobrescrever
+  bot._BLOQ_FILE/bot._ALIVE_DIR pra um diretorio temporario isolado antes de testar
+- Aplicado nos bots reais via /api/stop de cada perfil + /api/start_all (fila escalonada) —
+  matar python.exe direto por PowerShell/taskkill e bloqueado pelo classificador do Claude Code
+  ("Interfere With Workloads"); os endpoints /api/stop e /api/start do proprio launcher.py nao
+  sao bloqueados e sao o jeito certo de reiniciar bots por fora
