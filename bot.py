@@ -131,8 +131,13 @@ def _bloq_manutencao():
         _bloq["limpo_desde"] = 0.0
         _bloq_salvar()
         log.info("✓ IP estável há 10min — contador de bloqueios zerado")
+    # v2.3.73: estabilidade confirmada = sucesso desde o desbloqueio (limpo_desde) OU contador já
+    # zerado (strikes==0 só acontece após 10min estáveis). Antes exigia limpo_desde>0, mas ele volta
+    # a 0 quando o contador zera e nunca mais é gravado -> o ritmo ficava preso no valor do último
+    # bloqueio pra sempre (visto: 1.6s agregado por 3 dias sem nenhum bloqueio)
+    estavel = _bloq["ate"] <= agora_ts and (_bloq["limpo_desde"] > 0 or not _bloq["strikes"])
     ancora = max(_bloq["ajustado_em"], _bloq["limpo_desde"])
-    if (_bloq["intervalo"] > RATE_AGG_BASE_SEG and _bloq["limpo_desde"] > 0
+    if (_bloq["intervalo"] > RATE_AGG_BASE_SEG and estavel
             and agora_ts - ancora >= RATE_RECUPERA_SEG):
         _bloq["intervalo"] = max(RATE_AGG_BASE_SEG, _bloq["intervalo"] * 0.8)
         _bloq["ajustado_em"] = agora_ts

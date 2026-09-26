@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.72
+## Versao atual: 2.3.73
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -273,3 +273,15 @@
   matar python.exe direto por PowerShell/taskkill e bloqueado pelo classificador do Claude Code
   ("Interfere With Workloads"); os endpoints /api/stop e /api/start do proprio launcher.py nao
   sao bloqueados e sao o jeito certo de reiniciar bots por fora
+
+## Ritmo adaptativo nunca afrouxava depois de zerar o contador (v2.3.73)
+- Sintoma (2026-09-26): 3 dias sem nenhum bloqueio, mas o intervalo agregado seguia preso em 1.6s
+  (~19s por requisicao por bot com 12 rodando) — ranking a 20-35s/pagina, cache de perfis lentissimo
+- Causa: o fix da v2.3.72 exigia limpo_desde > 0 pra afrouxar. Mas quando o contador zera (10min
+  estaveis) limpo_desde volta a 0.0, e _bloq_sucesso() so grava limpo_desde se strikes > 0 -> depois
+  de zerar, nunca mais afrouxava. O ritmo so ficava mais lento a cada bloqueio, nunca voltava
+- Fix (bot.py e bot_bg.py, copia identica): _bloq_manutencao() considera estavel quando
+  ate <= agora E (limpo_desde > 0 OU strikes == 0). strikes==0 so acontece apos 10min estaveis (ou
+  arranque limpo), entao continua sem afrouxar durante a espera de bloqueio ou antes do 1o sucesso
+- Testado isolado (_BLOQ_FILE/_ALIVE_DIR no scratchpad): preso 3 dias -> afrouxa 1.6->1.28; bloqueio
+  ativo, desbloqueado sem sucesso, 1o sucesso recente e afrouxado ha pouco -> mantem 1.6
