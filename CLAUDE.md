@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.73
+## Versao atual: 2.3.74
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -285,3 +285,12 @@
   arranque limpo), entao continua sem afrouxar durante a espera de bloqueio ou antes do 1o sucesso
 - Testado isolado (_BLOQ_FILE/_ALIVE_DIR no scratchpad): preso 3 dias -> afrouxa 1.6->1.28; bloqueio
   ativo, desbloqueado sem sucesso, 1o sucesso recente e afrouxado ha pouco -> mantem 1.6
+
+## sk_armadura sempre 0 em perfis de servidores com idioma PT/BR (v2.3.74)
+- parsear_perfil() (bot.py) procurava "armour skill:" / "skill de armadura:", mas o perfil alheio
+  em PT/BR mostra "Equipamento: (N)" -> sk_armadura=0 pra TODOS os perfis de contas com cookie
+  language=br (ex: 9.977 perfis do br1, nenhum com armadura>0). O simulador tratava todo adversario
+  como sem armadura/escudo (defesa subestimada). Fix: adiciona "equipamento:" na lista
+- O /status/ proprio vem em ingles mesmo com language=br ("Armour skill:", "Two-handed attack:"),
+  por isso MY_STATS nao tinha o problema. bot_bg.py so le o status proprio (attr_map em ingles)
+- O perfis_cache.json existente so se corrige conforme o cache for recoletado
