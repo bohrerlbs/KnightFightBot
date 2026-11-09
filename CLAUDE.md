@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.77
+## Versao atual: 2.3.78
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -325,3 +325,15 @@
   ate juntar a meta e comprar; depois volta ao normal (banco + taverna longa)
 - Fora da reta final com BANCO_GOLD: _taverna_1h deposita primeiro e so imuniza se sobrar
   >= BANCO_SOBRA_MAX na mao (deposito falhou) — antes nunca imunizava com BANCO_GOLD
+
+## Treino gastava a reserva do proximo item com BANCO_GOLD (v2.3.78)
+- Sintoma (int8 2026-11-09 06:30): comprou Armadura de couro revestido, ficou com ~7000g real mas o
+  estado.json seguia com 20244g (gold de antes da compra) -> verificar_treinamento achou capital >=
+  reserva e treinou 7 atributos ate sobrar ~400g
+- 3 bugs: (1) tentar_comprar_item_alvo nao atualizava gold_atual apos comprar; (2) com BANCO_GOLD e
+  capital >= reserva o loop de treino gastava ate zerar, nao so o excedente; (3) a reserva do treino
+  era o LIQUIDO (gold_necessario) mas com banco a compra espera o BRUTO quando nao ha buy link — o
+  treino comeria a diferenca e o capital nunca chegaria ao bruto
+- Fix: gold_atual atualizado ao vivo apos a compra e no inicio do treino; reserva com BANCO_GOLD =
+  mesma meta de tentar_comprar_item_alvo; treino com orcamento = capital - reserva (para quando o
+  proximo treino passa do orcamento). Caminho sem BANCO_GOLD inalterado (ja pausava sempre)

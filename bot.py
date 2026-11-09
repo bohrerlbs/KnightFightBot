@@ -3212,6 +3212,12 @@ def tentar_comprar_item_alvo(client, estado):
 
     log.info(f"  ✓ Comprou {alvo['nome']} (bruto {gold_bruto}g, liquido {alvo['gold_necessario']}g)")
     estado.pop("item_alvo", None)
+    # Atualiza gold_atual com o valor real pós-compra — senão o treino/guardar seguem usando o gold
+    # de antes da compra (ex: int8 2026-11-09 mostrava 20244g com ~7000g real e treinou tudo)
+    try:
+        estado["gold_atual"], _ = parsear_gold_gems(client)
+    except Exception as e:
+        log.warning(f"  Ler gold pós-compra: erro — {e}")
     salvar_estado(estado)
     # Equipa o item recém comprado (waffen, schilde, ruestungen)
     try:
@@ -5111,8 +5117,15 @@ def verificar_treinamento(client):
     estado_t = carregar_estado()
     gold_reservado = 0
     motivo_reserva = None
+    orcamento = None  # None = sem limite; senão, gold máximo que o treino pode gastar
     if COMPRAR_EQUIPAMENTO:
-        gold_t = estado_t.get("gold_atual", 0)
+        # gold ao vivo — o estado.json pode estar velho (ex: logo após uma compra)
+        try:
+            gold_t, _ = parsear_gold_gems(client)
+            estado_t["gold_atual"] = gold_t
+            salvar_estado(estado_t)
+        except Exception:
+            gold_t = estado_t.get("gold_atual", 0)
         item_alvo    = estado_t.get("item_alvo")
         pedra_alvo   = estado_t.get("pedra_alvo")
         anel_alvo    = estado_t.get("anel_alvo")
@@ -5137,6 +5150,11 @@ def verificar_treinamento(client):
                     # Se gold_necessario=0 (item de gema chegou ao catálogo), usa gold_bruto como reserva.
                     gn = item_alvo.get("gold_necessario", gb)
                     gold_reservado = gn if gn > 0 else gb
+                    # BANCO_GOLD: mesma meta de tentar_comprar_item_alvo — sem buy link o jogo exige o
+                    # BRUTO no bolso; reservar só o líquido deixaria o treino comer a diferença e o
+                    # capital nunca chegaria ao bruto
+                    if BANCO_GOLD and not item_alvo.get("url_compra"):
+                        gold_reservado = gb
                     motivo_reserva = item_alvo["nome"]
         elif pedra_alvo:
             gold_reservado = pedra_alvo.get("gold_unitario", pedra_alvo["gold_necessario"])
@@ -5161,7 +5179,11 @@ def verificar_treinamento(client):
                     log.info(f"  Treinamento pausado — capital {capital}g (líquido={gold_t}g banco={saldo_b}g) "
                              f"< {gold_reservado}g para {motivo_reserva}")
                     return []
-                # Capital suficiente — banco cobre na hora da compra, treino pode prosseguir
+                # Capital acima da reserva: treina só com o EXCEDENTE (antes treinava até zerar e
+                # gastava a reserva do item junto)
+                orcamento = capital - gold_reservado
+                log.info(f"  Treino: capital {capital}g, reserva {gold_reservado}g p/ {motivo_reserva} "
+                         f"— pode gastar até {orcamento}g")
             else:
                 if gold_t < gold_reservado:
                     log.info(f"  Treinamento pausado — guardando gold para {motivo_reserva} "
@@ -5230,6 +5252,12 @@ def verificar_treinamento(client):
         # Treina a mais barata
         candidatos.sort(key=lambda x: x["custo"])
         alvo = candidatos[0]
+        if orcamento is not None:
+            if alvo["custo"] > orcamento:
+                log.info(f"  Treino parado — {alvo['nome']} custa {alvo['custo']}g > {orcamento}g "
+                         f"livres acima da reserva de {motivo_reserva}")
+                break
+            orcamento -= alvo["custo"]
         log.info(f"  Treinando {alvo['nome']} (custo: {alvo['custo']}g)...")
         try:
             href_rel = alvo["href"]
