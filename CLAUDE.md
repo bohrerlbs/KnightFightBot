@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.76
+## Versao atual: 2.3.77
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -315,3 +315,13 @@
 - banco_garantir_sem_gold(): deposita, le o gold, repete 1x se sobrar >= BANCO_SOBRA_MAX (500g)
 - _taverna_ate_cd: se ainda sobrar gold, cancela a sessao longa e usa _taverna_1h (que tenta depositar
   de novo) — nunca mais 12h com gold na mao. _taverna_1h tambem usa o helper (so avisa no log)
+
+## Reta final do item alvo + imunizar quando o deposito falha (v2.3.77)
+- Ideia do usuario: banco perde 50%, entao quando falta pouco pro item_alvo nao compensa depositar.
+  banco_reta_final(): capital (gold na mao + banco_gold_saldo) >= RETA_FINAL_PCT% (padrao 70,
+  config "reta_final_pct") da meta (mesma meta de tentar_comprar_item_alvo: bruto sem buy link)
+- Na reta final: _taverna_ate_cd vai direto pra _taverna_1h; _taverna_1h nao deposita e imuniza na
+  entrada (e na saida, como ja fazia). Entre tavernas o ciclo normal segue (pig/missao/imunizar)
+  ate juntar a meta e comprar; depois volta ao normal (banco + taverna longa)
+- Fora da reta final com BANCO_GOLD: _taverna_1h deposita primeiro e so imuniza se sobrar
+  >= BANCO_SOBRA_MAX na mao (deposito falhou) — antes nunca imunizava com BANCO_GOLD

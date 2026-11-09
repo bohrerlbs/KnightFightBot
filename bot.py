@@ -469,6 +469,7 @@ HORARIO_INICIO       = "08:00"  # hora local de início de operação
 HORARIO_PARADA       = "22:00"  # hora local de parada (entra taverna)
 HORARIO_GASTAR_GOLD  = True   # ao parar: compra armadura barata com todo o gold antes de entrar taverna
 BANCO_GOLD          = False  # gerencia gold em armaduras como reserva (opt-in; incompatível com MODO_PIG)
+RETA_FINAL_PCT      = 70     # BANCO_GOLD: capital >= X% da meta do item_alvo -> sem banco/taverna longa, imuniza + taverna 1h
 TAVERNA_INTELIGENTE = False  # duração da taverna baseada no CD da próxima missão (opt-in)
 SCORE_MIN_PIG        = 70    # score mínimo para pig normal
 SCORE_MIN_PIG_BROKE  = 50    # score mínimo para pig quando gold conta <= 100g
@@ -2354,6 +2355,34 @@ def banco_gold_depositar(client):
 
 
 BANCO_SOBRA_MAX = 500  # gold na mão acima disso após depositar = depósito falhou
+
+
+def banco_reta_final(client):
+    """BANCO_GOLD: True quando o capital (gold na mão + valor do banco) já é >= RETA_FINAL_PCT% da
+    meta do item_alvo. Nesse caso depositar (perde 50%) não compensa: o bot para de usar banco e
+    taverna longa e fica imunizando + taverna 1h até comprar o item.
+    Retorna (reta_final, capital, meta)."""
+    if not BANCO_GOLD or not COMPRAR_EQUIPAMENTO or RETA_FINAL_PCT <= 0:
+        return False, 0, 0
+    alvo = carregar_estado().get("item_alvo")
+    if not alvo:
+        return False, 0, 0
+    gb = alvo.get("gold_bruto", alvo.get("gold_necessario", 0))
+    # mesma meta de tentar_comprar_item_alvo: sem buy link o jogo exige o bruto no bolso
+    meta = gb if not alvo.get("url_compra") else alvo.get("gold_necessario", gb)
+    if meta < 50:
+        return False, 0, meta
+    try:
+        gold_mao, _ = parsear_gold_gems(client)
+        capital = gold_mao + banco_gold_saldo(client)
+    except Exception as e:
+        log.warning(f"  Reta final: erro ao calcular capital — {e}")
+        return False, 0, meta
+    reta = capital * 100 >= meta * RETA_FINAL_PCT
+    if reta:
+        log.info(f"  🎯 [RETA FINAL] capital {capital}g >= {RETA_FINAL_PCT}% de {meta}g ({alvo.get('nome')}) "
+                 f"— sem banco/taverna longa, imuniza + taverna 1h")
+    return reta, capital, meta
 
 
 def banco_garantir_sem_gold(client, contexto="Banco"):
@@ -5820,6 +5849,7 @@ def recarregar_config():
             ("gold_ignorar_xp",    "GOLD_IGNORAR_XP",    int),
             ("banco_gold",         "BANCO_GOLD",         bool),
             ("taverna_inteligente","TAVERNA_INTELIGENTE", bool),
+            ("reta_final_pct",     "RETA_FINAL_PCT",     int),
         ]:
             if field in cfg:
                 novo = cast(cfg[field])
@@ -6184,22 +6214,29 @@ def _taverna_1h(client):
     # Passo 1: SEMPRE tenta imunizar antes de entrar na taverna
     # O objetivo é entrar com imunidade máxima (1h) para não ficar descoberto durante a taverna
     # Só pula se imunidade já for >= duração da taverna (1h = 3600s)
-    estado = carregar_estado()
-    imun = imunidade_restante(estado)
     DURACAO_TAVERNA = 3600  # 1h em segundos
-    if MODO_PIG:
-        log.info("  [MODO_PIG] Pulando imunização antes da taverna — bot deve ficar atacável")
-    elif BANCO_GOLD:
-        log.info("  [BANCO_GOLD] Pulando imunização — gold em armaduras, derrota PvP sem impacto relevante")
-    elif imun >= DURACAO_TAVERNA:
-        log.info(f"  Imunidade suficiente ({fmt_t(imun)}) — não precisa renovar antes da taverna")
-    else:
+
+    def _imunizar_pre_taverna():
+        estado = carregar_estado()
+        imun = imunidade_restante(estado)
+        if imun >= DURACAO_TAVERNA:
+            log.info(f"  Imunidade suficiente ({fmt_t(imun)}) — não precisa renovar antes da taverna")
+            return
         log.info(f"  Imunidade insuficiente ({fmt_t(imun)}) — tentando imunizar antes de entrar na taverna...")
-        ok_imun = imunizar_agora(client, estado)
-        if ok_imun:
+        if imunizar_agora(client, estado):
             log.info("  ✓ Imunizado — entrando na taverna com proteção máxima")
         else:
             log.warning("  ✗ Sem alvo disponível para imunizar — entrando na taverna mesmo assim")
+
+    # BANCO_GOLD: na reta final (capital perto da meta do item) não deposita — imuniza como no modo
+    # normal. Fora dela deposita no passo 2b e só imuniza se o depósito falhar (sobrou gold na mão).
+    reta_final = BANCO_GOLD and banco_reta_final(client)[0]
+    if MODO_PIG:
+        log.info("  [MODO_PIG] Pulando imunização antes da taverna — bot deve ficar atacável")
+    elif BANCO_GOLD and not reta_final:
+        log.info("  [BANCO_GOLD] Imunização decidida após o depósito (só se sobrar gold na mão)")
+    else:
+        _imunizar_pre_taverna()
 
     # Passo 2: gasta gold em treinamento antes de entrar na taverna
     try:
@@ -6210,8 +6247,11 @@ def _taverna_1h(client):
         log.warning(f"  Treinamento pré-taverna: erro — {e}")
 
     # Passo 2b: deposita gold restante no banco antes de dormir
-    if BANCO_GOLD:
-        banco_garantir_sem_gold(client, "pré-taverna 1h")
+    if BANCO_GOLD and not reta_final:
+        sobra = banco_garantir_sem_gold(client, "pré-taverna 1h")
+        if sobra >= BANCO_SOBRA_MAX:
+            log.warning(f"  [BANCO_GOLD] {sobra}g na mão após depósito — imunizando antes da taverna 1h")
+            _imunizar_pre_taverna()
 
     # Passo 3: verifica se já está em missão ativa
     em_missao, seg_missao = verificar_taverna_ativa(client)
@@ -6373,6 +6413,11 @@ def _taverna_ate_cd(client):
     Com BANCO_GOLD e sem CD: entra taverna longa até HORARIO_PARADA em vez de ciclos de 1h.
     Ao acordar deixa o loop_acoes retomar normalmente.
     """
+    # Reta final: capital perto da meta do item -> nada de banco (perde 50%) nem sessão longa
+    if BANCO_GOLD and banco_reta_final(client)[0]:
+        _taverna_1h(client)
+        return
+
     rv = verificar_raubzug(client)
     if rv["livre"] or rv["segundos_cd"] <= 60:
         if not BANCO_GOLD:
@@ -7228,6 +7273,8 @@ if __name__ == "__main__":
         globals()["BANCO_GOLD"] = bool(cfg["banco_gold"])
     if "taverna_inteligente" in cfg:
         globals()["TAVERNA_INTELIGENTE"] = bool(cfg["taverna_inteligente"])
+    if cfg.get("reta_final_pct") is not None:
+        globals()["RETA_FINAL_PCT"] = int(cfg["reta_final_pct"])
     if cfg.get("score_min_pig") is not None:
         globals()["SCORE_MIN_PIG"]        = int(cfg["score_min_pig"])
     if cfg.get("score_min_pig_broke") is not None:
