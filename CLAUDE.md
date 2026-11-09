@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.74
+## Versao atual: 2.3.75
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -294,3 +294,17 @@
 - O /status/ proprio vem em ingles mesmo com language=br ("Armour skill:", "Two-handed attack:"),
   por isso MY_STATS nao tinha o problema. bot_bg.py so le o status proprio (attr_map em ingles)
 - O perfis_cache.json existente so se corrige conforme o cache for recoletado
+
+## Banco nunca depositava no int8 — loja de armaduras paginada (v2.3.75)
+- Sintoma (2026-11-09): bohrer_int8 com banco_gold=true, banco=0g a semana toda, gold parado na mao
+  e perdido em ataques. Log: "Comprar armadura: nenhuma armadura disponível na loja" antes de cada
+  taverna longa. Pior combinado com a regra "BANCO_GOLD pula imunizacao" (gold supostamente guardado)
+- Causa: /shop/ruestungen/ e paginada (?page=N, 16 itens por pagina). A pagina 1 so mostra itens perto
+  do skill do personagem; no int8 a armadura de gold mais barata (Colete de pano 200g, itemid=100) fica
+  na pagina 2. comprar_armadura_barata() so lia a pagina 1. Nos outros servers o item do banco
+  (Colete de pano 50g, itemid=1) aparece na pagina 1
+- Fix: comprar_armadura_barata() varre as paginas (links ?page=N, ate 10) 1x por chamada e escolhe a
+  mais barata. Banco agora le o valor real de venda da linha do inventario (_linhas_banco /
+  _valor_venda_linha) em vez de 25g fixo — no int8 cada colete vende por 100g. banco_gold_sacar() usa
+  esse valor e o gold realmente recebido de vender_item_atual()
+- Banco custa 50% em qualquer server (compra X, vende X/2)

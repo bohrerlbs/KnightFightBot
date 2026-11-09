@@ -2135,29 +2135,47 @@ def comprar_armadura_barata(client):
     total_qtd = 0
     preco_ultimo = 0
     nome_ultimo = "Armadura"
+    buy_url = None
 
     for _rodada in range(20):
         gold_atual, _ = parsear_gold_gems(client)
         if gold_atual < 50:
             break
 
-        try:
-            soup_list = client.get("/shop/ruestungen/", fragment=False)
-        except Exception as e:
-            log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
-            break
+        if buy_url is None:
+            # A loja é paginada (/shop/ruestungen/?page=N): a página 1 mostra só os itens perto do
+            # skill do personagem e a armadura barata pode estar só na última página (ex: int8 —
+            # Colete de pano 200g na página 2). Varre todas as páginas e pega a mais barata.
+            try:
+                soup_list = client.get("/shop/ruestungen/", fragment=False)
+            except Exception as e:
+                log.warning(f"  Comprar armadura: erro ao carregar loja — {e}")
+                break
 
-        if _esta_bloqueado_por_missao(soup_list):
-            log.debug("  Comprar armadura: bloqueado por missão ativa")
-            break
+            if _esta_bloqueado_por_missao(soup_list):
+                log.debug("  Comprar armadura: bloqueado por missão ativa")
+                break
 
-        itens, _ = _parsear_shop_todos_itens(soup_list, "ruestungen")
-        compraveis = [i for i in itens if i["pode_comprar"] and i["url_compra"] and i["gold"] >= 50]
-        if not compraveis:
-            log.info("  Comprar armadura: nenhuma armadura disponível na loja")
-            break
-        barata = min(compraveis, key=lambda i: i["gold"])
-        buy_url = barata["url_compra"]
+            itens, _ = _parsear_shop_todos_itens(soup_list, "ruestungen")
+            paginas = set()
+            for a in soup_list.find_all("a", href=True):
+                m_pg = re.search(r"/shop/ruestungen/\?page=(\d+)", a["href"])
+                if m_pg and 1 < int(m_pg.group(1)) <= 10:
+                    paginas.add(int(m_pg.group(1)))
+            for pg in sorted(paginas):
+                try:
+                    soup_pg = client.get(f"/shop/ruestungen/?page={pg}", fragment=False)
+                    itens_pg, _ = _parsear_shop_todos_itens(soup_pg, "ruestungen")
+                    itens += itens_pg
+                except Exception as e:
+                    log.warning(f"  Comprar armadura: erro ao carregar página {pg} — {e}")
+
+            compraveis = [i for i in itens if i["pode_comprar"] and i["url_compra"] and i["gold"] >= 50]
+            if not compraveis:
+                log.info(f"  Comprar armadura: nenhuma armadura disponível na loja ({1 + len(paginas)} página(s))")
+                break
+            barata = min(compraveis, key=lambda i: i["gold"])
+            buy_url = barata["url_compra"]
 
         try:
             soup = client.get(buy_url, fragment=False)
@@ -2234,9 +2252,32 @@ def comprar_armadura_barata(client):
 # Armazena gold excedente em armaduras baratas (50g compra / 25g venda).
 # ═══════════════════════════════════════════
 
-def _contar_armaduras_banco(client):
-    """Conta armaduras NÃO equipadas na seção inventário de /shop/ruestungen/.
-    Retorna (qtd_total, sell_url_da_primeira) para uso em banco_gold_sacar."""
+def _valor_venda_linha(tr):
+    """Valor unitário de venda de uma linha do inventário (número logo antes do goldstueck.gif)."""
+    img = tr.find("img", src=lambda s: s and "goldstueck.gif" in s)
+    node = img.previous_sibling if img else None
+    while node is not None:
+        if isinstance(node, str):
+            txt = node
+        elif hasattr(node, "get_text"):
+            txt = node.get_text()
+        else:
+            txt = ""
+        nums = re.findall(r"\d[\d.,]*", txt.replace("\xa0", " "))
+        if nums:
+            try:
+                return int(nums[-1].replace(".", "").replace(",", ""))
+            except ValueError:
+                return 0
+        node = node.previous_sibling
+    return 0
+
+
+def _linhas_banco(client):
+    """Armaduras NÃO equipadas na seção inventário de /shop/ruestungen/.
+    Retorna lista de (qtd, valor_venda_unitario, sell_url). O item do banco custa 50g na maioria
+    dos servers (vende 25g), mas no int8 o mais barato é 200g — por isso lê o valor real da linha
+    (fallback 25g se não conseguir ler)."""
     try:
         soup = client.get("/shop/ruestungen/", fragment=False)
         inv_bg = None
@@ -2245,9 +2286,8 @@ def _contar_armaduras_banco(client):
                 inv_bg = boxtop.find_next_sibling("div", class_="box-bg")
                 break
         if not inv_bg:
-            return 0, None
-        qtd = 0
-        sell_url = None
+            return []
+        linhas = []
         for tr in inv_bg.find_all("tr", class_="mobile-cols-2"):
             sell_a = tr.find("a", href=lambda h: h and "/shop/sell/" in h)
             if not sell_a:
@@ -2260,40 +2300,48 @@ def _contar_armaduras_banco(client):
                 q = max(0, q - 1)
             if q <= 0:
                 continue
-            qtd += q
-            if sell_url is None:
-                href = sell_a["href"]
-                if href.startswith("http"):
-                    from urllib.parse import urlparse as _up_b
-                    _pb = _up_b(href)
-                    href = _pb.path + ("?" + _pb.query if _pb.query else "")
-                sell_url = href
-        return qtd, sell_url
+            href = sell_a["href"]
+            if href.startswith("http"):
+                from urllib.parse import urlparse as _up_b
+                _pb = _up_b(href)
+                href = _pb.path + ("?" + _pb.query if _pb.query else "")
+            linhas.append((q, _valor_venda_linha(tr) or 25, href))
+        return linhas
     except Exception as e:
-        log.warning(f"_contar_armaduras_banco: erro — {e}")
-        return 0, None
+        log.warning(f"_linhas_banco: erro — {e}")
+        return []
+
+
+def _contar_armaduras_banco(client):
+    """Retorna (qtd_total, sell_url_da_primeira)."""
+    linhas = _linhas_banco(client)
+    return sum(l[0] for l in linhas), (linhas[0][2] if linhas else None)
 
 
 def banco_gold_saldo(client):
-    """Retorna valor do banco em gold: qtd_armaduras_não_equipadas × 25g."""
-    qtd, _ = _contar_armaduras_banco(client)
-    return qtd * 25
+    """Retorna valor do banco em gold: soma de qtd × valor de venda das armaduras não equipadas."""
+    return sum(q * v for q, v, _ in _linhas_banco(client))
 
 
 def banco_gold_sacar(client, valor_necessario):
-    """Vende armaduras de banco até cobrir valor_necessario. Retorna gold sacado."""
+    """Vende armaduras de banco (menor valor primeiro) até cobrir valor_necessario.
+    Retorna gold sacado."""
     import math as _math
     if valor_necessario <= 0:
         return 0
-    qtd_vender = _math.ceil(valor_necessario / 25)
-    qtd_disponivel, sell_url = _contar_armaduras_banco(client)
-    if qtd_disponivel == 0 or not sell_url:
+    linhas = sorted(_linhas_banco(client), key=lambda l: l[1])
+    if not linhas:
         log.warning(f"  Banco: sem armaduras para sacar {valor_necessario}g")
         return 0
-    qtd_real = min(qtd_vender, qtd_disponivel)
-    vender_item_atual(client, sell_url, quantidade=qtd_real)
-    sacado = qtd_real * 25
-    log.info(f"  Banco: vendeu {qtd_real}x armadura → +{sacado}g liberados")
+    sacado = 0
+    for q, valor, sell_url in linhas:
+        falta = valor_necessario - sacado
+        if falta <= 0:
+            break
+        qtd_real = min(_math.ceil(falta / valor), q)
+        recebido = vender_item_atual(client, sell_url, quantidade=qtd_real) or qtd_real * valor
+        sacado += recebido
+        log.info(f"  Banco: vendeu {qtd_real}x armadura @ {valor}g → +{recebido}g liberados")
     return sacado
 
 
