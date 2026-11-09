@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.75
+## Versao atual: 2.3.76
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -308,3 +308,10 @@
   _valor_venda_linha) em vez de 25g fixo — no int8 cada colete vende por 100g. banco_gold_sacar() usa
   esse valor e o gold realmente recebido de vender_item_atual()
 - Banco custa 50% em qualquer server (compra X, vende X/2)
+
+## BANCO_GOLD: garantir sem gold antes da taverna longa (v2.3.76)
+- Decisao do usuario: com banco NAO imunizar (imunidade cobre so 1h de uma sessao de ate 12h); a
+  protecao e entrar na taverna SEM gold. Perda de 50% do banco e aceita ("eh a vida")
+- banco_garantir_sem_gold(): deposita, le o gold, repete 1x se sobrar >= BANCO_SOBRA_MAX (500g)
+- _taverna_ate_cd: se ainda sobrar gold, cancela a sessao longa e usa _taverna_1h (que tenta depositar
+  de novo) — nunca mais 12h com gold na mao. _taverna_1h tambem usa o helper (so avisa no log)

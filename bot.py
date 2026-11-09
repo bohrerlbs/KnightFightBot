@@ -2353,6 +2353,29 @@ def banco_gold_depositar(client):
     return qtd, preco, nome
 
 
+BANCO_SOBRA_MAX = 500  # gold na mão acima disso após depositar = depósito falhou
+
+
+def banco_garantir_sem_gold(client, contexto="Banco"):
+    """Deposita e confere se o gold na mão ficou abaixo de BANCO_SOBRA_MAX (tenta 2x).
+    Retorna o gold que sobrou na mão."""
+    sobra = 0
+    for tentativa in range(2):
+        try:
+            banco_gold_depositar(client)
+        except Exception as e:
+            log.warning(f"  [{contexto}] Banco depositar: {e}")
+        try:
+            sobra, _ = parsear_gold_gems(client)
+        except Exception as e:
+            log.warning(f"  [{contexto}] Banco: não leu gold após depositar — {e}")
+            return 0
+        if sobra < BANCO_SOBRA_MAX:
+            return sobra
+        log.warning(f"  [{contexto}] Banco: {sobra}g ainda na mão após depósito (tentativa {tentativa + 1}/2)")
+    return sobra
+
+
 def _custo_treino_minimo(soup):
     """Lê menor custo de treino dos tooltips do homepage (sempre visível, independente de gold).
     Exclui Agilidade se BUILD_1MAO=False."""
@@ -6188,10 +6211,7 @@ def _taverna_1h(client):
 
     # Passo 2b: deposita gold restante no banco antes de dormir
     if BANCO_GOLD:
-        try:
-            banco_gold_depositar(client)
-        except Exception as e:
-            log.warning(f"  Banco depositar pré-taverna: erro — {e}")
+        banco_garantir_sem_gold(client, "pré-taverna 1h")
 
     # Passo 3: verifica se já está em missão ativa
     em_missao, seg_missao = verificar_taverna_ativa(client)
@@ -6381,12 +6401,16 @@ def _taverna_ate_cd(client):
             log.info(f"  [TAVERNA_INTELIGENTE] {horas_alvo:.1f}h disponível < 1h mínimo — encerramento noturno assume")
             return
 
-        # Deposita gold antes de dormir
+        # Deposita gold antes de dormir. BANCO_GOLD não imuniza (imunidade só cobre 1h de uma sessão
+        # de até 12h) — a proteção é entrar SEM gold. Se o depósito falhar e sobrar gold, não entra
+        # em sessão longa: cai na taverna de 1h, que tenta depositar de novo na volta.
         if BANCO_GOLD:
-            try:
-                banco_gold_depositar(client)
-            except Exception as e:
-                log.warning(f"  [TAVERNA_INTELIGENTE] Banco depositar: {e}")
+            sobra = banco_garantir_sem_gold(client, "TAVERNA_INTELIGENTE")
+            if sobra >= BANCO_SOBRA_MAX:
+                log.warning(f"  [TAVERNA_INTELIGENTE] {sobra}g ainda na mão após depositar — "
+                            f"sessão longa cancelada, usando taverna de 1h")
+                _taverna_1h(client)
+                return
 
         # Imuniza antes de entrar (cobre toda a sessão) — pula se BANCO_GOLD (gold em armaduras)
         if not MODO_PIG and not BANCO_GOLD:
