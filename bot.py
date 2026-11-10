@@ -449,6 +449,7 @@ COOLDOWN_ATAQUE_SEG   = 300 if IS_PREMIUM else 900
 IMUNIDADE_SEG         = 3600
 BLOQUEIO_MESMO_PLAYER = 43200
 RENOVAR_IMUNIDADE_SEG = 600
+PIG_SCAN_SEM_IMUN_SEG = 180  # sem imunidade e com gold: varre pig no máximo 3min antes de imunizar
 
 HORAS_MISSAO_DIA  = 2 if IS_PREMIUM else 1
 
@@ -6798,7 +6799,21 @@ def loop_acoes(client):
                 key=lambda x: (0 if x[1]["categoria"] == "PIG_CONFIRMADO" else 1,
                                x[1].get("tentativas", 0)))
 
+            # Limite de tempo da varredura de pig com gold na mão: com ~200 candidatos e o ritmo
+            # de requisições reduzido (bloqueio de IP), a varredura levava 30+ min e só DEPOIS o bot
+            # imunizava — ficava exposto com gold (int8/int7 2026-11-10). Agora: protegido, varre até
+            # 2min antes da imunidade acabar; sem imunidade, no máximo PIG_SCAN_SEM_IMUN_SEG e vai
+            # imunizar. Sem gold (broke) não tem o que perder: sem limite.
+            _gold_scan = estado.get("gold_atual", 0)
+            _prazo_scan = None
+            if _gold_scan > GOLD_CONTA_BROKE and not MODO_PIG:
+                _prazo_scan = time.time() + max(imun - 120, PIG_SCAN_SEM_IMUN_SEG)
+
             for uid, pig in pigs:
+                if _prazo_scan and time.time() > _prazo_scan:
+                    log.info(f"  ⏱ Varredura de pig interrompida — imunidade acabando com {_gold_scan}g na mão, "
+                             f"indo imunizar")
+                    break
                 pode, motivo = pode_atacar_player(estado, uid)
                 if not pode:
                     del pig_list[uid]; salvar_pig_list(pig_list)
@@ -6930,6 +6945,11 @@ def loop_acoes(client):
                     except Exception as e:
                         log.warning(f"  Pós-ataque sincronizar slots: erro — {e}")
                 break
+
+            # Recalcula: a imunidade pode ter vencido durante a varredura de pig
+            if not ataque_feito:
+                imun = imunidade_restante(carregar_estado())
+                precisa_imunizar = imun < RENOVAR_IMUNIDADE_SEG
 
             # Precisa imunizar e não atacou pig?
             if not ataque_feito and precisa_imunizar:

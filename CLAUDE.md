@@ -1,6 +1,6 @@
 # KnightFight Bot — Contexto do Projeto
 
-## Versao atual: 2.3.78
+## Versao atual: 2.3.79
 ## GitHub: bohrerlbs/KnightFightBot
 
 ## Arquivos principais
@@ -337,3 +337,14 @@
 - Fix: gold_atual atualizado ao vivo apos a compra e no inicio do treino; reserva com BANCO_GOLD =
   mesma meta de tentar_comprar_item_alvo; treino com orcamento = capital - reserva (para quando o
   proximo treino passa do orcamento). Caminho sem BANCO_GOLD inalterado (ja pausava sempre)
+
+## Exposto sem imunidade durante a varredura de pig (v2.3.79)
+- Sintoma (2026-11-10, int8 e int7): personagem livre, com gold na mao, sem imunidade por 30min-2h30
+  e levando ataques. O loop_acoes so imuniza DEPOIS de varrer a pig list inteira; com ~200 candidatos
+  e o ritmo de requisicoes reduzido (throttle/bloqueio de IP) a varredura levava 30+ min (int8: 113
+  checks entre 18:26 e 18:56 com "Imunidade: agora")
+- Fix: prazo na varredura de pig quando gold_atual > GOLD_CONTA_BROKE (e nao MODO_PIG): protegido,
+  varre ate 2min antes da imunidade acabar; sem imunidade, no maximo PIG_SCAN_SEM_IMUN_SEG (180s).
+  Depois do loop de pig, recalcula imun/precisa_imunizar (pode ter vencido durante a varredura)
+- Ainda resta exposicao de alguns minutos no topo do ciclo (scan de lojas/compras/HP/treino antes
+  do pig) quando o ciclo comeca ja sem imunidade
